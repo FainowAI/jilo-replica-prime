@@ -1,12 +1,39 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import AnnouncementBar from "@/components/sections/AnnouncementBar";
+import Header from "@/components/sections/Header";
+import Hero from "@/components/sections/Hero";
+import BenefitsBar from "@/components/sections/BenefitsBar";
+import Philosophy from "@/components/sections/Philosophy";
+import QuickCategories from "@/components/sections/QuickCategories";
+import Favorites from "@/components/sections/Favorites";
+import WeeklyKits from "@/components/sections/WeeklyKits";
+import VaVrSection from "@/components/sections/VaVrSection";
+import AllDishes from "@/components/sections/AllDishes";
+import HowItWorks from "@/components/sections/HowItWorks";
+import Testimonials from "@/components/sections/Testimonials";
+import OurStory from "@/components/sections/OurStory";
+import FAQ from "@/components/sections/FAQ";
+import Footer from "@/components/sections/Footer";
 
 const Index = () => {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background">
+      <AnnouncementBar />
+      <Header />
+      <main>
+        <Hero />
+        <BenefitsBar />
+        <Philosophy />
+        <QuickCategories />
+        <Favorites />
+        <WeeklyKits />
+        <VaVrSection />
+        <AllDishes />
+        <HowItWorks />
+        <Testimonials />
+        <OurStory />
+        <FAQ />
+      </main>
+      <Footer />
     </div>
   );
 };
