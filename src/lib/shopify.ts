@@ -1,9 +1,9 @@
 import { toast } from "sonner";
 
 const SHOPIFY_API_VERSION = '2025-07';
-const SHOPIFY_STORE_PERMANENT_DOMAIN = 'jilo-replica-project-kt14e.myshopify.com';
+const SHOPIFY_STORE_PERMANENT_DOMAIN = 'jnutg9-u2.myshopify.com';
 const SHOPIFY_STOREFRONT_URL = `https://${SHOPIFY_STORE_PERMANENT_DOMAIN}/api/${SHOPIFY_API_VERSION}/graphql.json`;
-const SHOPIFY_STOREFRONT_TOKEN = 'd1f57ff54a4ffe4a0e651cc1563bb54e';
+const SHOPIFY_STOREFRONT_TOKEN = '1dd3fbb1a5da220469b791834891450f';
 
 export interface ShopifyProduct {
   node: {
