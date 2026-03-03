@@ -1,40 +1,32 @@
 
 
-## Plan: Refactor WeeklyKits + Create Kit Products in Shopify
+## Plan: Create 26 Individual Products in Shopify
 
-### Part 1 — Create 4 Kit Products in Shopify
+Currently the store has only the 4 Kit products. We need to create 26 individual meal products using the `create_shopify_product` tool.
 
-Using the `create_shopify_product` tool, create each kit with `product_type: "Kit"`, `vendor: "Jilo"`, option "Quantidade" with 4 values, and 4 variants with correct prices:
+### Approach
 
-1. **Kit Jilo — Aves & Suínos** | tags: `kit,aves-suinos,mais-pedido`
-   - Variants: 7un R$119.32, 14un R$225.39, 21un R$318.19, 28un R$397.74
+Execute 26 sequential `create_shopify_product` calls, each with the exact data provided. Products are grouped into 4 batches:
 
-2. **Kit Jilo — Peixes & Massas** | tags: `kit,peixes-massas`
-   - Variants: 7un R$127.89, 14un R$241.57, 21un R$341.04, 28un R$426.30
+**Batch 1 — Aves & Suínos (7 products)** at R$ 18.94
+- Filé de Frango Pizzaiolo, Estrogonofe de Frango, Filé de Frango Desfiado, Filé de Frango Cubo Grelhado, Feijoada, Sobrecoxa de Frango, Pernil Suíno Desfiado
 
-3. **Kit Jilo — Bovinos** | tags: `kit,bovinos`
-   - Variants: 7un R$161.91, 14un R$305.83, 21un R$431.76, 28un R$539.70
+**Batch 2 — Peixes & Massas (7 products)** at R$ 20.30
+- Tilápia Desfiada, Linguiça Toscana Assada, Panqueca de Frango e Calabresa, Lasanha Bolonhesa, Calabresa com Mandioca, Tilápia Grelhada, Lasanha Bechamel com Calabresa
 
-4. **Kit Jilo — Veganos** | tags: `kit,veganos,vegano`
-   - Variants: 7un R$161.91, 14un R$305.83, 21un R$431.76, 28un R$539.70
+**Batch 3 — Bovinos (7 products)** at R$ 25.70
+- Patinho Moído, Carne Louca Desfiada, Escondidinho de Carne Seca, Picadinho com Batatas, Almôndegas ao Sugo, Hambúrguer Artesanal, Iscas de Carne
 
-### Part 2 — Refactor `src/components/sections/WeeklyKits.tsx`
+**Batch 4 — Veganos (5 products)** at R$ 25.70
+- Lasanha de Brócolis, Nhoque ao Sugo com Proteína de Soja, Feijoada Vegana, Curry de Lentilha e Arroz de Couve Flor, Estrogonofe de Proteína de Soja
 
-Replace the static array with structured kit data including:
+### Per-product configuration
 
-- **Data**: Hardcoded array with name, tagline, badge, and price table per quantity (7/14/21/28)
-- **State**: `useState` per card tracking selected quantity (default: 7)
-- **Quantity selector**: 4 radio-style buttons ("7", "14", "21", "28") — selecting updates displayed price
-- **Price display**: "a partir de R$ XX,XX" updates to show selected variant price formatted with `toLocaleString('pt-BR')`
-- **Badge**: "até 25% OFF" on all cards, plus "⭐ Mais pedido" on G1
-- **CTA**: "Montar Kit" button (placeholder for now, will connect to cart when Shopify kits exist)
-- **Footer note**: "+ 5% OFF no Pix" text below CTA
-- **Layout**: Keep existing grid (1col mobile, 2col sm, 4col lg), dark bg, accent colors
+Each product will be created with:
+- `title`, `body_html`, `product_type`, `vendor: "Jilo"`, `status: "active"`, `tags` — as specified
+- Single variant with correct price and `inventory_quantity: 50`
 
-### Technical Details
+### No code changes needed
 
-- No new dependencies needed
-- Kit prices hardcoded as specified (not fetched from Shopify yet)
-- Quantity selector uses simple button group with active state styling
-- Preserves existing section structure (id="kits", container, header)
+This is a Shopify Admin data operation only. No frontend files are modified — the existing `AllDishes` and `Collection` components already fetch products by `product_type` and will automatically display the new products.
 
