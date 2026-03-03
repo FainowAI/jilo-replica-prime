@@ -1,32 +1,29 @@
 
 
-## Plan: Create 26 Individual Products in Shopify
+## Plan: Replace mocked dishes in FullMenu with Shopify products
 
-Currently the store has only the 4 Kit products. We need to create 26 individual meal products using the `create_shopify_product` tool.
+### What changes
 
-### Approach
+Replace the hardcoded `allDishes` data in `FullMenu.tsx` with live Shopify Storefront API data, grouping products by their `productType` field (which matches the categories: "Aves & Suínos", "Bovinos", "Peixes & Massas", "Veganos").
 
-Execute 26 sequential `create_shopify_product` calls, each with the exact data provided. Products are grouped into 4 batches:
+### Technical approach
 
-**Batch 1 — Aves & Suínos (7 products)** at R$ 18.94
-- Filé de Frango Pizzaiolo, Estrogonofe de Frango, Filé de Frango Desfiado, Filé de Frango Cubo Grelhado, Feijoada, Sobrecoxa de Frango, Pernil Suíno Desfiado
+**Single file change: `src/components/sections/FullMenu.tsx`**
 
-**Batch 2 — Peixes & Massas (7 products)** at R$ 20.30
-- Tilápia Desfiada, Linguiça Toscana Assada, Panqueca de Frango e Calabresa, Lasanha Bolonhesa, Calabresa com Mandioca, Tilápia Grelhada, Lasanha Bechamel com Calabresa
+1. **Remove** the `DishCard` interface and `allDishes` mock data
+2. **Import** `storefrontApiRequest`, `PRODUCTS_QUERY`, `ShopifyProduct` from `@/lib/shopify`, `useCartStore` from cart store, and `Skeleton`/`Loader2` for loading states
+3. **Fetch products** on mount using `storefrontApiRequest(PRODUCTS_QUERY, { first: 50 })`, store in state
+4. **Group by `productType`** — same logic already used in `AllDishes.tsx`
+5. **Filter by category** using the existing `currentCategory` search param logic, but now against live grouped data
+6. **Render product cards** with:
+   - Real images from `product.node.images.edges[0]`
+   - Title, description from Shopify
+   - Price from `priceRange.minVariantPrice.amount`
+   - Badges from tags (reuse `TAG_BADGES` pattern from `AllDishes.tsx`)
+   - Working "ADICIONAR" button wired to `addItem` from cart store
+7. **Add loading skeleton** and error/retry states (same pattern as `AllDishes.tsx`)
+8. **Update counts** — total and per-category counts derived from fetched data instead of hardcoded
 
-**Batch 3 — Bovinos (7 products)** at R$ 25.70
-- Patinho Moído, Carne Louca Desfiada, Escondidinho de Carne Seca, Picadinho com Batatas, Almôndegas ao Sugo, Hambúrguer Artesanal, Iscas de Carne
-
-**Batch 4 — Veganos (5 products)** at R$ 25.70
-- Lasanha de Brócolis, Nhoque ao Sugo com Proteína de Soja, Feijoada Vegana, Curry de Lentilha e Arroz de Couve Flor, Estrogonofe de Proteína de Soja
-
-### Per-product configuration
-
-Each product will be created with:
-- `title`, `body_html`, `product_type`, `vendor: "Jilo"`, `status: "active"`, `tags` — as specified
-- Single variant with correct price and `inventory_quantity: 50`
-
-### No code changes needed
-
-This is a Shopify Admin data operation only. No frontend files are modified — the existing `AllDishes` and `Collection` components already fetch products by `product_type` and will automatically display the new products.
+### No other files need changes
+The Shopify API client, cart store, and routing are already set up and working.
 
