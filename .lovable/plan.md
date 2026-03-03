@@ -1,38 +1,40 @@
 
 
-## Plan: Create Shopify Seed Scripts
+## Plan: Refactor WeeklyKits + Create Kit Products in Shopify
 
-You have read-only access to this Shopify store through Lovable, but I can create the scripts for you to run locally with your own Admin API token.
+### Part 1 — Create 4 Kit Products in Shopify
 
-### Files to Create
+Using the `create_shopify_product` tool, create each kit with `product_type: "Kit"`, `vendor: "Jilo"`, option "Quantidade" with 4 values, and 4 variants with correct prices:
 
-**1. `scripts/seed-products.ts`**
-- Define all 26 individual products and 4 kit products with variants as specified
-- POST each to Shopify Admin REST API (`/admin/api/2025-07/products.json`)
-- 500ms delay between requests for rate limiting
-- Console logging with checkmark/cross per product
-- Final summary count
+1. **Kit Jilo — Aves & Suínos** | tags: `kit,aves-suinos,mais-pedido`
+   - Variants: 7un R$119.32, 14un R$225.39, 21un R$318.19, 28un R$397.74
 
-**2. `scripts/create-collections.ts`**
-- Create 5 smart collections via POST to `/admin/api/2025-07/smart_collections.json`
-- 4 collections filtering by product_type: "Aves e Suinos", "Peixes e Massas", "Bovinos", "Veganos"
-- 1 collection "Kits" filtering by product_type: "Kit"
+2. **Kit Jilo — Peixes & Massas** | tags: `kit,peixes-massas`
+   - Variants: 7un R$127.89, 14un R$241.57, 21un R$341.04, 28un R$426.30
 
-**3. Update `package.json`**
-- Add `"seed"` and `"seed:collections"` scripts using `ts-node`
+3. **Kit Jilo — Bovinos** | tags: `kit,bovinos`
+   - Variants: 7un R$161.91, 14un R$305.83, 21un R$431.76, 28un R$539.70
 
-### How to Run
+4. **Kit Jilo — Veganos** | tags: `kit,veganos,vegano`
+   - Variants: 7un R$161.91, 14un R$305.83, 21un R$431.76, 28un R$539.70
 
-You'll need to install `ts-node` as a dev dependency and set the `SHOPIFY_ADMIN_TOKEN` environment variable before running:
+### Part 2 — Refactor `src/components/sections/WeeklyKits.tsx`
 
-```
-SHOPIFY_ADMIN_TOKEN=your_token npx ts-node scripts/seed-products.ts
-```
+Replace the static array with structured kit data including:
 
-### Technical Notes
+- **Data**: Hardcoded array with name, tagline, badge, and price table per quantity (7/14/21/28)
+- **State**: `useState` per card tracking selected quantity (default: 7)
+- **Quantity selector**: 4 radio-style buttons ("7", "14", "21", "28") — selecting updates displayed price
+- **Price display**: "a partir de R$ XX,XX" updates to show selected variant price formatted with `toLocaleString('pt-BR')`
+- **Badge**: "até 25% OFF" on all cards, plus "⭐ Mais pedido" on G1
+- **CTA**: "Montar Kit" button (placeholder for now, will connect to cart when Shopify kits exist)
+- **Footer note**: "+ 5% OFF no Pix" text below CTA
+- **Layout**: Keep existing grid (1col mobile, 2col sm, 4col lg), dark bg, accent colors
 
-- Scripts use plain `fetch` (available in Node 18+) — no extra dependencies needed beyond `ts-node`
-- All product data is hardcoded in the script as specified in your message
-- Kit products use Shopify's `options` + `variants` structure with "Quantidade" as the option name
-- Each variant gets `inventory_management: "shopify"` and `inventory_quantity: 50`
+### Technical Details
+
+- No new dependencies needed
+- Kit prices hardcoded as specified (not fetched from Shopify yet)
+- Quantity selector uses simple button group with active state styling
+- Preserves existing section structure (id="kits", container, header)
 
