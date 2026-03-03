@@ -7,6 +7,7 @@ import { useCartSync } from "@/hooks/useCartSync";
 import Index from "./pages/Index";
 import Produto from "./pages/Produto";
 import Cardapio from "./pages/Cardapio";
+import Collection from "./pages/Collection";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -18,8 +19,9 @@ const AppContent = () => {
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/produto/:id" element={<Produto />} />
-        <Route path="/cardapio" element={<Cardapio />} />
-        <Route path="*" element={<NotFound />} />
+         <Route path="/cardapio" element={<Cardapio />} />
+         <Route path="/colecao/:categoria" element={<Collection />} />
+         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
