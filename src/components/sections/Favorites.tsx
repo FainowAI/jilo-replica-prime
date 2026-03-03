@@ -1,10 +1,10 @@
 import { Plus } from "lucide-react";
 
 const favorites = [
-  { name: "Frango Grelhado ao Limão", price: "28,90", badge: "Mais Vendido" },
-  { name: "Strogonoff de Carne", price: "32,90", badge: "Favorito" },
-  { name: "Salmão com Legumes", price: "39,90", badge: "Premium" },
-  { name: "Risoto de Cogumelos", price: "34,90", badge: "Vegano" },
+  { name: "Estrogonofe de Frango", price: "24,90", badge: "⭐ Mais pedido" },
+  { name: "Escondidinho de Carne Seca", price: "26,90", badge: "⭐ Mais pedido" },
+  { name: "Lasanha Bolonhesa", price: "27,90", badge: "⭐ Mais pedido" },
+  { name: "Curry de Lentilha Vermelha com Leite de Coco", price: "23,90", badge: "🌱 Vegano" },
 ];
 
 const Favorites = () => {

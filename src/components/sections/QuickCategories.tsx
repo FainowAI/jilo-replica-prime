@@ -1,8 +1,8 @@
 const categories = [
-  "Aves & Suínos",
-  "Bovinos",
-  "Peixes & Massas",
-  "Veganos",
+  "🍗 Aves & Suínos",
+  "🥩 Bovinos",
+  "🐟 Peixes & Massas",
+  "🌱 Veganos",
 ];
 
 const QuickCategories = () => {

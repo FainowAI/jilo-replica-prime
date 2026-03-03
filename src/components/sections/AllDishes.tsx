@@ -8,16 +8,22 @@ interface DishCard {
 
 const allDishes: Record<string, DishCard[]> = {
   "Aves & Suínos": [
-    { name: "Frango Grelhado ao Limão", price: "28,90", badge: "Mais Vendido" },
-    { name: "Filé de Frango Parmegiana", price: "31,90" },
-    { name: "Lombo Suíno com Mostarda", price: "33,90" },
-    { name: "Frango ao Curry", price: "29,90" },
+    { name: "Filé de Frango Pizzaiolo", price: "24,90" },
+    { name: "Estrogonofe de Frango", price: "24,90", badge: "⭐ Mais pedido" },
+    { name: "Filé de Frango Desfiado", price: "22,90", badge: "Low Carb" },
+    { name: "Filé de Frango Cubo Grelhado", price: "23,90", badge: "Low Carb" },
+    { name: "Feijoada", price: "25,90" },
+    { name: "Sobrecoxa de Frango", price: "21,90", badge: "Novo" },
+    { name: "Pernil Suíno Desfiado", price: "26,90" },
   ],
   "Bovinos": [
-    { name: "Strogonoff de Carne", price: "32,90", badge: "Favorito" },
-    { name: "Carne de Panela", price: "34,90" },
-    { name: "Picadinho com Legumes", price: "30,90" },
-    { name: "Escondidinho de Carne", price: "28,90" },
+    { name: "Patinho Moído", price: "23,90" },
+    { name: "Carne Louca Desfiada", price: "25,90" },
+    { name: "Escondidinho de Carne Seca", price: "26,90", badge: "⭐ Mais pedido" },
+    { name: "Picadinho com Batatas", price: "24,90" },
+    { name: "Almôndegas ao Sugo", price: "22,90" },
+    { name: "Hambúrguer Artesanal", price: "27,90", badge: "Novo" },
+    { name: "Iscas de Carne", price: "25,90" },
   ],
   "Peixes & Massas": [
     { name: "Salmão com Legumes", price: "39,90", badge: "Premium" },
@@ -37,9 +43,16 @@ const AllDishes = () => {
   return (
     <section id="cardapio" className="py-16 lg:py-20">
       <div className="container mx-auto px-4">
-        <div className="text-center mb-12">
-          <p className="text-accent text-xs uppercase tracking-widest font-semibold mb-2 font-sans">Cardápio Completo</p>
-          <h2 className="text-3xl lg:text-4xl">Todos os Pratos</h2>
+        <div className="text-center mb-8">
+          <h2 className="text-3xl lg:text-4xl mb-4">Todos os Pratos</h2>
+          <p className="text-muted-foreground font-sans">24 opções artesanais para montar sua semana.</p>
+        </div>
+
+        <div className="flex flex-wrap gap-2 lg:gap-3 justify-center mb-12">
+          <span className="bg-secondary text-secondary-foreground rounded-full px-4 py-1.5 text-sm font-medium font-sans border border-transparent hover:border-border transition-colors cursor-pointer">⭐ Mais pedido</span>
+          <span className="bg-secondary text-secondary-foreground rounded-full px-4 py-1.5 text-sm font-medium font-sans border border-transparent hover:border-border transition-colors cursor-pointer">🌱 Vegano</span>
+          <span className="bg-secondary text-secondary-foreground rounded-full px-4 py-1.5 text-sm font-medium font-sans border border-transparent hover:border-border transition-colors cursor-pointer">Low Carb</span>
+          <span className="bg-secondary text-secondary-foreground rounded-full px-4 py-1.5 text-sm font-medium font-sans border border-transparent hover:border-border transition-colors cursor-pointer">Novo</span>
         </div>
 
         {Object.entries(allDishes).map(([category, dishes]) => (

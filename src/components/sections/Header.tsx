@@ -1,18 +1,19 @@
 import { useState } from "react";
-import { Menu, Search, User, X } from "lucide-react";
+import { Menu, Search, User, X, ChevronDown, ArrowRight } from "lucide-react";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 
 const navLinks = [
-  { label: "Cardápio", href: "#cardapio" },
-  { label: "Sobre", href: "#sobre" },
-  { label: "Assinatura", href: "#kits" },
-  { label: "Fale Conosco", href: "#faq" },
+  { label: "Cardápio", href: "/cardapio" },
+  { label: "Sobre", href: "/#sobre" },
+  { label: "Assinatura", href: "/#kits" },
+  { label: "Fale Conosco", href: "/#faq" },
 ];
 
 const Header = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b">
@@ -31,7 +32,7 @@ const Header = () => {
                     {link.label}
                   </a>
                 ))}
-                <a href="#cardapio" onClick={() => setMobileOpen(false)} className="mt-4 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-semibold">
+                <a href="/#cardapio" onClick={() => setMobileOpen(false)} className="mt-4 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-semibold">
                   Montar meu Kit
                 </a>
               </nav>
@@ -40,13 +41,42 @@ const Header = () => {
         </div>
 
         {/* Logo */}
-        <a href="#" className="font-serif text-2xl lg:text-3xl text-primary font-bold tracking-tight">
+        <a href="/" className="font-serif text-2xl lg:text-3xl text-primary font-bold tracking-tight">
           Jilo
         </a>
 
         {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center gap-8">
-          {navLinks.map((link) => (
+        <nav className="hidden lg:flex items-center gap-8 relative">
+
+          <div
+            className="group relative cursor-pointer"
+            onMouseEnter={() => setDropdownOpen(true)}
+            onMouseLeave={() => setDropdownOpen(false)}
+          >
+            <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-colors ${dropdownOpen ? 'bg-secondary' : 'hover:bg-secondary/50'}`}>
+              <a href="/cardapio" className="text-sm font-semibold text-foreground">Cardápio</a>
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            </div>
+
+            {dropdownOpen && (
+              <div className="absolute top-full left-0 mt-2 w-[240px] bg-background border border-border shadow-md shadow-border/20 rounded-2xl p-4 z-50 animate-in fade-in slide-in-from-top-4">
+                <div className="text-[10px] uppercase font-bold tracking-widest text-[#B3BDB6] mb-3 font-sans px-2">Categorias</div>
+                <div className="flex flex-col gap-1.5">
+                  <a href="/cardapio?category=Aves%20%26%20Suínos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Aves & Suínos</a>
+                  <a href="/cardapio?category=Bovinos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Bovinos</a>
+                  <a href="/cardapio?category=Peixes%20%26%20Massas" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Peixes & Massas</a>
+                  <a href="/cardapio?category=Veganos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Veganos</a>
+                </div>
+                <div className="h-px bg-border my-4" />
+                <a href="/cardapio" className="text-sm font-bold text-[#1F3328] hover:text-primary px-3 pb-1flex items-center gap-2 transition-colors group/all">
+                  Ver todos os pratos
+                  <ArrowRight className="w-4 h-4 inline-flex group-hover/all:translate-x-1 transition-transform" />
+                </a>
+              </div>
+            )}
+          </div>
+
+          {navLinks.filter(link => link.label !== "Cardápio").map((link) => (
             <a key={link.href} href={link.href} className="text-sm font-medium text-foreground/80 hover:text-primary transition-colors">
               {link.label}
             </a>

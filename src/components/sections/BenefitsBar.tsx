@@ -1,10 +1,10 @@
 import { Star, CreditCard, Truck, ChefHat } from "lucide-react";
 
 const benefits = [
-  { icon: Star, label: "Avaliação 4,7/5", sub: "+2.400 clientes" },
-  { icon: CreditCard, label: "5% OFF no PIX", sub: "Pagamento à vista" },
-  { icon: Truck, label: "Entrega em 48h", sub: "Direto na sua porta" },
-  { icon: ChefHat, label: "Feito artesanalmente", sub: "Com ingredientes reais" },
+  { icon: Star, label: "4,7 de 5", sub: "Avaliação dos clientes" },
+  { icon: CreditCard, label: "5% OFF no PIX", sub: "Em todos os pedidos" },
+  { icon: Truck, label: "Entrega em 48h", sub: "Gelado e selado" },
+  { icon: ChefHat, label: "Feito artesanalmente", sub: "Sem conservantes" },
 ];
 
 const BenefitsBar = () => {
