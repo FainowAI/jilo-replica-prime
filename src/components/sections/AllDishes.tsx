@@ -6,6 +6,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 const CATEGORY_ORDER = ["Aves & Suínos", "Bovinos", "Peixes & Massas", "Veganos"];
 
+const CATEGORY_LABELS: Record<string, string> = {
+  "Aves & Suínos": "🍗 Aves & Suínos",
+  "Bovinos": "🥩 Bovinos",
+  "Peixes & Massas": "🐟 Peixes & Massas",
+  "Veganos": "🌱 Veganos",
+};
+
 const TAG_BADGES: Record<string, { label: string; className: string }> = {
   "mais-pedido": { label: "⭐ Mais pedido", className: "bg-yellow-100 text-yellow-800" },
   "vegano": { label: "🌱 Vegano", className: "bg-green-100 text-green-800" },
@@ -130,7 +137,7 @@ const AllDishes = () => {
 
         {!loading && !error && orderedCategories.map((category) => (
           <div key={category} className="mb-12 last:mb-0">
-            <h3 className="text-xl lg:text-2xl mb-6 font-serif">{category}</h3>
+            <h3 className="text-xl lg:text-2xl mb-6 font-serif">{CATEGORY_LABELS[category] || category}</h3>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
               {grouped[category].map((product) => {
                 const image = product.node.images.edges[0]?.node;
