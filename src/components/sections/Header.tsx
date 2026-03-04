@@ -3,17 +3,27 @@ import { Menu, Search, User, X, ChevronDown, ArrowRight } from "lucide-react";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { useNavigate } from "react-router-dom";
 
 const navLinks = [
   { label: "Cardápio", href: "/cardapio" },
   { label: "Sobre", href: "/#sobre" },
-  { label: "Assinatura", href: "/#kits" },
-  { label: "Fale Conosco", href: "/#faq" },
 ];
 
 const Header = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const navigate = useNavigate();
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      navigate(`/cardapio?search=${encodeURIComponent(searchQuery.trim())}`);
+      setIsSearchOpen(false);
+    }
+  };
 
   return (
     <header className="sticky top-0 z-50 bg-card/95 backdrop-blur-md border-b">
@@ -59,7 +69,7 @@ const Header = () => {
             </div>
 
             {dropdownOpen && (
-              <div className="absolute top-full left-0 w-[240px] z-50 pt-1">
+              <div className="absolute top-full left-0 w-[240px] z-[60] pt-1">
                 <div className="bg-background border border-border shadow-md shadow-border/20 rounded-2xl p-4 animate-in fade-in slide-in-from-top-4">
                   <div className="text-[10px] uppercase font-bold tracking-widest text-[#B3BDB6] mb-3 font-sans px-2">Categorias</div>
                   <div className="flex flex-col gap-1.5">
@@ -87,8 +97,11 @@ const Header = () => {
 
         {/* Right side */}
         <div className="flex items-center gap-3">
-          <button className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
-            <Search className="h-5 w-5" />
+          <button
+            onClick={() => setIsSearchOpen(!isSearchOpen)}
+            className="p-2 hover:opacity-70 transition-opacity hidden sm:block"
+          >
+            {isSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
           </button>
           <button className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
             <User className="h-5 w-5" />
@@ -99,6 +112,28 @@ const Header = () => {
           </a>
         </div>
       </div>
+
+      {/* Expanded Search Bar */}
+      {isSearchOpen && (
+        <div className="absolute top-full left-0 w-full bg-white border-t border-black/10 shadow-sm z-50 animate-in slide-in-from-top-2 flex items-center px-4 md:px-[40px] py-[16px] gap-[12px]">
+          <Search className="h-5 w-5 text-black/50" />
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center">
+            <input
+              type="text"
+              placeholder="Buscar pratos, categorias..."
+              className="w-full outline-none text-[15px] font-sans text-[#1a1a1a] placeholder:text-black/50 bg-transparent"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+          </form>
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="p-1 hover:bg-black/5 rounded-full text-black/50 transition-colors">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
     </header>
   );
 };

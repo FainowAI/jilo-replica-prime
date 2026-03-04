@@ -134,7 +134,7 @@ export function FullMenu() {
 
     // Ordenação
     const sortedSearchedCategories = Object.entries(searchedCategories).reduce((acc, [cat, products]) => {
-        let sorted = [...products];
+        const sorted = [...products];
         switch (sortOption) {
             case "Ordem alfabética":
                 sorted.sort((a, b) => a.node.title.localeCompare(b.node.title));
@@ -173,9 +173,9 @@ export function FullMenu() {
     };
 
     return (
-        <div className="w-full">
+        <div className="w-full bg-[#faf7f2] min-h-screen pb-[64px]">
             {/* 1. Breadcrumb (Node 9:7) */}
-            <div className="w-full border-b-[0.8px] border-[#e8e8e4] flex items-center px-4 lg:px-[40px] py-[10px]">
+            <div className="w-full border-b-[0.8px] border-[#e8e8e4] flex items-center px-4 lg:px-[40px] py-[24px]">
                 <a href="/" className="font-['DM_Sans'] text-[13px] leading-[13px] text-[#6b6b6b] hover:text-[#1a1a1a] transition-colors">
                     Página Inicial
                 </a>
@@ -186,7 +186,7 @@ export function FullMenu() {
             </div>
 
             {/* 2. Header and Category Buttons (Node 9:16) */}
-            <div className="w-full px-4 lg:px-[40px] pt-[40px] pb-[32px]">
+            <div className="w-full px-4 lg:px-[40px] pt-[40px] pb-[32px] bg-[#faf7f2] sticky top-[64px] z-40">
                 <h1 className="font-['DM_Serif_Display'] text-[41.6px] leading-[42px] text-[#1a1a1a] mb-[8.4px]">
                     Cardápio
                 </h1>
@@ -200,7 +200,47 @@ export function FullMenu() {
                             Exibindo {displayedCount} pratos.
                         </p>
 
-                        <div className="flex flex-wrap gap-[8px] items-start">
+                        {/* Search and Sort Tools inline */}
+                        <div className="w-full flex flex-col lg:flex-row lg:justify-between border-t border-[#e8e8e4]/50 py-[12px] lg:h-[48px] lg:items-center">
+                            {/* Search Bar (Node 9:784) */}
+                            <div className="flex items-center gap-[12px] h-full mb-4 lg:mb-0 w-full lg:w-auto">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#1a1a1a]">
+                                    <circle cx="11" cy="11" r="8"></circle>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                                </svg>
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Buscar pratos, categorias…"
+                                    className="flex-1 lg:w-[300px] font-['DM_Sans'] text-[15px] text-[#1a1a1a] bg-transparent border-none outline-none placeholder:text-[rgba(26,26,26,0.5)] h-full"
+                                />
+                            </div>
+
+                            {/* 4. Sorting Filter Options (Node 9:726) */}
+                            <div className="flex gap-[24px] h-full lg:items-end w-full lg:w-auto overflow-x-auto no-scrollbar">
+                                {["Relevância", "Ordem alfabética", "Mais vendidos", "Menor preço", "Maior preço"].map((option) => {
+                                    const isSelected = option === sortOption;
+                                    return (
+                                        <button
+                                            key={option}
+                                            onClick={() => setSortOption(option)}
+                                            className={`h-[24px] lg:h-[18.6px] relative flex justify-center border-b-[1.6px] pb-1 cursor-pointer transition-colors
+                                                ${isSelected ? "border-[#d4a017]" : "border-transparent hover:border-[#e8e8e4]"}
+                                            `}
+                                        >
+                                            <span className={`font-['DM_Sans'] text-[13px] leading-[13px] whitespace-nowrap 
+                                                ${isSelected ? "font-semibold text-[#1a1a1a]" : "font-normal text-[#9b9b9b] hover:text-[#1a1a1a]"}`}>
+                                                {option}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Category Buttons aligned inline matching 9:16 layout */}
+                        <div className="flex flex-wrap gap-[8px] items-start pt-4 border-t border-[#e8e8e4]/50">
                             {categories.map((cat) => {
                                 const isSelected = currentCategory === cat;
                                 const count = cat === "Todos" ? totalDishes : (grouped[cat]?.length || 0);
@@ -209,10 +249,10 @@ export function FullMenu() {
                                     <button
                                         key={cat}
                                         onClick={() => handleCategoryClick(cat)}
-                                        className={`flex items-center gap-[6px] h-[34.8px] rounded-[100px] px-[16px] transition-all
+                                        className={`flex items-center gap-[6px] h-[34.8px] rounded-[100px] px-[16px] transition-all border-[0.8px]
                                             ${isSelected
-                                                ? "bg-[#1e3a1e] text-[#faf7f2]"
-                                                : "bg-white border-[#e8e8e4] border-[0.8px] text-[#1a1a1a] hover:border-gray-400"
+                                                ? "bg-[#1e3a1e] text-[#faf7f2] border-[#1e3a1e]"
+                                                : "bg-[#ffffff] border-[#e8e8e4] text-[#1a1a1a] hover:border-gray-400"
                                             }`}
                                     >
                                         <span className="font-['DM_Sans'] text-[13px] font-semibold leading-[13px]">{cat}</span>
@@ -226,45 +266,6 @@ export function FullMenu() {
                         </div>
                     </>
                 )}
-            </div>
-
-            {/* 3. Search and Sort Tools container */}
-            <div className="w-full flex justify-between border-t-[0.8px] border-b-[0.8px] border-[#e8e8e4] h-[48px] items-center px-4 lg:px-[40px] sticky top-[64px] bg-[#faf7f2] z-40 shadow-sm">
-                {/* Search Bar (Node 9:784) */}
-                <div className="flex items-center gap-[12px] h-full" style={{ flex: '1 0 0' }}>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#1a1a1a]">
-                        <circle cx="11" cy="11" r="8"></circle>
-                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                    </svg>
-                    <input
-                        type="text"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Buscar pratos, categorias…"
-                        className="flex-1 font-['DM_Sans'] text-[15px] text-[#1a1a1a] bg-transparent border-none outline-none placeholder:text-[rgba(26,26,26,0.5)] h-full"
-                    />
-                </div>
-
-                {/* 4. Sorting Filter Options (Node 9:726) */}
-                <div className="hidden lg:flex gap-[24px] h-full items-end ml-4">
-                    {["Relevância", "Ordem alfabética", "Mais vendidos", "Menor preço", "Maior preço", "Maior desconto"].map((option) => {
-                        const isSelected = option === sortOption;
-                        return (
-                            <button
-                                key={option}
-                                onClick={() => setSortOption(option)}
-                                className={`h-[18.6px] relative flex justify-center border-b-[1.6px] pb-1 cursor-pointer transition-colors
-                                    ${isSelected ? "border-[#d4a017]" : "border-transparent hover:border-gray-300"}
-                                `}
-                            >
-                                <span className={`font-['DM_Sans'] text-[13px] leading-[13px] whitespace-nowrap 
-                                    ${isSelected ? "font-semibold text-[#1a1a1a]" : "font-normal text-[#9b9b9b] hover:text-[#1a1a1a]"}`}>
-                                    {option}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
             </div>
 
             {/* Main Content Area */}
@@ -324,15 +325,14 @@ export function FullMenu() {
                                                 return (
                                                     <motion.div
                                                         layout
-                                                        initial={{ opacity: 0, y: 15 }}
-                                                        whileInView={{ opacity: 1, y: 0 }}
-                                                        exit={{ opacity: 0, scale: 0.98 }}
-                                                        viewport={{ once: true, margin: "-10%" }}
-                                                        transition={{ duration: 0.5, ease: [0.25, 0.1, 0.25, 1.0] }}
+                                                        initial={{ opacity: 0 }}
+                                                        whileInView={{ opacity: 1 }}
+                                                        viewport={{ once: true, margin: "50px" }}
+                                                        transition={{ duration: 0.5, ease: "easeInOut" }}
                                                         key={product.node.id}
-                                                        className="group flex flex-col h-full bg-background rounded-2xl overflow-hidden border border-border hover:shadow-md transition-all duration-300"
+                                                        className="group flex flex-col h-full bg-white rounded-[20px] shadow-[0px_2px_16px_0px_rgba(0,0,0,0.07)] overflow-hidden transition-all duration-300 select-none"
                                                     >
-                                                        <Link to={`/produto/${product.node.handle}`} className="relative aspect-square bg-secondary overflow-hidden block">
+                                                        <Link to={`/produto/${product.node.handle}`} className="relative aspect-square bg-[#f0efeb] overflow-hidden block">
                                                             <img
                                                                 src={image?.url || "/placeholder.svg"}
                                                                 alt={image?.altText || product.node.title}
@@ -345,7 +345,7 @@ export function FullMenu() {
                                                             )}
                                                         </Link>
 
-                                                        <div className="p-5 flex flex-col flex-1">
+                                                        <div className="p-5 flex flex-col flex-1 bg-white">
                                                             <Link to={`/produto/${product.node.handle}`} className="hover:underline flex-col flex flex-1 block">
                                                                 <h3 className="text-[14px] font-bold text-[#1a1a1a] mb-[4px] font-['DM_Sans'] leading-[18.2px]">
                                                                     {product.node.title}
@@ -364,7 +364,7 @@ export function FullMenu() {
                                                             <button
                                                                 disabled={isLoading}
                                                                 onClick={(e) => { e.preventDefault(); handleAdd(product); }}
-                                                                className="w-full bg-secondary/70 text-secondary-foreground font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300 font-sans text-sm disabled:opacity-50"
+                                                                className="w-full bg-[#1e3a1e] text-white font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 hover:bg-[#1e3a1e]/90 transition-all duration-300 font-sans text-[12px] tracking-[0.72px] disabled:opacity-50"
                                                             >
                                                                 {isLoading ? (
                                                                     <Loader2 className="w-4 h-4 animate-spin" />

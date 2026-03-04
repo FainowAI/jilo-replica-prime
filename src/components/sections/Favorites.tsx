@@ -19,7 +19,7 @@ const Favorites = () => {
     setLoading(true);
     try {
       const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 4, query: "tag:mais-pedido" });
-      let items: ShopifyProduct[] = data?.data?.products?.edges || [];
+      const items: ShopifyProduct[] = data?.data?.products?.edges || [];
 
       // Fallback: if fewer than 4, fill with general products
       if (items.length < 4) {

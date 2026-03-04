@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -85,6 +85,9 @@ const AllDishes = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const searchFilter = searchParams.get("search")?.toLowerCase() || "";
+
   const addItem = useCartStore((s) => s.addItem);
   const isLoading = useCartStore((s) => s.isLoading);
 
@@ -124,18 +127,18 @@ const AllDishes = () => {
   };
 
   // Filter products by selected tag
-  const filteredGrouped = selectedTag
-    ? Object.fromEntries(
-        Object.entries(grouped)
-          .map(([cat, products]) => [
-            cat,
-            products.filter((p) =>
-              p.node.tags.some((t) => t.toLowerCase().includes(selectedTag.toLowerCase()))
-            ),
-          ])
-          .filter(([_, products]) => products.length > 0)
-      )
-    : grouped;
+  const filteredGrouped = Object.fromEntries(
+    Object.entries(grouped)
+      .map(([cat, products]) => [
+        cat,
+        products.filter((p) => {
+          const matchTag = selectedTag ? p.node.tags.some((t) => t.toLowerCase().includes(selectedTag.toLowerCase())) : true;
+          const matchSearch = searchFilter ? p.node.title.toLowerCase().includes(searchFilter) || cat.toLowerCase().includes(searchFilter) : true;
+          return matchTag && matchSearch;
+        }),
+      ])
+      .filter(([_, products]) => products.length > 0)
+  );
 
   const orderedCategories = [
     ...CATEGORY_ORDER.filter((c) => filteredGrouped[c]),
@@ -159,7 +162,7 @@ const AllDishes = () => {
             24 opções artesanais para montar sua semana.
           </p>
 
-          <div className="flex flex-wrap gap-2 lg:gap-3 justify-start">
+          <div className="flex flex-wrap gap-2 lg:gap-3 justify-start mb-4">
             <button
               onClick={() => handleTagClick('mais-pedido')}
               className={`bg-[#d4a017] text-[#1e3a1e] rounded-[100px] px-[10px] py-[4px] text-[11px] font-bold font-sans uppercase tracking-tight cursor-pointer transition-all ${selectedTag === 'mais-pedido' ? 'ring-2 ring-[#d4a017] ring-offset-2' : 'hover:opacity-80'}`}
@@ -193,6 +196,17 @@ const AllDishes = () => {
               </button>
             )}
           </div>
+
+          {searchFilter && (
+            <div className="w-full flex items-center justify-between bg-white px-4 py-3 rounded-xl border border-black/5 mt-4">
+              <p className="text-[#1a1a1a] font-sans text-[15px]">
+                Mostrando resultados para: <span className="font-bold">"{searchFilter}"</span>
+              </p>
+              <Link to="/cardapio" className="text-[14px] font-bold text-[#1e3a1e] hover:underline">
+                Limpar busca
+              </Link>
+            </div>
+          )}
         </div>
 
         {loading && <SkeletonGrid />}
