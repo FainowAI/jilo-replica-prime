@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { ShoppingBag, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
@@ -67,9 +67,18 @@ export function FullMenu() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
-    // Novas states para pesquisa e ordenação
+    // Search with debounce
+    const [searchInput, setSearchInput] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [sortOption, setSortOption] = useState("Relevância");
+    const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+    useEffect(() => {
+        debounceRef.current = setTimeout(() => {
+            setSearchQuery(searchInput);
+        }, 400);
+        return () => clearTimeout(debounceRef.current);
+    }, [searchInput]);
 
     const addItem = useCartStore((s) => s.addItem);
     const isLoading = useCartStore((s) => s.isLoading);
@@ -78,7 +87,9 @@ export function FullMenu() {
         setLoading(true);
         setError(false);
         try {
-            const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 50 });
+            const variables: { first: number; query?: string } = { first: 50 };
+            if (searchQuery) variables.query = searchQuery;
+            const data = await storefrontApiRequest(PRODUCTS_QUERY, variables);
             const products: ShopifyProduct[] = data?.data?.products?.edges || [];
             const groups: Record<string, ShopifyProduct[]> = {};
             for (const product of products) {
@@ -92,7 +103,7 @@ export function FullMenu() {
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [searchQuery]);
 
     useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -210,8 +221,8 @@ export function FullMenu() {
                                 </svg>
                                 <input
                                     type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    value={searchInput}
+                                    onChange={(e) => setSearchInput(e.target.value)}
                                     placeholder="Buscar pratos, categorias…"
                                     className="flex-1 lg:w-[300px] font-['DM_Sans'] text-[15px] text-[#1a1a1a] bg-transparent border-none outline-none placeholder:text-[rgba(26,26,26,0.5)] h-full"
                                 />

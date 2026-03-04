@@ -95,7 +95,9 @@ const AllDishes = () => {
     setLoading(true);
     setError(false);
     try {
-      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 50 });
+      const variables: { first: number; query?: string } = { first: 50 };
+      if (searchFilter) variables.query = searchFilter;
+      const data = await storefrontApiRequest(PRODUCTS_QUERY, variables);
       const products: ShopifyProduct[] = data?.data?.products?.edges || [];
       const groups: Record<string, ShopifyProduct[]> = {};
       for (const product of products) {
@@ -109,7 +111,7 @@ const AllDishes = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchFilter]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -126,15 +128,14 @@ const AllDishes = () => {
     });
   };
 
-  // Filter products by selected tag
+  // Filter products by selected tag (search is now server-side)
   const filteredGrouped = Object.fromEntries(
     Object.entries(grouped)
       .map(([cat, products]) => [
         cat,
         products.filter((p) => {
           const matchTag = selectedTag ? p.node.tags.some((t) => t.toLowerCase().includes(selectedTag.toLowerCase())) : true;
-          const matchSearch = searchFilter ? p.node.title.toLowerCase().includes(searchFilter) || cat.toLowerCase().includes(searchFilter) : true;
-          return matchTag && matchSearch;
+          return matchTag;
         }),
       ])
       .filter(([_, products]) => products.length > 0)
