@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Loader2, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -146,8 +147,8 @@ const AllDishes = () => {
                 const badge = getBadge(tags);
 
                 return (
-                  <div key={product.node.id} className="group bg-card rounded-2xl overflow-hidden border hover:shadow-lg transition-shadow">
-                    <div className="aspect-square bg-muted relative overflow-hidden">
+                  <div key={product.node.id} className="group bg-card flex flex-col rounded-2xl overflow-hidden border hover:shadow-lg transition-shadow">
+                    <Link to={`/produto/${product.node.handle}`} className="relative aspect-square bg-muted overflow-hidden block">
                       <img
                         src={image?.url || "/placeholder.svg"}
                         alt={image?.altText || product.node.title}
@@ -158,14 +159,16 @@ const AllDishes = () => {
                           {badge.label}
                         </span>
                       )}
-                    </div>
-                    <div className="p-4">
-                      <h4 className="font-sans font-semibold text-sm mb-1 line-clamp-2">{product.node.title}</h4>
+                    </Link>
+                    <div className="p-4 flex flex-col flex-1">
+                      <Link to={`/produto/${product.node.handle}`} className="hover:underline flex-1 block">
+                        <h4 className="font-sans font-semibold text-sm mb-1 line-clamp-2">{product.node.title}</h4>
+                      </Link>
                       <div className="flex items-center justify-between mt-2">
                         <p className="font-bold text-primary font-sans">R$ {formatPrice(price)}</p>
                         <button
                           disabled={isLoading}
-                          onClick={() => handleAdd(product)}
+                          onClick={(e) => { e.preventDefault(); handleAdd(product); }}
                           className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 transition-colors disabled:opacity-50"
                         >
                           {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
 import Index from "./pages/Index";
-import Produto from "./pages/Produto";
+import Product from "./pages/Product";
 import Cardapio from "./pages/Cardapio";
 import Collection from "./pages/Collection";
 import NotFound from "./pages/NotFound";
@@ -18,7 +18,7 @@ const AppContent = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Index />} />
-        <Route path="/produto/:id" element={<Produto />} />
+        <Route path="/produto/:handle" element={<Product />} />
          <Route path="/cardapio" element={<Cardapio />} />
          <Route path="/colecao/:categoria" element={<Collection />} />
          <Route path="*" element={<NotFound />} />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { ShoppingBag, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
@@ -236,8 +236,8 @@ export function FullMenu() {
                                             const badge = getBadge(tags);
 
                                             return (
-                                                <div key={product.node.id} className="group cursor-pointer flex flex-col h-full bg-background rounded-2xl overflow-hidden border border-border hover:shadow-md transition-all duration-300">
-                                                    <div className="aspect-square bg-secondary relative overflow-hidden">
+                                                <div key={product.node.id} className="group flex flex-col h-full bg-background rounded-2xl overflow-hidden border border-border hover:shadow-md transition-all duration-300">
+                                                    <Link to={`/produto/${product.node.handle}`} className="relative aspect-square bg-secondary overflow-hidden block">
                                                         <img
                                                             src={image?.url || "/placeholder.svg"}
                                                             alt={image?.altText || product.node.title}
@@ -248,15 +248,17 @@ export function FullMenu() {
                                                                 {badge.label}
                                                             </span>
                                                         )}
-                                                    </div>
+                                                    </Link>
 
                                                     <div className="p-5 flex flex-col flex-1">
-                                                        <h3 className="text-sm font-semibold text-secondary-foreground mb-1 font-sans leading-tight">
-                                                            {product.node.title}
-                                                        </h3>
-                                                        <p className="text-xs text-muted-foreground font-sans mb-4 line-clamp-2 min-h-[32px]">
-                                                            {product.node.description}
-                                                        </p>
+                                                        <Link to={`/produto/${product.node.handle}`} className="hover:underline flex-col flex flex-1 block">
+                                                            <h3 className="text-sm font-semibold text-secondary-foreground mb-1 font-sans leading-tight">
+                                                                {product.node.title}
+                                                            </h3>
+                                                            <p className="text-xs text-muted-foreground font-sans mb-4 line-clamp-2 min-h-[32px]">
+                                                                {product.node.description}
+                                                            </p>
+                                                        </Link>
 
                                                         <div className="flex items-center gap-3 mb-4 mt-auto">
                                                             <span className="text-lg font-bold text-secondary-foreground font-sans leading-none">
@@ -266,7 +268,7 @@ export function FullMenu() {
 
                                                         <button
                                                             disabled={isLoading}
-                                                            onClick={() => handleAdd(product)}
+                                                            onClick={(e) => { e.preventDefault(); handleAdd(product); }}
                                                             className="w-full bg-secondary/70 text-secondary-foreground font-bold py-2.5 rounded-xl flex items-center justify-center gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300 font-sans text-sm disabled:opacity-50"
                                                         >
                                                             {isLoading ? (
