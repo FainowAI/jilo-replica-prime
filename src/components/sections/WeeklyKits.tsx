@@ -1,103 +1,89 @@
-import { useState } from "react";
-import { ArrowRight } from "lucide-react";
-
-const QUANTITIES = [7, 14, 21, 28] as const;
-type Qty = typeof QUANTITIES[number];
+import { ArrowRight, Box } from "lucide-react";
 
 interface Kit {
   name: string;
   tagline: string;
-  badges: string[];
-  prices: Record<Qty, number>;
+  badge?: string;
+  price: string;
+  bgColor: string;
 }
 
 const kits: Kit[] = [
   {
-    name: "Aves & Suínos",
-    tagline: "Leve e saboroso para o dia a dia",
-    badges: ["⭐ Mais pedido"],
-    prices: { 7: 119.32, 14: 225.39, 21: 318.19, 28: 397.74 },
+    name: "Kit Semana Completa",
+    tagline: "20 pratos · Para a semana toda",
+    badge: "Mais vendido",
+    price: "19,90",
+    bgColor: "bg-[#1e3a1e]",
   },
   {
-    name: "Peixes & Massas",
-    tagline: "Proteína leve com muito sabor",
-    badges: [],
-    prices: { 7: 127.89, 14: 241.57, 21: 341.04, 28: 426.30 },
+    name: "Kit Econômico",
+    tagline: "14 pratos · Custo benefício",
+    price: "18,90",
+    bgColor: "bg-[#6b4226]",
   },
   {
-    name: "Bovinos",
-    tagline: "Carne de qualidade, sem trabalho",
-    badges: [],
-    prices: { 7: 161.91, 14: 305.83, 21: 431.76, 28: 539.70 },
+    name: "Kit Fit & Saudável",
+    tagline: "10 pratos Low Carb · Para uma rotina mais leve",
+    badge: "Novo",
+    price: "21,90",
+    bgColor: "bg-[#2c3e50]",
   },
   {
-    name: "Veganos",
-    tagline: "Plant-based cheio de sabor e nutrição",
-    badges: ["🌱 Vegano"],
-    prices: { 7: 161.91, 14: 305.83, 21: 431.76, 28: 539.70 },
+    name: "Kit Vegano",
+    tagline: "10 pratos · 100% Plant-based",
+    price: "20,90",
+    bgColor: "bg-[#4a5c2f]",
   },
 ];
 
-const formatPrice = (value: number) =>
-  value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
 const KitCard = ({ kit }: { kit: Kit }) => {
-  const [selected, setSelected] = useState<Qty>(7);
-
   return (
-    <div className="bg-secondary/30 border border-primary-foreground/10 rounded-2xl p-6 hover:bg-secondary/50 transition-colors flex flex-col">
-      {/* Badges */}
-      <div className="flex flex-wrap gap-1.5 min-h-[28px] mb-4">
-        <span className="inline-block bg-accent text-accent-foreground text-[10px] font-bold uppercase px-2.5 py-1 rounded-full font-sans">
-          até 25% OFF
-        </span>
-        {kit.badges.map((b) => (
-          <span
-            key={b}
-            className="inline-block bg-accent/20 text-accent text-[10px] font-bold px-2.5 py-1 rounded-full font-sans"
+    <div className={`relative flex flex-col rounded-[20px] overflow-hidden ${kit.bgColor} min-h-[280px]`}>
+      {/* Background Gradient overlay */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ backgroundImage: "linear-gradient(155.65deg, rgba(255,255,255,0.06) 8.49%, rgba(0,0,0,0) 58.3%)" }}
+      />
+
+      <div className="relative p-6 flex flex-col h-full z-10">
+        <div className="flex items-start justify-between min-h-[24px]">
+          {kit.badge ? (
+            <span className="inline-flex bg-[#d4a017] text-[#1e3a1e] text-[11px] font-bold px-2.5 py-1 rounded-[100px] font-sans">
+              {kit.badge}
+            </span>
+          ) : (
+            <span />
+          )}
+          <Box className="w-5 h-5 text-white opacity-80" strokeWidth={1.5} />
+        </div>
+
+        <div className="mt-4 mb-8">
+          <h3 className="text-white text-[24px] font-['DM_Serif_Display'] leading-[27.6px] mb-1">
+            {kit.name}
+          </h3>
+          <p className="text-[13px] text-white/70 font-sans leading-[18.2px]">
+            {kit.tagline}
+          </p>
+        </div>
+
+        <div className="mt-auto pt-4 border-t border-white/15 flex items-center justify-between">
+          <div>
+            <span className="text-[13px] text-white/85 font-medium font-sans">a partir de</span>
+            <br />
+            <span className="text-[15px] font-bold text-white font-sans">
+              R$ {kit.price}/un
+            </span>
+          </div>
+
+          <a
+            href="#cardapio"
+            className="inline-flex items-center gap-2 border border-white/50 rounded-[100px] px-3 py-2 text-[13px] text-white font-semibold font-sans hover:bg-white/10 transition-colors"
           >
-            {b}
-          </span>
-        ))}
-      </div>
-
-      {/* Info */}
-      <h3 className="text-xl text-primary-foreground mb-1">Kit {kit.name}</h3>
-      <p className="text-primary-foreground/60 text-sm font-sans mb-6">{kit.tagline}</p>
-
-      {/* Quantity selector */}
-      <div className="flex gap-1.5 mb-6">
-        {QUANTITIES.map((q) => (
-          <button
-            key={q}
-            onClick={() => setSelected(q)}
-            className={`flex-1 text-xs font-semibold font-sans py-2 rounded-lg transition-colors ${
-              selected === q
-                ? "bg-accent text-accent-foreground"
-                : "bg-primary-foreground/10 text-primary-foreground/70 hover:bg-primary-foreground/20"
-            }`}
-          >
-            {q}un
-          </button>
-        ))}
-      </div>
-
-      {/* Price + CTA */}
-      <div className="mt-auto">
-        <p className="text-2xl font-bold text-accent font-sans mb-1">
-          <span className="text-sm text-primary-foreground/60 font-normal block font-sans">
-            {selected === 7 ? "a partir de" : `${selected} marmitas`}
-          </span>
-          R$ {formatPrice(kit.prices[selected])}
-        </p>
-        <p className="text-[11px] text-primary-foreground/50 font-sans mb-4">+ 5% OFF no Pix</p>
-
-        <a
-          href="#cardapio"
-          className="inline-flex items-center gap-2 text-accent font-semibold text-sm font-sans hover:gap-3 transition-all"
-        >
-          Montar Kit <ArrowRight className="h-4 w-4" />
-        </a>
+            Ver Kit
+            <ArrowRight className="w-3.5 h-3.5" />
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -105,28 +91,33 @@ const KitCard = ({ kit }: { kit: Kit }) => {
 
 const WeeklyKits = () => {
   return (
-    <section id="kits" className="py-16 lg:py-20 bg-primary">
-      <div className="container mx-auto px-4">
-        <div className="text-center mb-10">
-          <p className="text-accent text-xs uppercase tracking-widest font-semibold mb-2 font-sans">
+    <section id="kits" className="py-16 lg:py-20 bg-white">
+      <div className="container mx-auto px-4 max-w-6xl">
+        <div className="flex flex-col items-center text-center mb-10 gap-1.5">
+          <p className="bg-[rgba(30,58,30,0.08)] text-[#2d5016] text-[12px] uppercase tracking-[1.2px] font-semibold font-sans px-[24px] py-[4px] rounded-[100px]">
             Monte do seu jeito
           </p>
-          <h2 className="text-3xl lg:text-4xl text-primary-foreground mb-4">Kits para a Semana</h2>
-          <p className="text-primary-foreground/80 font-sans max-w-lg mx-auto">
-            Monte sua semana de uma vez. Mais fácil, mais barato.
+          <h2 className="text-[36px] text-[#1e3a1e] font-['DM_Serif_Display'] leading-tight mt-1">
+            Kits para a Semana
+          </h2>
+          <p className="text-[16px] text-[#6b6b6b] font-sans mt-2 max-w-lg mx-auto">
+            Monte sua semana de uma vez. Mais fácil, mais barato, mais organizado.
           </p>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {kits.map((kit) => (
             <KitCard key={kit.name} kit={kit} />
           ))}
         </div>
-        <div className="text-center mt-10">
+
+        <div className="text-center mt-12">
           <a
             href="#cardapio"
-            className="inline-flex items-center justify-center rounded-full border-2 border-primary-foreground/30 text-primary-foreground px-8 py-3 text-sm font-semibold font-sans hover:bg-primary-foreground/10 transition-colors"
+            className="inline-flex items-center gap-2 border border-[#1e3a1e] text-[#1e3a1e] rounded-[100px] px-8 py-3 text-[14px] font-semibold font-sans hover:bg-[#1e3a1e]/5 transition-colors"
           >
             Ver todos os kits
+            <ArrowRight className="w-4 h-4" />
           </a>
         </div>
       </div>
