@@ -16,7 +16,6 @@ import {
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import ProductComposition from "@/components/sections/ProductComposition";
-import ProductReviews from "@/components/sections/ProductReviews";
 import { toast } from "sonner";
 
 const formatPrice = (amount: string) => {
@@ -431,8 +430,6 @@ export default function Product() {
             </div>
           </div>
         )}
-
-        <ProductReviews productId={productData.id} />
       </div>
 
       <Footer />
