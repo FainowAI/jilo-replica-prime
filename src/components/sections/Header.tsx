@@ -63,9 +63,9 @@ const Header = () => {
                 <div className="bg-background border border-border shadow-md shadow-border/20 rounded-2xl p-4 animate-in fade-in slide-in-from-top-4">
                   <div className="text-[10px] uppercase font-bold tracking-widest text-[#B3BDB6] mb-3 font-sans px-2">Categorias</div>
                   <div className="flex flex-col gap-1.5">
-                    <a href="/cardapio?category=Aves%20%26%20Suínos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Aves & Suínos</a>
+                    <a href="/cardapio?category=Aves%20e%20Suinos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Aves & Suínos</a>
                     <a href="/cardapio?category=Bovinos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Bovinos</a>
-                    <a href="/cardapio?category=Peixes%20%26%20Massas" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Peixes & Massas</a>
+                    <a href="/cardapio?category=Peixes%20e%20Massas" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Peixes & Massas</a>
                     <a href="/cardapio?category=Veganos" className="block text-sm font-medium text-[#2C4A3A] hover:bg-[#EAF1EC] px-3 py-2.5 rounded-lg transition-colors">Veganos</a>
                   </div>
                   <div className="h-px bg-border my-4" />
