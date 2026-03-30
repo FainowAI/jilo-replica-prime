@@ -189,7 +189,7 @@ export default function Product() {
 
         <div className="grid lg:grid-cols-[1fr_480px] gap-[40px] lg:gap-[80px] mb-[64px] items-start">
           {/* Image Gallery */}
-          <div className="flex flex-col gap-[16px] sticky top-[100px]">
+          <div className="flex flex-col gap-[16px] lg:sticky lg:top-[100px]">
             <div className="w-full aspect-square rounded-[24px] shadow-[0px_4px_24px_0px_rgba(0,0,0,0.04)] overflow-hidden bg-white">
               <img
                 src={images[selectedImage]?.url || '/placeholder.svg'}
