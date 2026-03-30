@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Product from "./pages/Product";
 import Cardapio from "./pages/Cardapio";
 import Collection from "./pages/Collection";
+import Carrinho from "./pages/Carrinho";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const AppContent = () => {
         <Route path="/produto/:handle" element={<Product />} />
          <Route path="/cardapio" element={<Cardapio />} />
          <Route path="/colecao/:categoria" element={<Collection />} />
+         <Route path="/carrinho" element={<Carrinho />} />
          <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
