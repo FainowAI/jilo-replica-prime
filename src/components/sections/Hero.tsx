@@ -7,7 +7,7 @@ const Hero = () => {
     <section className="relative min-h-[85vh] flex items-center bg-primary overflow-hidden">
       {/* Background placeholder */}
       <div className="absolute inset-0 bg-gradient-to-r from-primary via-primary/95 to-primary/70" />
-      <div className="absolute inset-0 bg-[url('/placeholder.svg')] bg-cover bg-center opacity-10" />
+      <div className="absolute inset-0 bg-[url('/images/hero-banner.png')] bg-cover bg-center" />
 
       <div className="container mx-auto px-4 relative z-10 py-20 lg:py-0">
         <div className="max-w-[700px]">
