@@ -22,15 +22,15 @@
 ## Padrões do projeto
 | Padrão | Implementação |
 |--------|--------------|
-| Routing | Centralizado em `src/App.tsx` com `<BrowserRouter>` + `<Routes>` |
-| State management | Zustand para carrinho (persist localStorage), TanStack Query para dados Shopify |
+| Routing | Centralizado em `src/App.tsx` com `<BrowserRouter>` + `<Routes>`. Sem lazy loading. |
+| State management | Zustand para carrinho (persist localStorage key `shopify-cart`), TanStack Query para dados Shopify |
 | UI library | shadcn/ui (Radix) — componentes em `src/components/ui/` |
-| Data fetching | `storefrontApiRequest()` em `src/lib/shopify.ts` → GraphQL direto |
+| Data fetching | `storefrontApiRequest()` em `src/lib/shopify.ts` → GraphQL direto. TanStack Query no Product page. |
 | Componentização | Páginas em `src/pages/`, seções em `src/components/sections/`, UI em `src/components/ui/` |
 | Tipagem | TypeScript strict, tipos Supabase gerados em `src/integrations/supabase/types.ts` |
 | Notificações | Sonner (toast) + shadcn Toaster |
 | Fontes | DM Sans (corpo) + DM Serif Display (títulos) — carregadas via Google Fonts no `index.html` |
-| Cores principais | Verde escuro #1E3A1E, off-white #FAF7F2, bege #f0efeb, dourado #d4a017, cinza texto #6b6b6b |
+| Cores principais | Verde escuro #1E3A1E, off-white #FAF7F2, bege #f0efeb, dourado #d4a017, cinza texto #6b6b6b/#9b9b9b |
 
 ## Banco de dados (Supabase)
 
@@ -51,7 +51,7 @@
 | profiles | Users can update own profile | UPDATE | auth.uid() = id |
 | profiles | Users can insert own profile | INSERT | auth.uid() = id |
 
-### Functions
+### Functions e Triggers
 | Função | Trigger | Descrição |
 |--------|---------|-----------|
 | handle_new_user() | on_auth_user_created (AFTER INSERT on auth.users) | Cria automaticamente um registro em profiles quando um novo usuário se registra |
@@ -59,8 +59,8 @@
 ### Observações do banco
 - Apenas 1 tabela no schema public (`profiles`) — o banco é enxuto porque produtos, pedidos e checkout são gerenciados pelo Shopify.
 - Nenhum dado de produto/pedido está no Supabase.
-- A tabela `profiles` tem 0 registros (projeto em fase de lançamento).
 - Todos os campos de endereço são nullable — o perfil é criado vazio e preenchido depois.
+- `updated_at` NÃO atualiza automaticamente no UPDATE — precisa de trigger ou update manual.
 
 ## Integrações externas
 
@@ -70,7 +70,7 @@
 | Store | jnutg9-u2.myshopify.com |
 | API Version | 2025-07 |
 | Endpoint | https://jnutg9-u2.myshopify.com/api/2025-07/graphql.json |
-| Auth | X-Shopify-Storefront-Access-Token (público) |
+| Auth | X-Shopify-Storefront-Access-Token (público, hardcoded) |
 | Arquivo | `src/lib/shopify.ts` |
 
 **Queries usadas:**
@@ -80,7 +80,7 @@
 - `CART_LINES_ADD_MUTATION` — adiciona item ao carrinho
 - `CART_LINES_UPDATE_MUTATION` — atualiza quantidade
 - `CART_LINES_REMOVE_MUTATION` — remove item
-- `CART_QUERY` — consulta status do carrinho
+- `CART_QUERY` — consulta status do carrinho (id, totalQuantity)
 
 ### Supabase Auth
 - Client configurado em `src/integrations/supabase/client.ts`
@@ -91,13 +91,21 @@
 ## Scripts
 | Script | Arquivo | Descrição |
 |--------|---------|-----------|
-| seed | `scripts/seed-products.ts` | Cria produtos no Shopify Admin API |
-| seed:collections | `scripts/create-collections.ts` | Cria collections (categorias) no Shopify |
+| seed | `scripts/seed-products.ts` | Cria produtos no Shopify Admin API. Requer env var `SHOPIFY_ADMIN_TOKEN`. Delay de 500ms entre requests. |
+| seed:collections | `scripts/create-collections.ts` | Cria collections (categorias) no Shopify Admin API. |
+
+**Preços por grupo (seed):**
+- Aves e Suinos: R$18,94
+- Peixes e Massas: R$20,30
+- Bovinos: R$25,70
+- Veganos: R$25,70
 
 ## Gotchas e armadilhas
 - O Storefront Access Token está hardcoded em `shopify.ts` — é token público mas deveria estar em .env
-- Se a store Shopify não tiver plano ativo, a API retorna 402 — há handler para esse caso com toast de erro
+- Se a store Shopify não tiver plano ativo, a API retorna 402 — há handler com toast de erro
 - O `cartStore` usa `persist` do Zustand com localStorage — key `shopify-cart`. Se mudar a interface do store, carts antigos podem quebrar.
 - A função `formatCheckoutUrl` adiciona `?channel=online_store` ao checkout URL
+- O `useCartSync` hook roda no mount do App (dentro de `AppContent`) para verificar se o cart ainda existe no Shopify
+- A anon key do Supabase está hardcoded no client.ts — padrão Lovable, deveria estar em .env
 - Não há tratamento de loading global (skeleton isolado por componente)
-- O `useCartSync` hook roda no mount do App para verificar se o cart ainda existe no Shopify
+- O projeto usa `lovable-tagger` como devDependency — plugin de tag do Lovable

@@ -8,8 +8,8 @@ O perfil de usuário é armazenado no Supabase (tabela `profiles`), criado autom
 ### Integração Supabase
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/integrations/supabase/client.ts` | Client Supabase configurado com URL e anon key |
-| `src/integrations/supabase/types.ts` | Tipos TypeScript gerados automaticamente — define interface `profiles` |
+| `src/integrations/supabase/client.ts` | Client Supabase configurado com URL e anon key (hardcoded) |
+| `src/integrations/supabase/types.ts` | Tipos TypeScript gerados — define interface `profiles` |
 
 ### Migration
 | Arquivo | Descrição |
@@ -36,44 +36,38 @@ O perfil de usuário é armazenado no Supabase (tabela `profiles`), criado autom
 | updated_at | TIMESTAMPTZ | SIM | now() | Data de atualização |
 
 ### RLS
-- SELECT: auth.uid() = id (só vê o próprio perfil)
-- UPDATE: auth.uid() = id (só edita o próprio perfil)
-- INSERT: auth.uid() = id (só insere o próprio perfil)
+- SELECT: `auth.uid() = id`
+- UPDATE: `auth.uid() = id`
+- INSERT: `auth.uid() = id`
 
 ### Triggers
-- `on_auth_user_created` → executa `handle_new_user()` → insere profile vazio com o id do novo usuário
+- `on_auth_user_created` → `handle_new_user()` → insere profile vazio com o id do novo usuário
 
 ## Regras de negócio
 
-1. **Criação automática**: O profile é criado vazio (só com `id`) quando o usuário se registra — todos os campos de dados são preenchidos depois.
+1. **Criação automática**: Profile criado vazio (só `id`) quando o usuário se registra — campos preenchidos depois.
+2. **RLS restritiva**: Cada usuário só acessa o próprio perfil — sem role admin.
+3. **Sem validação de CPF**: Campo TEXT sem constraint — qualquer string aceita.
+4. **updated_at não é automático**: Default `now()` na criação, mas NÃO atualiza no UPDATE. Precisa de trigger ou update manual.
 
-2. **RLS restritiva**: Cada usuário só acessa o próprio perfil — não há role de admin ou acesso cruzado.
-
-3. **Sem validação de CPF**: O campo `cpf` é TEXT sem constraint — não há validação de formato no banco.
-
-4. **updated_at não é automático**: O default é `now()` na criação, mas NÃO há trigger para atualizar automaticamente no UPDATE. Se for implementar edição, precisa atualizar manualmente ou criar trigger.
-
-## Fluxo do usuário
-Atualmente não há fluxo de UI para perfil. A tabela existe preparada para quando o sistema de autenticação e edição de perfil for implementado.
-
-**Fluxo esperado (futuro):**
+## Fluxo do usuário (futuro — não implementado)
 1. Usuário se registra (Supabase Auth) → trigger cria profile vazio
-2. Usuário acessa página de perfil → lê dados de profiles via Supabase client
+2. Usuário acessa página de perfil → lê dados via Supabase client
 3. Usuário preenche/edita dados pessoais e endereço
 4. Dados salvos via UPDATE na tabela profiles
 
 ## Integrações
 | Integração | Tipo | Descrição |
 |-----------|------|-----------|
-| Supabase Auth | auth.users | Registro e login de usuários |
+| Supabase Auth | auth.users | Registro e login |
 | Supabase DB | profiles | Dados de perfil e endereço |
 
 ## Gotchas e armadilhas
-- A tabela tem 0 registros — nenhum usuário se registrou ainda
-- Não há UI de perfil no frontend — a tabela está preparada mas não consumida
-- O `updated_at` NÃO atualiza automaticamente — precisa de trigger ou update manual
-- O campo `cpf` não tem validação — qualquer string é aceita
-- O `state` é TEXT livre — não é um ENUM de UFs. Pode receber qualquer valor.
-- A anon key do Supabase está hardcoded no client.ts — é padrão Lovable mas deve ser movida para .env
-- O cascade delete em `profiles.id → auth.users.id` garante que deletar o usuário no auth remove o profile
-- Não há campo `email` na tabela profiles — o email vive no auth.users
+- Não há UI de perfil no frontend — tabela preparada mas não consumida
+- `updated_at` NÃO atualiza automaticamente — precisa de trigger
+- `cpf` não tem validação — qualquer string aceita
+- `state` é TEXT livre — não é ENUM de UFs
+- A anon key do Supabase está hardcoded no client.ts — deveria estar em .env
+- Cascade delete: deletar usuário no auth remove o profile
+- Não há campo `email` na tabela profiles — email vive no auth.users
+- O botão de User (ícone) no Header existe mas não tem ação — placeholder para futura implementação

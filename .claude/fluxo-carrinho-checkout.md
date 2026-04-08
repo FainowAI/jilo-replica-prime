@@ -1,24 +1,29 @@
 # Fluxo: Carrinho e Checkout
 
 ## Visão geral
-O carrinho da Jilo é gerenciado pelo Zustand (estado local) sincronizado com o Shopify Cart API (estado remoto). O checkout é feito por redirect para o checkout nativo do Shopify.
+O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) Shopify Cart API remoto, (3) UI com CartDrawer (mini-cart) e página /carrinho (cart completo). O checkout é feito por redirect para o checkout nativo do Shopify.
 
 ## Arquivos envolvidos
 
 ### Store
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage). Gerencia items, cartId, checkoutUrl. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl |
+| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage key `shopify-cart`). Gerencia items, cartId, checkoutUrl. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl |
 
 ### Hooks
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/hooks/useCartSync.ts` | Hook que roda no mount do App para verificar se o carrinho ainda existe no Shopify |
+| `src/hooks/useCartSync.ts` | Roda no mount do App (`AppContent`). Valida se o cart Shopify ainda existe. Também re-valida quando a tab volta ao foco (visibilitychange). |
+
+### Páginas
+| Arquivo | Rota | Descrição |
+|---------|------|-----------|
+| `src/pages/Carrinho.tsx` | `/carrinho` | Página de carrinho completa com: tabela de itens, barra de frete grátis, cupom, cálculo de frete, resumo do pedido, desconto PIX, botão checkout, sugestões de produtos |
 
 ### Componentes
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/components/CartDrawer.tsx` | Drawer lateral do carrinho — mostra itens, quantidades, total, botão de checkout |
+| `src/components/CartDrawer.tsx` | Drawer lateral (Sheet) — mini-cart com itens, barra de frete grátis, botão que navega para `/carrinho` |
 
 ### Lib
 | Arquivo | Descrição |
@@ -28,62 +33,92 @@ O carrinho da Jilo é gerenciado pelo Zustand (estado local) sincronizado com o 
 ## Tabelas do banco
 Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
+## Constantes de negócio
+
+| Constante | Valor | Onde é usada |
+|-----------|-------|-------------|
+| `FREE_SHIPPING_THRESHOLD` | R$ 150,00 | CartDrawer.tsx, Carrinho.tsx |
+| `PIX_DISCOUNT` | 5% (0.05) | Carrinho.tsx |
+| Cupom BEMVINDO10 | R$ 10,00 fixo | Carrinho.tsx (hardcoded) |
+| Frete padrão | R$ 12,90 | Carrinho.tsx (mock, sem integração CEP real) |
+
 ## Regras de negócio
 
 1. **Criação lazy do cart**: O carrinho no Shopify só é criado na primeira vez que o usuário adiciona um item (`createShopifyCart`). Antes disso, `cartId` é null.
 
-2. **Persistência local**: O Zustand persist salva `items`, `cartId` e `checkoutUrl` em localStorage (key: `shopify-cart`). Isso permite que o carrinho sobreviva a refreshes.
+2. **Persistência local**: Zustand persist salva `items`, `cartId` e `checkoutUrl` em localStorage (key: `shopify-cart`).
 
-3. **Sync com Shopify**: Toda ação no carrinho (add, update, remove) é sincronizada imediatamente com o Shopify Cart API via GraphQL mutation.
+3. **Sync com Shopify**: Toda ação (add, update, remove) é sincronizada imediatamente com Shopify Cart API via GraphQL mutation.
 
-4. **Cart not found handler**: Se o Shopify retorna erro "cart not found" ou "does not exist", o store local é limpo (`clearCart()`). Isso acontece quando o cart expira no Shopify.
+4. **Cart not found handler**: Se Shopify retorna "cart not found" ou "does not exist", o store local é limpo (`clearCart()`).
 
-5. **Deduplição de itens**: Se o usuário adiciona um item que já existe no carrinho, a quantidade é somada (não cria uma nova linha).
+5. **Deduplição de itens**: Se o item já existe no carrinho, a quantidade é somada (update, não add).
 
-6. **Remoção**: Se quantidade chega a 0 via updateQuantity, chama removeItem. Se o último item é removido, clearCart limpa tudo.
+6. **Remoção**: Quantidade → 0 chama removeItem. Último item removido → clearCart.
 
-7. **Checkout URL**: O `checkoutUrl` vem da resposta do `cartCreate`. A função `formatCheckoutUrl` adiciona `?channel=online_store` ao URL. O checkout é feito via `window.location.href` (redirect completo).
+7. **Frete grátis**: Compras ≥ R$150 ganham frete grátis. Barra de progresso visual em CartDrawer e Carrinho.
 
-8. **Loading states**: `isLoading` para ações individuais (add/update/remove), `isSyncing` para o sync do cart no mount.
+8. **Cupom BEMVINDO10**: Hardcoded no frontend — desconto fixo de R$10. Sem validação server-side. Case-insensitive (convertido para uppercase).
 
-9. **CartItem interface**: Cada item tem `lineId` (do Shopify), `product`, `variantId`, `variantTitle`, `price`, `quantity`, `selectedOptions`.
+9. **Desconto PIX (5%)**: Calculado como `(subtotal - cupom + frete) * 0.05`. É puramente informativo — NÃO é aplicado no checkout Shopify.
+
+10. **Frete**: Valor padrão R$12,90. Calculador de CEP é UI-only (valida se tem 8 dígitos, não consulta API). Se tem frete grátis, mostra R$0.
+
+11. **Sugestões ("Complete sua semana")**: Carrega 20 produtos, filtra os que já estão no carrinho, embaralha e mostra 4 sugestões aleatórias.
+
+12. **Checkout URL**: Vem do `cartCreate`. `formatCheckoutUrl` adiciona `?channel=online_store`. O checkout abre em nova aba (`window.open`).
+
+13. **CartDrawer → /carrinho**: O botão "Ir para o Carrinho" no CartDrawer navega para `/carrinho` (não redireciona direto para Shopify).
+
+14. **CartItem interface**: Cada item tem `lineId` (Shopify), `product` (ShopifyProduct), `variantId`, `variantTitle`, `price`, `quantity`, `selectedOptions`.
 
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho
-1. Usuário clica "ADICIONAR" em um card de produto ou na página de detalhe
-2. Se `cartId` é null: cria carrinho no Shopify (`cartCreate`) → salva `cartId`, `checkoutUrl`, `lineId`
-3. Se item já existe: atualiza quantidade via `cartLinesUpdate`
-4. Se item é novo: adiciona via `cartLinesAdd`
-5. Toast "Produto adicionado ao carrinho!"
+1. Clique "ADICIONAR" em qualquer card de produto
+2. Se `cartId` null → cria carrinho no Shopify → salva cartId, checkoutUrl, lineId
+3. Se item existe → atualiza quantidade via `cartLinesUpdate`
+4. Se item novo → adiciona via `cartLinesAdd`
+5. Toast de confirmação
 
-### Ver carrinho
-1. Clique no ícone de carrinho no Header abre o CartDrawer
-2. Drawer mostra lista de itens com imagem, nome, variante, preço unitário, seletor de quantidade
-3. Total calculado somando price * quantity de cada item
-4. Botão "Finalizar Compra" redireciona para `checkoutUrl` do Shopify
+### CartDrawer (mini-cart)
+1. Clique no ícone de carrinho no Header → abre Sheet lateral
+2. Mostra barra de frete grátis (progresso até R$150)
+3. Lista de itens com +/- quantidade e remover
+4. Subtotal
+5. Botão "Ir para o Carrinho" → navega para `/carrinho`
+
+### Página /carrinho
+1. Breadcrumb: Página Inicial > Meu Carrinho
+2. Barra de frete grátis com progresso
+3. Tabela de itens: imagem, nome, tipo, descrição, preço unitário, seletor de quantidade, remover, subtotal por item
+4. Campo de cupom (BEMVINDO10 → R$10 off)
+5. Coluna lateral (sticky): calcular frete por CEP, breakdown de preços (subtotal, cupom, frete, PIX), total, total PIX, métodos de pagamento (VA/VR, cartões, PIX), botão "Ir para o Checkout", trust badges
+6. Seção "Complete sua semana" com 4 sugestões
 
 ### Comprar agora (na página de produto)
-1. Mesma lógica de addItem
-2. Depois de adicionar, pega `checkoutUrl` via `getCheckoutUrl()`
-3. Redireciona para checkout Shopify via `window.location.href`
+1. addItem + pega checkoutUrl + `window.open` para Shopify
 
 ### Sync no mount
-1. `useCartSync` roda no `AppContent` (dentro do App.tsx)
-2. Se `cartId` existe, chama `fetchShopifyCart` para verificar se o cart ainda é válido
-3. Se cart não existe ou `totalQuantity === 0`, chama `clearCart()`
+1. `useCartSync` roda no mount de `AppContent`
+2. Se cartId existe → `fetchShopifyCart` → valida
+3. Se cart inválido ou vazio → `clearCart()`
+4. Também re-valida no `visibilitychange` (tab focus)
 
 ## Integrações
-| Integração | Tipo | Mutations | O que faz |
+| Integração | Tipo | Operações | O que faz |
 |-----------|------|-----------|-----------|
-| Shopify Cart API | GraphQL Mutation | cartCreate, cartLinesAdd, cartLinesUpdate, cartLinesRemove | CRUD completo do carrinho |
+| Shopify Cart API | GraphQL Mutation | cartCreate, cartLinesAdd, cartLinesUpdate, cartLinesRemove | CRUD do carrinho |
 | Shopify Cart API | GraphQL Query | cart(id) | Verifica se cart existe |
 
 ## Gotchas e armadilhas
-- O `lineId` vem do Shopify e é necessário para update/remove — se for null, a operação falha silenciosamente
-- O localStorage key é `shopify-cart` — se mudar a interface do `CartItem`, carts salvos podem corromper. O `partialize` limita o que é salvo.
-- O checkout é 100% Shopify — não há fluxo de checkout customizado no frontend
-- O desconto Pix (5%) aparece na página de produto mas NÃO é aplicado no checkout Shopify — é apenas indicativo
-- Se a store Shopify não tiver plano ativo, o carrinho retorna 402 — há toast mas o UX quebra
-- `isSyncing` previne chamadas concorrentes no syncCart, mas `isLoading` não previne — clicks rápidos podem gerar race conditions
-- O `handleBuyNow` na página de produto faz addItem + redirect — se o addItem falhar, o redirect não acontece (bom), mas o toast de erro pode se perder no redirect
+- O `lineId` do Shopify é obrigatório para update/remove — se null, operação falha silenciosamente
+- O localStorage key é `shopify-cart` — mudar interface do `CartItem` pode corromper carts salvos
+- O checkout é 100% Shopify — cupom e desconto PIX do frontend NÃO são aplicados lá. Isso é uma lacuna conhecida (custom checkout com Getnet está planejado).
+- Se a store Shopify não tiver plano ativo → 402 → toast mas UX quebra
+- `isSyncing` previne sync concorrente, mas `isLoading` não previne clicks rápidos — possível race condition
+- O cupom BEMVINDO10 é hardcoded — qualquer outro cupom é silenciosamente ignorado
+- O cálculo de frete é fake — R$12,90 fixo, sem consulta a API de CEP
+- A seção de sugestões usa `Math.random()` para embaralhar — a cada render os resultados mudam
+- O `handleCheckout` na página Carrinho abre o checkout em nova aba (`_blank`), enquanto o "Comprar Agora" na página de produto usa `window.location.href`
+- Métodos de pagamento listados na UI (Alelo, Sodexo, VR, Ticket, Flash, VISA, MASTER, ELO, HIPER, PIX) são puramente visuais — dependem do gateway configurado no Shopify
