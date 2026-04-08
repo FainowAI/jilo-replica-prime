@@ -241,6 +241,61 @@ const CART_LINES_REMOVE_MUTATION = `
   }
 `;
 
+const CART_DISCOUNT_CODES_UPDATE_MUTATION = `
+  mutation cartDiscountCodesUpdate($cartId: ID!, $discountCodes: [String!]) {
+    cartDiscountCodesUpdate(cartId: $cartId, discountCodes: $discountCodes) {
+      cart {
+        id
+        discountCodes {
+          code
+          applicable
+        }
+        cost {
+          totalAmount {
+            amount
+            currencyCode
+          }
+          subtotalAmount {
+            amount
+            currencyCode
+          }
+          totalTaxAmount {
+            amount
+            currencyCode
+          }
+        }
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }
+`;
+
+const CART_WITH_DISCOUNTS_QUERY = `
+  query cartWithDiscounts($id: ID!) {
+    cart(id: $id) {
+      id
+      totalQuantity
+      discountCodes {
+        code
+        applicable
+      }
+      cost {
+        totalAmount {
+          amount
+          currencyCode
+        }
+        subtotalAmount {
+          amount
+          currencyCode
+        }
+      }
+    }
+  }
+`;
+
 function formatCheckoutUrl(checkoutUrl: string): string {
   try {
     const url = new URL(checkoutUrl);
@@ -303,5 +358,46 @@ export async function removeLineFromShopifyCart(cartId: string, lineId: string):
 
 export async function fetchShopifyCart(cartId: string) {
   const data = await storefrontApiRequest(CART_QUERY, { id: cartId });
+  return data?.data?.cart;
+}
+
+export async function applyDiscountCodesToCart(
+  cartId: string,
+  discountCodes: string[]
+): Promise<{
+  success: boolean;
+  discountCodes?: Array<{ code: string; applicable: boolean }>;
+  cartNotFound?: boolean;
+  cost?: { totalAmount: { amount: string }; subtotalAmount: { amount: string } };
+}> {
+  const data = await storefrontApiRequest(CART_DISCOUNT_CODES_UPDATE_MUTATION, {
+    cartId,
+    discountCodes,
+  });
+  const userErrors = data?.data?.cartDiscountCodesUpdate?.userErrors || [];
+  if (isCartNotFoundError(userErrors)) return { success: false, cartNotFound: true };
+  if (userErrors.length > 0) return { success: false };
+  const cart = data?.data?.cartDiscountCodesUpdate?.cart;
+  return {
+    success: true,
+    discountCodes: cart?.discountCodes || [],
+    cost: cart?.cost,
+  };
+}
+
+export async function removeDiscountCodesFromCart(
+  cartId: string
+): Promise<{ success: boolean; cartNotFound?: boolean }> {
+  const data = await storefrontApiRequest(CART_DISCOUNT_CODES_UPDATE_MUTATION, {
+    cartId,
+    discountCodes: [],
+  });
+  const userErrors = data?.data?.cartDiscountCodesUpdate?.userErrors || [];
+  if (isCartNotFoundError(userErrors)) return { success: false, cartNotFound: true };
+  return { success: true };
+}
+
+export async function fetchCartWithDiscounts(cartId: string) {
+  const data = await storefrontApiRequest(CART_WITH_DISCOUNTS_QUERY, { id: cartId });
   return data?.data?.cart;
 }

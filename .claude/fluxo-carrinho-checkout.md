@@ -8,7 +8,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 ### Store
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage key `shopify-cart`). Gerencia items, cartId, checkoutUrl. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl |
+| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage key `shopify-cart`). Gerencia items, cartId, checkoutUrl, discountCodes. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl, applyDiscountCode, removeDiscountCode |
 
 ### Hooks
 | Arquivo | Descrição |
@@ -28,7 +28,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 ### Lib
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart |
+| `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart, applyDiscountCodesToCart, removeDiscountCodesFromCart, fetchCartWithDiscounts |
 
 ## Tabelas do banco
 Nenhuma. O carrinho é Zustand + Shopify Cart API.
@@ -38,8 +38,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 | Constante | Valor | Onde é usada |
 |-----------|-------|-------------|
 | `FREE_SHIPPING_THRESHOLD` | R$ 150,00 | CartDrawer.tsx, Carrinho.tsx |
-| `PIX_DISCOUNT` | 5% (0.05) | Carrinho.tsx |
-| Cupom BEMVINDO10 | R$ 10,00 fixo | Carrinho.tsx (hardcoded) |
+| `PIX5` (cupom Shopify) | 5% off | Shopify Admin, orientação no Carrinho.tsx |
+| Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
 | Frete padrão | R$ 12,90 | Carrinho.tsx (mock, sem integração CEP real) |
 
 ## Regras de negócio
@@ -58,9 +58,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 7. **Frete grátis**: Compras ≥ R$150 ganham frete grátis. Barra de progresso visual em CartDrawer e Carrinho.
 
-8. **Cupom BEMVINDO10**: Hardcoded no frontend — desconto fixo de R$10. Sem validação server-side. Case-insensitive (convertido para uppercase).
+8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
-9. **Desconto PIX (5%)**: Calculado como `(subtotal - cupom + frete) * 0.05`. É puramente informativo — NÃO é aplicado no checkout Shopify.
+9. **Desconto PIX (5%)**: Cupom PIX5 configurado no Shopify Admin. Frontend orienta o usuário a usar o código PIX5 no checkout. Não há mais cálculo de desconto PIX no frontend.
 
 10. **Frete**: Valor padrão R$12,90. Calculador de CEP é UI-only (valida se tem 8 dígitos, não consulta API). Se tem frete grátis, mostra R$0.
 
@@ -110,6 +110,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 |-----------|------|-----------|-----------|
 | Shopify Cart API | GraphQL Mutation | cartCreate, cartLinesAdd, cartLinesUpdate, cartLinesRemove | CRUD do carrinho |
 | Shopify Cart API | GraphQL Query | cart(id) | Verifica se cart existe |
+| Shopify Cart API | GraphQL Mutation | cartDiscountCodesUpdate | Aplica/remove discount codes no cart |
+| Shopify Cart API | GraphQL Query | cartWithDiscounts | Busca cart com discountCodes e cost |
 
 ## Gotchas e armadilhas
 - O `lineId` do Shopify é obrigatório para update/remove — se null, operação falha silenciosamente

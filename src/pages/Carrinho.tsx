@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag, X } from "lucide-react";
+import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
@@ -8,7 +9,6 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 
 const FREE_SHIPPING_THRESHOLD = 150.0;
-const PIX_DISCOUNT = 0.05;
 
 const Carrinho = () => {
   const {
@@ -20,13 +20,17 @@ const Carrinho = () => {
     getCheckoutUrl,
     addItem,
     syncCart,
+    discountCodes,
+    applyDiscountCode,
+    removeDiscountCode,
   } = useCartStore();
 
   const [cep, setCep] = useState("");
   const [shippingCalculated, setShippingCalculated] = useState(false);
   const [shippingCost, setShippingCost] = useState(12.90);
   const [couponCode, setCouponCode] = useState("");
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [suggestions, setSuggestions] = useState<ShopifyProduct[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(true);
 
@@ -38,12 +42,11 @@ const Carrinho = () => {
   const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
   const freeShippingProgress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
   const hasFreeShipping = subtotal >= FREE_SHIPPING_THRESHOLD;
-
-  const couponDiscount = appliedCoupon?.discount ?? 0;
   const shipping = hasFreeShipping ? 0 : shippingCalculated ? shippingCost : 0;
-  const pixDiscount = (subtotal - couponDiscount + shipping) * PIX_DISCOUNT;
-  const total = subtotal - couponDiscount + shipping;
-  const totalPix = total - pixDiscount;
+  const total = subtotal + shipping;
+
+  const appliedDiscount = discountCodes.find((dc) => dc.applicable);
+  const hasAppliedCoupon = !!appliedDiscount;
 
   useEffect(() => {
     syncCart();
@@ -80,15 +83,31 @@ const Carrinho = () => {
     }
   };
 
-  const handleApplyCoupon = () => {
-    if (couponCode.trim().toUpperCase() === "BEMVINDO10") {
-      setAppliedCoupon({ code: "BEMVINDO10", discount: 10 });
-      setCouponCode("");
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) return;
+    setCouponError(null);
+    setApplyingCoupon(true);
+    try {
+      const result = await applyDiscountCode(code);
+      if (result.success && result.applicable) {
+        setCouponCode("");
+        toast.success(`Cupom ${code} aplicado!`);
+      } else if (result.success && !result.applicable) {
+        setCouponError("Cupom inválido ou expirado");
+        toast.error("Cupom inválido ou expirado");
+      } else {
+        setCouponError("Erro ao aplicar cupom. Tente novamente.");
+        toast.error("Erro ao aplicar cupom");
+      }
+    } finally {
+      setApplyingCoupon(false);
     }
   };
 
-  const handleRemoveCoupon = () => {
-    setAppliedCoupon(null);
+  const handleRemoveCoupon = async () => {
+    await removeDiscountCode();
+    toast.success("Cupom removido");
   };
 
   const handleCheckout = () => {
@@ -323,7 +342,7 @@ const Carrinho = () => {
             </div>
 
             {/* Coupon */}
-            {appliedCoupon ? (
+            {hasAppliedCoupon ? (
               <div className="bg-white rounded-2xl border border-[#1e3a1e]/20 p-4 mb-6 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-full bg-[#1e3a1e]/10 flex items-center justify-center">
@@ -331,10 +350,10 @@ const Carrinho = () => {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-[#1a1a1a] font-sans">
-                      Cupom {appliedCoupon.code} aplicado!
+                      Cupom {appliedDiscount!.code} aplicado!
                     </p>
                     <p className="text-xs text-[#1e3a1e] font-sans">
-                      - R$ {appliedCoupon.discount.toFixed(2).replace(".", ",")} de desconto
+                      Desconto será aplicado no checkout
                     </p>
                   </div>
                 </div>
@@ -358,11 +377,15 @@ const Carrinho = () => {
                   />
                   <button
                     onClick={handleApplyCoupon}
-                    className="px-5 py-2.5 bg-[#1e3a1e] text-white rounded-lg text-sm font-semibold font-sans hover:bg-[#1e3a1e]/90 transition-colors"
+                    disabled={applyingCoupon || !couponCode.trim()}
+                    className="px-5 py-2.5 bg-[#1e3a1e] text-white rounded-lg text-sm font-semibold font-sans hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50"
                   >
-                    Aplicar
+                    {applyingCoupon ? "Aplicando..." : "Aplicar"}
                   </button>
                 </div>
+                {couponError && (
+                  <p className="text-xs text-red-500 mt-1 font-sans">{couponError}</p>
+                )}
               </div>
             )}
 
@@ -433,14 +456,10 @@ const Carrinho = () => {
                   </span>
                 </div>
 
-                {appliedCoupon && (
+                {hasAppliedCoupon && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#1e3a1e]">
-                      Desconto ({appliedCoupon.code})
-                    </span>
-                    <span className="font-semibold text-[#1e3a1e]">
-                      − R$ {couponDiscount.toFixed(2).replace(".", ",")}
-                    </span>
+                    <span className="text-[#1e3a1e]">Cupom {appliedDiscount!.code}</span>
+                    <span className="font-semibold text-[#1e3a1e]">Aplicado ✓</span>
                   </div>
                 )}
 
@@ -456,10 +475,8 @@ const Carrinho = () => {
                 </div>
 
                 <div className="flex justify-between text-sm">
-                  <span className="text-[#9b9b9b] italic">Desconto PIX (5%)</span>
-                  <span className="text-[#9b9b9b] italic">
-                    − R$ {pixDiscount.toFixed(2).replace(".", ",")}
-                  </span>
+                  <span className="text-[#9b9b9b] italic">PIX (5% off)</span>
+                  <span className="text-[#9b9b9b] italic">Aplicado no checkout</span>
                 </div>
               </div>
 
@@ -474,20 +491,13 @@ const Carrinho = () => {
                 </span>
               </div>
               <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
-                ou{" "}
-                <span className="font-bold text-[#1e3a1e]">
-                  R$ {totalPix.toFixed(2).replace(".", ",")}
-                </span>{" "}
-                pagando no PIX
+                Descontos aplicados no checkout Shopify
               </p>
 
               {/* PIX Banner */}
               <div className="bg-[#1e3a1e]/5 border border-[#1e3a1e]/20 rounded-xl px-4 py-3 mb-5 flex items-center justify-center gap-2">
                 <span className="text-sm text-[#1e3a1e] font-sans">
-                  💰 Pague no PIX e economize{" "}
-                  <span className="font-bold">
-                    R$ {pixDiscount.toFixed(2).replace(".", ",")}
-                  </span>
+                  💰 Pague no PIX e ganhe <span className="font-bold">5% de desconto</span> — use o código <span className="font-bold">PIX5</span> no checkout
                 </span>
               </div>
 
@@ -594,7 +604,6 @@ const Carrinho = () => {
                 const variant = product.node.variants.edges[0]?.node;
                 if (!variant) return null;
                 const price = parseFloat(variant.price.amount);
-                const pixPrice = price * (1 - PIX_DISCOUNT);
                 const compareAt = variant.compareAtPrice
                   ? parseFloat(variant.compareAtPrice.amount)
                   : null;

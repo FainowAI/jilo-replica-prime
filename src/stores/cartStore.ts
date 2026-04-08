@@ -7,6 +7,8 @@ import {
   updateShopifyCartLine,
   removeLineFromShopifyCart,
   fetchShopifyCart,
+  applyDiscountCodesToCart,
+  removeDiscountCodesFromCart,
 } from '@/lib/shopify';
 
 export interface CartItem {
@@ -25,12 +27,15 @@ interface CartStore {
   checkoutUrl: string | null;
   isLoading: boolean;
   isSyncing: boolean;
+  discountCodes: Array<{ code: string; applicable: boolean }>;
   addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
   clearCart: () => void;
   syncCart: () => Promise<void>;
   getCheckoutUrl: () => string | null;
+  applyDiscountCode: (code: string) => Promise<{ success: boolean; applicable?: boolean }>;
+  removeDiscountCode: () => Promise<void>;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -41,6 +46,7 @@ export const useCartStore = create<CartStore>()(
       checkoutUrl: null,
       isLoading: false,
       isSyncing: false,
+      discountCodes: [],
 
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
@@ -100,7 +106,7 @@ export const useCartStore = create<CartStore>()(
         } finally { set({ isLoading: false }); }
       },
 
-      clearCart: () => set({ items: [], cartId: null, checkoutUrl: null }),
+      clearCart: () => set({ items: [], cartId: null, checkoutUrl: null, discountCodes: [] }),
       getCheckoutUrl: () => get().checkoutUrl,
 
       syncCart: async () => {
@@ -116,11 +122,49 @@ export const useCartStore = create<CartStore>()(
           set({ isSyncing: false });
         }
       },
+
+      applyDiscountCode: async (code: string) => {
+        const { cartId, clearCart } = get();
+        if (!cartId) return { success: false };
+        set({ isLoading: true });
+        try {
+          const result = await applyDiscountCodesToCart(cartId, [code]);
+          if (result.cartNotFound) { clearCart(); return { success: false }; }
+          if (result.success && result.discountCodes) {
+            set({ discountCodes: result.discountCodes });
+            const applied = result.discountCodes.find(
+              (dc) => dc.code.toUpperCase() === code.toUpperCase()
+            );
+            return { success: true, applicable: applied?.applicable ?? false };
+          }
+          return { success: false };
+        } catch (error) {
+          console.error('Failed to apply discount code:', error);
+          return { success: false };
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      removeDiscountCode: async () => {
+        const { cartId, clearCart } = get();
+        if (!cartId) return;
+        set({ isLoading: true });
+        try {
+          const result = await removeDiscountCodesFromCart(cartId);
+          if (result.cartNotFound) { clearCart(); return; }
+          if (result.success) set({ discountCodes: [] });
+        } catch (error) {
+          console.error('Failed to remove discount code:', error);
+        } finally {
+          set({ isLoading: false });
+        }
+      },
     }),
     {
       name: 'shopify-cart',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl }),
+      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl, discountCodes: state.discountCodes }),
     }
   )
 );
