@@ -14,6 +14,87 @@ export type Database = {
   }
   public: {
     Tables: {
+      orders: {
+        Row: {
+          bling_nfe_id: string | null
+          bling_order_id: string | null
+          coupon_code: string | null
+          created_at: string | null
+          currency: string | null
+          customer_email: string
+          customer_name: string | null
+          customer_phone: string | null
+          discount_cents: number | null
+          id: string
+          line_items: Json
+          notes: string | null
+          payment_method: string | null
+          payment_status: string | null
+          shipping_address: Json | null
+          shipping_cents: number | null
+          shopify_checkout_token: string | null
+          shopify_order_id: string
+          shopify_order_number: string | null
+          status: string
+          subtotal_cents: number
+          total_cents: number
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          bling_nfe_id?: string | null
+          bling_order_id?: string | null
+          coupon_code?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount_cents?: number | null
+          id?: string
+          line_items?: Json
+          notes?: string | null
+          payment_method?: string | null
+          payment_status?: string | null
+          shipping_address?: Json | null
+          shipping_cents?: number | null
+          shopify_checkout_token?: string | null
+          shopify_order_id: string
+          shopify_order_number?: string | null
+          status?: string
+          subtotal_cents: number
+          total_cents: number
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          bling_nfe_id?: string | null
+          bling_order_id?: string | null
+          coupon_code?: string | null
+          created_at?: string | null
+          currency?: string | null
+          customer_email?: string
+          customer_name?: string | null
+          customer_phone?: string | null
+          discount_cents?: number | null
+          id?: string
+          line_items?: Json
+          notes?: string | null
+          payment_method?: string | null
+          payment_status?: string | null
+          shipping_address?: Json | null
+          shipping_cents?: number | null
+          shopify_checkout_token?: string | null
+          shopify_order_id?: string
+          shopify_order_number?: string | null
+          status?: string
+          subtotal_cents?: number
+          total_cents?: number
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           address: string | null
@@ -59,6 +140,42 @@ export type Database = {
           phone?: string | null
           state?: string | null
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      webhook_events: {
+        Row: {
+          created_at: string | null
+          error: string | null
+          event_type: string
+          external_id: string
+          id: string
+          payload: Json
+          processed: boolean | null
+          processed_at: string | null
+          source: string
+        }
+        Insert: {
+          created_at?: string | null
+          error?: string | null
+          event_type: string
+          external_id: string
+          id?: string
+          payload?: Json
+          processed?: boolean | null
+          processed_at?: string | null
+          source?: string
+        }
+        Update: {
+          created_at?: string | null
+          error?: string | null
+          event_type?: string
+          external_id?: string
+          id?: string
+          payload?: Json
+          processed?: boolean | null
+          processed_at?: string | null
+          source?: string
         }
         Relationships: []
       }
