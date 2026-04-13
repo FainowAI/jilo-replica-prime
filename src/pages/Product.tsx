@@ -272,12 +272,6 @@ export default function Product() {
                 </span>
                 <span className="text-[15px] font-bold text-[#1e3a1e] font-sans">via Pix</span>
               </div>
-              <div className="inline-flex items-center gap-[6px] border border-[#e8e8e4] bg-[#faf7f2] rounded-[100px] px-[12px] py-[6px] mt-[16px] w-fit">
-                <span className="text-[12px] leading-[12px] flex items-center justify-center bg-[#d4a017]/20 w-[20px] h-[20px] rounded-full text-[#d4a017]">⚡</span>
-                <span className="text-[11px] font-bold text-[#d4a017] uppercase tracking-[0.33px] font-sans">
-                  5% off para pagamentos no pix
-                </span>
-              </div>
             </div>
 
             {/* Quantity and Actions row */}
