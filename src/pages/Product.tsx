@@ -53,6 +53,12 @@ const getIngredientText = (productType: string) => {
   return typeMap[productType] || "Feito com ingredientes frescos e selecionados artesanalmente pela DaJu.";
 };
 
+const getMetafield = (metafields: any[] | null | undefined, key: string): string | null => {
+  if (!metafields) return null;
+  const field = metafields.find((m: any) => m?.key === key);
+  return field?.value || null;
+};
+
 export default function Product() {
   const { handle } = useParams<{ handle: string }>();
   const navigate = useNavigate();
@@ -126,6 +132,15 @@ export default function Product() {
 
   const images = productData.images.edges.map((e: any) => e.node);
   const relatedProducts = relatedData?.filter((p: any) => p.node.handle !== handle).slice(0, 4) || [];
+
+  const metafields = productData.metafields;
+  const metaProteina = getMetafield(metafields, 'proteina');
+  const metaBase = getMetafield(metafields, 'base');
+  const metaGuarnicao = getMetafield(metafields, 'guarnicao');
+  const metaAlergicos = getMetafield(metafields, 'alergicos');
+  const metaPreparo = getMetafield(metafields, 'modo_preparo');
+  const metaPeso = getMetafield(metafields, 'peso');
+  const metaConservacao = getMetafield(metafields, 'conservacao');
 
   const handleAddToCart = async () => {
     if (!selectedVariant) {
@@ -349,8 +364,37 @@ export default function Product() {
                     🌿 Ingredientes
                   </AccordionTrigger>
                   <AccordionContent className="text-[#6b6b6b] text-[15px] font-sans leading-[24px] pb-[24px]">
-                    <p className="mb-2 font-medium text-[#1a1a1a]">Todos os pratos incluem:</p>
-                    <p className="leading-relaxed">{getIngredientText(productData.productType)}</p>
+                    {metaProteina ? (
+                      <div className="space-y-3">
+                        <div>
+                          <p className="font-medium text-[#1a1a1a] mb-1">Proteína</p>
+                          {metaProteina.split('\n').map((item: string, idx: number) => (
+                            <p key={idx} className="leading-relaxed">{item}</p>
+                          ))}
+                        </div>
+                        {metaBase && (
+                          <div>
+                            <p className="font-medium text-[#1a1a1a] mb-1">Base</p>
+                            {metaBase.split('\n').map((item: string, idx: number) => (
+                              <p key={idx} className="leading-relaxed">{item}</p>
+                            ))}
+                          </div>
+                        )}
+                        {metaGuarnicao && (
+                          <div>
+                            <p className="font-medium text-[#1a1a1a] mb-1">Guarnição</p>
+                            {metaGuarnicao.split('\n').map((item: string, idx: number) => (
+                              <p key={idx} className="leading-relaxed">{item}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        <p className="mb-2 font-medium text-[#1a1a1a]">Todos os pratos incluem:</p>
+                        <p className="leading-relaxed">{getIngredientText(productData.productType)}</p>
+                      </>
+                    )}
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -361,7 +405,7 @@ export default function Product() {
                     ⚠️ Alérgicos
                   </AccordionTrigger>
                   <AccordionContent className="text-[#6b6b6b] text-[15px] font-sans leading-[24px] pb-[24px]">
-                    Contém glúten, leite e derivados. Pode conter traços de nozes.
+                    {metaAlergicos || "Contém glúten, leite e derivados. Pode conter traços de nozes."}
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -372,7 +416,7 @@ export default function Product() {
                     ♨️ Modo de preparo
                   </AccordionTrigger>
                   <AccordionContent className="text-[#6b6b6b] text-[15px] font-sans leading-[24px] pb-[24px]">
-                    Micro-ondas: Retire a película protetora, coloque a bandeja no micro-ondas e aqueça em potência alta por 5 a 6 minutos. Verifique se está totalmente quente antes de consumir.
+                    {metaPreparo || "Micro-ondas: Retire a película protetora, coloque a bandeja no micro-ondas e aqueça em potência alta por 5 a 6 minutos. Verifique se está totalmente quente antes de consumir."}
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
@@ -380,7 +424,16 @@ export default function Product() {
           </div>
         </div>
 
-        <ProductComposition productType={productData.productType} />
+        <ProductComposition
+          productType={productData.productType}
+          metafields={{
+            proteina: metaProteina,
+            base: metaBase,
+            guarnicao: metaGuarnicao,
+            peso: metaPeso,
+            conservacao: metaConservacao,
+          }}
+        />
 
         {/* Related Products */}
         {relatedProducts.length > 0 && (

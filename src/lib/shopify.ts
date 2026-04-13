@@ -187,6 +187,20 @@ export const PRODUCT_BY_HANDLE_QUERY = `
         name
         values
       }
+      metafields(identifiers: [
+        { namespace: "custom", key: "proteina" },
+        { namespace: "custom", key: "base" },
+        { namespace: "custom", key: "guarnicao" },
+        { namespace: "custom", key: "alergicos" },
+        { namespace: "custom", key: "modo_preparo" },
+        { namespace: "custom", key: "peso" },
+        { namespace: "custom", key: "conservacao" }
+      ]) {
+        namespace
+        key
+        value
+        type
+      }
     }
   }
 `;

@@ -1,7 +1,14 @@
 import { MapPin, ThermometerSnowflake, Zap } from "lucide-react";
 
 interface ProductCompositionProps {
-    productType: string;
+  productType: string;
+  metafields?: {
+    proteina?: string | null;
+    base?: string | null;
+    guarnicao?: string | null;
+    peso?: string | null;
+    conservacao?: string | null;
+  };
 }
 
 const INGREDIENT_DATA: Record<string, { protein: string[], base: string[], garnish: string[] }> = {
@@ -38,9 +45,17 @@ const DEFAULT_DATA = {
     garnish: ["Guarnição fresca", "Temperos naturais"]
 };
 
-export default function ProductComposition({ productType }: ProductCompositionProps) {
-    // Try to find an exact match or use the default
-    const ingredients = Object.entries(INGREDIENT_DATA).find(([key]) => productType?.toLowerCase().includes(key.toLowerCase()))?.[1] || DEFAULT_DATA;
+export default function ProductComposition({ productType, metafields }: ProductCompositionProps) {
+    // Use metafields if available, otherwise fallback to hardcoded data by productType
+    const hasMetafields = metafields?.proteina || metafields?.base || metafields?.guarnicao;
+
+    const ingredients = hasMetafields
+      ? {
+          protein: metafields.proteina?.split('\n').filter(Boolean) || DEFAULT_DATA.protein,
+          base: metafields.base?.split('\n').filter(Boolean) || DEFAULT_DATA.base,
+          garnish: metafields.guarnicao?.split('\n').filter(Boolean) || DEFAULT_DATA.garnish,
+        }
+      : Object.entries(INGREDIENT_DATA).find(([key]) => productType?.toLowerCase().includes(key.toLowerCase()))?.[1] || DEFAULT_DATA;
 
     return (
         <div className="w-full bg-[#FAF7F2] py-[64px] border-t border-[#e8e8e4]">
@@ -128,7 +143,7 @@ export default function ProductComposition({ productType }: ProductCompositionPr
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[11px] font-bold text-[#b0aea8] font-sans uppercase tracking-[0.44px] mb-[2px]">PESO</span>
-                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">500g</span>
+                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">{metafields?.peso || "500g"}</span>
                     </div>
                 </div>
                 <div className="flex flex-1 items-center p-[24px] gap-[16px]">
@@ -137,7 +152,7 @@ export default function ProductComposition({ productType }: ProductCompositionPr
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[11px] font-bold text-[#b0aea8] font-sans uppercase tracking-[0.44px] mb-[2px]">CONSERVAÇÃO</span>
-                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">Freezer por até 90 dias</span>
+                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">{metafields?.conservacao || "Freezer por até 90 dias"}</span>
                     </div>
                 </div>
                 <div className="flex flex-1 items-center p-[24px] gap-[16px]">

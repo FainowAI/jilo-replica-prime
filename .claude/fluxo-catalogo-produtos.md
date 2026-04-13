@@ -58,6 +58,12 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 
 11. **Collection page**: Usa mapeamento fixo de slug para productType em `CATEGORIES`. Carrega 50 produtos e filtra por type no frontend.
 
+12. **Metafields dinâmicos na página de produto**: A query `PRODUCT_BY_HANDLE_QUERY` busca 7 metafields customizados do Shopify (custom.proteina, custom.base, custom.guarnicao, custom.alergicos, custom.modo_preparo, custom.peso, custom.conservacao). Esses dados populam a seção "O que tem na sua marmita" (ProductComposition) e os Accordions (Ingredientes, Alérgicos, Modo de preparo) na página de detalhe.
+
+13. **Fallback por productType**: Se um produto NÃO tem metafields preenchidos, o sistema usa os dados hardcoded em `INGREDIENT_DATA` e `DEFAULT_DATA` dentro de `ProductComposition.tsx`, mapeados por productType. A função `getIngredientText()` em `Product.tsx` também serve como fallback para o Accordion de ingredientes.
+
+14. **Formato dos metafields multi-line**: Campos como proteina, base e guarnicao usam `\n` como separador de itens. O frontend faz `.split('\n').filter(Boolean)` para renderizar cada linha como item separado.
+
 ## Fluxo do usuário
 
 ### Homepage (/)
@@ -104,3 +110,7 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 - O `sku` não existe nos dados — usa últimos 6 chars do ID Shopify como fallback
 - As imagens dependem do CDN Shopify — se a store expirar, as imagens quebram
 - O header search redireciona para `/cardapio?search=query` mas FullMenu lê `searchParams` para category, não para search — a busca funciona via estado local do componente
+- Os metafields só são buscados na query `PRODUCT_BY_HANDLE_QUERY` (página de detalhe). Listagens (FullMenu, Favorites, AllDishes) NÃO carregam metafields — isso é intencional para performance.
+- Se um novo metafield for adicionado no Shopify, a query em `shopify.ts` precisa ser atualizada manualmente para incluí-lo no array `identifiers`.
+- O checkbox "Acesso à API Storefront" DEVE estar ativo no Shopify Admin para cada metafield definition — sem isso a Storefront API retorna null.
+- Metafields retornam null (não undefined) quando não preenchidos — os fallbacks usam `||` que trata ambos.
