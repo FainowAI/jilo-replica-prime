@@ -8,6 +8,9 @@ import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
+import PixCallout from "@/components/PixCallout";
+import CepChecker from "@/components/CepChecker";
+import { type CepValidationResult } from "@/lib/cepValidator";
 
 const Carrinho = () => {
   const {
@@ -32,6 +35,7 @@ const Carrinho = () => {
   const [applyingCoupon, setApplyingCoupon] = useState(false);
   const [suggestions, setSuggestions] = useState<ShopifyProduct[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(true);
+  const [deliveryCheck, setDeliveryCheck] = useState<CepValidationResult | null>(null);
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce(
@@ -43,6 +47,7 @@ const Carrinho = () => {
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
+  const canCheckout = !deliveryCheck || deliveryCheck.isDeliverable;
 
   useEffect(() => {
     syncCart();
@@ -371,6 +376,17 @@ const Carrinho = () => {
 
               <BenefitsSummary className="mb-6" />
 
+              {/* CEP Checker */}
+              <CepChecker
+                onResult={(result) => setDeliveryCheck(result)}
+                className="mb-4"
+              />
+              {!deliveryCheck && (
+                <p className="text-[11px] text-[#9b9b9b] font-sans mt-1 mb-4">
+                  Verifique antes de finalizar para garantir que entregamos na sua região
+                </p>
+              )}
+
               {/* Divider */}
               <div className="h-px bg-[#e8e8e4] mb-4" />
 
@@ -407,6 +423,8 @@ const Carrinho = () => {
                   </div>
                 </div>
               </div>
+
+              <PixCallout variant="card" originalCents={Math.round(subtotal * 100)} className="mt-3 mb-4" />
 
               {/* Divider */}
               <div className="h-px bg-[#e8e8e4] mb-4" />
@@ -450,10 +468,12 @@ const Carrinho = () => {
               {/* Checkout Button */}
               <button
                 onClick={handleCheckout}
-                disabled={items.length === 0 || isLoading || isSyncing}
+                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout}
                 className="w-full h-14 bg-[#1e3a1e] text-white rounded-2xl font-bold text-base font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {isLoading || isSyncing ? (
+                {!canCheckout ? (
+                  "Região não atendida"
+                ) : isLoading || isSyncing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <>

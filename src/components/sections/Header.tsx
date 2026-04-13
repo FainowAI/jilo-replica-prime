@@ -42,7 +42,7 @@ const Header = () => {
                     {link.label}
                   </a>
                 ))}
-                <a href="/#cardapio" onClick={() => setMobileOpen(false)} className="mt-4 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-semibold">
+                <a href="/#kits" onClick={() => setMobileOpen(false)} className="mt-4 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-6 py-3 text-sm font-semibold">
                   Montar meu Kit
                 </a>
               </nav>
@@ -107,7 +107,7 @@ const Header = () => {
             <User className="h-5 w-5" />
           </button>
           <CartDrawer />
-          <a href="#cardapio" className="hidden lg:inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors">
+          <a href="/#kits" className="hidden lg:inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors">
             Montar meu Kit
           </a>
         </div>

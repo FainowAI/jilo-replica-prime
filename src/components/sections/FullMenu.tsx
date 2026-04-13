@@ -8,6 +8,13 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const CATEGORY_ORDER = ["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"];
 
+const CATEGORY_SUGGESTIONS: Record<string, string> = {
+    "Aves e Suinos": "Ideal para o jantar da semana",
+    "Bovinos": "Proteína de qualidade para o dia a dia",
+    "Peixes e Massas": "Sabor especial para qualquer momento",
+    "Veganos": "Plant-based sem abrir mão do sabor",
+};
+
 const categoryIcons: Record<string, string> = {
     "Aves e Suinos": "🍗",
     "Bovinos": "🥩",
@@ -361,8 +368,11 @@ export function FullMenu() {
                                                                 <h3 className="text-[14px] font-bold text-[#1a1a1a] mb-[4px] font-['DM_Sans'] leading-[18.2px]">
                                                                     {product.node.title}
                                                                 </h3>
-                                                                <p className="text-[12px] text-[#6b6b6b] font-['DM_Sans'] mb-[16px] line-clamp-2 min-h-[32px] leading-[18px]">
+                                                                <p className="text-[12px] text-[#6b6b6b] font-['DM_Sans'] mb-[4px] line-clamp-2 min-h-[32px] leading-[18px]">
                                                                     {product.node.description}
+                                                                </p>
+                                                                <p className="text-[11px] text-[#d4a017] font-['DM_Sans'] mt-1 mb-[12px] font-medium">
+                                                                    5 min no micro · {CATEGORY_SUGGESTIONS[product.node.productType] || "Feito de verdade"}
                                                                 </p>
                                                             </Link>
 

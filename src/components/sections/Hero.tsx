@@ -23,7 +23,7 @@ const Hero = () => {
           </p>
           <div className="flex flex-col sm:flex-row gap-3 mb-10">
             <a
-              href="#cardapio"
+              href="/#kits"
               className="inline-flex items-center justify-center gap-3 rounded-[16px] bg-[#2d5016] text-white px-7 py-[16.8px] text-[16px] font-semibold font-sans hover:bg-[#2d5016]/90 transition-colors shadow-[0px_4px_24px_0px_rgba(0,0,0,0.25)]"
             >
               Montar meu Kit da Semana <ArrowRight className="w-[18px] h-[18px]" />

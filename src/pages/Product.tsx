@@ -17,6 +17,7 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import ProductComposition from "@/components/sections/ProductComposition";
 import FreeBadge from "@/components/FreeBadge";
+import PixCallout from "@/components/PixCallout";
 import { toast } from "sonner";
 
 const formatPrice = (amount: string) => {
@@ -285,6 +286,7 @@ export default function Product() {
                 </span>
               </div>
               <FreeBadge size="md" className="mt-3" />
+              <PixCallout variant="card" originalCents={Math.round(parseFloat(price) * 100)} className="mt-3" />
             </div>
 
             {/* Quantity and Actions row */}
@@ -356,6 +358,27 @@ export default function Product() {
                 </div>
                 <span className="text-[13px] font-bold text-[#1a1a1a] font-sans">Sem conservantes</span>
               </div>
+            </div>
+
+            {/* Como preparar */}
+            <div className="bg-[#faf7f2] rounded-xl p-4 mb-6 border border-[#e8e8e4]/50">
+              <h4 className="font-['DM_Sans'] font-semibold text-[14px] text-[#1a1a1a] mb-2">Como preparar</h4>
+              {metaPreparo ? (
+                <div className="text-[13px] text-[#6b6b6b] font-sans space-y-1.5">
+                  {metaPreparo.split('\n').filter(Boolean).map((step: string, idx: number) => (
+                    <p key={idx} className="flex gap-2">
+                      <span className="text-[#d4a017] font-bold">{idx + 1}.</span> {step}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <ol className="space-y-1.5 text-[13px] text-[#6b6b6b] font-sans">
+                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">1.</span> Retire a marmita do freezer</li>
+                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">2.</span> Abra a tampa e leve ao micro-ondas</li>
+                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">3.</span> Aqueça por 5 minutos (potência alta)</li>
+                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">4.</span> Pronto! Sirva no prato ou direto na embalagem</li>
+                </ol>
+              )}
             </div>
 
             {/* Accordions */}

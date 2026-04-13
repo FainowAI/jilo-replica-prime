@@ -1,5 +1,12 @@
 import { MapPin, ThermometerSnowflake, Zap } from "lucide-react";
 
+const CONSUMPTION_SUGGESTIONS: Record<string, string> = {
+  "Aves e Suinos": "Sugestão: acompanha bem com uma salada verde ou arroz extra.",
+  "Bovinos": "Sugestão: perfeito para o almoço ou jantar. Porção generosa para 1 pessoa.",
+  "Peixes e Massas": "Sugestão: sirva com limão espremido na hora. Sabor ainda melhor!",
+  "Veganos": "Sugestão: complemente com castanhas ou um suco verde.",
+};
+
 interface ProductCompositionProps {
   productType: string;
   metafields?: {
@@ -134,6 +141,11 @@ export default function ProductComposition({ productType, metafields }: ProductC
                     </ul>
                 </div>
             </div>
+
+            {/* Sugestão de consumo */}
+            <p className="text-[13px] text-[#6b6b6b] font-sans mt-4 mb-8 italic max-w-[800px] mx-auto">
+              {CONSUMPTION_SUGGESTIONS[productType] || "Sugestão: acompanha bem com uma salada verde ou suco natural. Rende 1 porção generosa."}
+            </p>
 
             {/* Properties Row */}
             <div className="flex flex-col md:flex-row bg-white border-[1.5px] border-[#e8e8e4] rounded-[20px] divide-y md:divide-y-0 md:divide-x divide-[#e8e8e4] max-w-[800px] mx-auto mb-[24px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.02)]">

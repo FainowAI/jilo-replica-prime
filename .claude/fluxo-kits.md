@@ -90,6 +90,27 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 | Shopify Cart API | Mutations via cartStore | Adiciona itens individualmente ao carrinho |
 | Shopify Cart API | Query (CART_FULL_QUERY) | Busca desconto real via `refreshCartDetails()` |
 
+## Componentes adicionais (Sprint 2)
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/components/PixCallout.tsx` | Card "PIX com 5% off" com orientação do código PIX5. Presente nas sidebars de Kit.tsx e KitLivre.tsx |
+
+## Responsividade mobile (Sprint 2)
+
+- **Kit.tsx**: Sidebar desktop (`hidden lg:block`) + bottom sticky bar mobile (`lg:hidden fixed bottom-0 z-50`) com preço estimado e botão full-width. Spacer `h-[120px]`. Seletor de tamanho usa `grid-cols-4` com texto menor em mobile (`text-xl sm:text-2xl`). Hero com padding e fontes reduzidos em mobile.
+- **KitLivre.tsx**: Sidebar desktop + mobile bottom bar com drag handle visual (`w-10 h-1 rounded-full`), summary expansível com `max-h-[45vh] overflow-y-auto`, botão com contador de selecionados e CTA. Spacer `h-[140px]`.
+
+## QA checklist (referência para futuras sessões)
+
+1. Homepage → seção "Kits para a Semana" mostra 5 cards com preços reais do Shopify
+2. Clicar "Ver Kit" → navega para `/kit/:slug` com pratos da Collection
+3. Trocar tamanho (7→14→21→28) → preço estimado atualiza corretamente
+4. "Adicionar Kit ao Carrinho" → itens aparecem no CartDrawer → desconto Shopify visível
+5. Kit Livre: selecionar pratos, verificar progresso, botão desabilitado até múltiplo de 7
+6. Kit Livre: completar 7+ pratos → botão habilita → adicionar → desconto no carrinho
+7. Mobile (375px): bottom sheet funcional em Kit e KitLivre, sem overflow horizontal
+
 ## Gotchas e armadilhas
 - Se Automatic Discounts NÃO estiverem configurados no Shopify Admin → carrinho funciona mas sem desconto visível. O preço estimado no frontend não baterá com o checkout.
 - Limite de 50 produtos por query (`PRODUCTS_QUERY` e `COLLECTION_BY_HANDLE_QUERY`) — se o catálogo crescer, precisa de paginação.

@@ -10,6 +10,7 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import FreeBadge from "@/components/FreeBadge";
+import PixCallout from "@/components/PixCallout";
 import { toast } from "sonner";
 
 const CATEGORY_ORDER = ["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"];
@@ -162,8 +163,8 @@ export default function KitLivre() {
 
       {/* Hero */}
       <div className="w-full bg-[#d4a017]">
-        <div className="container mx-auto px-4 py-10 lg:py-14 max-w-6xl">
-          <nav className="flex items-center gap-1.5 text-sm text-[#1e3a1e]/60 mb-6 font-sans">
+        <div className="container mx-auto px-4 py-8 lg:py-14 max-w-6xl">
+          <nav className="flex items-center gap-1.5 text-sm text-[#1e3a1e]/60 mb-5 lg:mb-6 font-sans">
             <Link to="/" className="hover:text-[#1e3a1e] transition-colors">Página Inicial</Link>
             <ChevronRight className="h-3.5 w-3.5" />
             <Link to="/#kits" className="hover:text-[#1e3a1e] transition-colors">Kits</Link>
@@ -173,11 +174,11 @@ export default function KitLivre() {
 
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
             <div>
-              <span className="text-4xl mb-3 block">🍱</span>
-              <h1 className="font-['DM_Serif_Display'] text-4xl lg:text-5xl text-[#1e3a1e] mb-2">
+              <span className="text-3xl lg:text-4xl mb-2 lg:mb-3 block">🍱</span>
+              <h1 className="font-['DM_Serif_Display'] text-3xl lg:text-5xl text-[#1e3a1e] mb-2">
                 Monte seu Kit da Semana
               </h1>
-              <p className="text-base text-[#1e3a1e]/70 font-sans max-w-lg">
+              <p className="text-sm lg:text-base text-[#1e3a1e]/70 font-sans max-w-lg">
                 Escolha seus pratos favoritos de qualquer categoria. Mínimo 7, máximo 28, sempre múltiplo de 7.
               </p>
             </div>
@@ -345,14 +346,23 @@ export default function KitLivre() {
       </main>
 
       {/* Mobile Bottom Bar */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8e8e4] px-4 py-3 z-50 shadow-[0px_-4px_16px_0px_rgba(0,0,0,0.08)]">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8e8e4] z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+        {/* Drag handle */}
+        <button
+          onClick={() => setShowMobileSummary(!showMobileSummary)}
+          className="flex justify-center w-full py-2"
+        >
+          <div className="w-10 h-1 bg-[#e8e8e4] rounded-full" />
+        </button>
+
         {showMobileSummary && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden mb-3"
+            className="overflow-hidden"
           >
+            <div className="max-h-[45vh] overflow-y-auto px-4 pb-3">
             <SidebarContent
               totalSelected={totalSelected}
               isValidKit={isValidKit}
@@ -370,10 +380,11 @@ export default function KitLivre() {
               onRemoveItem={(variantId, product) => updateQuantity(variantId, product, -1)}
               compact
             />
+            </div>
           </motion.div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 px-4 pb-3">
           <button
             onClick={() => setShowMobileSummary(!showMobileSummary)}
             className="flex items-center gap-2 px-4 py-3 bg-[#f0efeb] rounded-xl text-sm font-sans font-semibold text-[#1a1a1a] flex-shrink-0"
@@ -402,7 +413,7 @@ export default function KitLivre() {
       </div>
 
       {/* Spacer for mobile bottom bar */}
-      <div className="lg:hidden h-20" />
+      <div className="lg:hidden h-[140px]" />
 
       <Footer />
     </div>
@@ -535,6 +546,7 @@ function SidebarContent({
         </div>
       )}
 
+      <PixCallout variant="card" className="mb-3" />
       {!compact && <BenefitsSummary className="mb-4" />}
 
       {/* Add Button (desktop only — mobile has its own) */}

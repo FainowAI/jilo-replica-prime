@@ -66,6 +66,12 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 
 15. **compareAtPrice riscado no FullMenu**: O grid de pratos do FullMenu exibe o `compareAtPrice` riscado antes do preço atual quando disponível e maior que o preço de venda.
 
+16. **Storytelling nos cards (Sprint 2)**: Cards no FullMenu mostram uma linha dourada abaixo da descrição: "5 min no micro · {sugestão por categoria}". Sugestões por `productType` definidas em `CATEGORY_SUGGESTIONS` (ex: "Aves e Suinos" → "Ideal para o jantar da semana"). Fallback: "Feito de verdade".
+
+17. **Bloco "Como preparar" na página de produto (Sprint 2)**: Antes dos Accordions, um box com 4 passos genéricos de preparo (freezer → micro → 5min → pronto). Se o produto tiver o metafield `custom.modo_preparo` preenchido, os passos do metafield são usados em vez do genérico.
+
+18. **Sugestão de consumo no ProductComposition (Sprint 2)**: Após a grid de ingredientes (proteína + base + guarnição), um texto em itálico com sugestão de consumo por `productType` definida em `CONSUMPTION_SUGGESTIONS`. Ex: "Peixes e Massas" → "Sugestão: sirva com limão espremido na hora. Sabor ainda melhor!". Fallback: "acompanha bem com uma salada verde ou suco natural".
+
 16. **WeeklyKits busca Collections do Shopify**: O componente `WeeklyKits.tsx` busca preço mínimo de cada Collection via `COLLECTION_BY_HANDLE_QUERY` para exibir preço real nos cards de kit. Cada card linka para `/kit/:slug`.
 
 ## Fluxo do usuário

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
+import PixCallout from "@/components/PixCallout";
 
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -186,6 +187,8 @@ export const CartDrawer = () => {
                 <span className="text-base font-bold text-[#1a1a1a]">Total estimado</span>
                 <span className="text-base font-bold text-[#1a1a1a]">R$ {subtotal.toFixed(2)}</span>
               </div>
+
+              <PixCallout variant="card" className="mb-3" />
 
               {/* Checkout Button */}
               <button

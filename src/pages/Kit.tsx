@@ -10,6 +10,7 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import FreeBadge from "@/components/FreeBadge";
+import PixCallout from "@/components/PixCallout";
 import { toast } from "sonner";
 
 const KIT_META: Record<string, { name: string; emoji: string; bgColor: string; positioning: string }> = {
@@ -126,8 +127,8 @@ export default function Kit() {
 
       {/* Hero */}
       <div className="w-full" style={{ backgroundColor: meta.bgColor }}>
-        <div className="container mx-auto px-4 py-12 lg:py-16 max-w-6xl">
-          <nav className="flex items-center gap-1.5 text-sm text-white/60 mb-8 font-sans">
+        <div className="container mx-auto px-4 py-8 lg:py-16 max-w-6xl">
+          <nav className="flex items-center gap-1.5 text-sm text-white/60 mb-6 lg:mb-8 font-sans">
             <Link to="/" className="hover:text-white/90 transition-colors">Página Inicial</Link>
             <ChevronRight className="h-3.5 w-3.5" />
             <Link to="/#kits" className="hover:text-white/90 transition-colors">Kits</Link>
@@ -135,13 +136,13 @@ export default function Kit() {
             <span className="text-white font-medium">{meta.name}</span>
           </nav>
 
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 lg:gap-6">
             <div>
-              <span className="text-4xl mb-4 block">{meta.emoji}</span>
-              <h1 className="font-['DM_Serif_Display'] text-4xl lg:text-5xl text-white mb-3">
+              <span className="text-3xl lg:text-4xl mb-3 lg:mb-4 block">{meta.emoji}</span>
+              <h1 className="font-['DM_Serif_Display'] text-3xl lg:text-5xl text-white mb-2 lg:mb-3">
                 {meta.name}
               </h1>
-              <p className="text-lg text-white/70 font-sans max-w-lg">
+              <p className="text-base lg:text-lg text-white/70 font-sans max-w-lg">
                 {meta.positioning}
               </p>
             </div>
@@ -159,14 +160,14 @@ export default function Kit() {
               <h2 className="font-['DM_Serif_Display'] text-2xl text-[#1a1a1a] mb-4">
                 Escolha o tamanho do kit
               </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-4 gap-2 sm:gap-3">
                 {KIT_SIZES.map((size, idx) => {
                   const isSelected = idx === selectedSize;
                   return (
                     <button
                       key={size.qty}
                       onClick={() => setSelectedSize(idx)}
-                      className={`relative flex flex-col items-center py-4 px-3 rounded-2xl border-2 transition-all font-sans ${
+                      className={`relative flex flex-col items-center py-3 sm:py-4 px-1.5 sm:px-3 rounded-xl sm:rounded-2xl border-2 transition-all font-sans ${
                         isSelected
                           ? "border-[#1e3a1e] bg-[#1e3a1e]/5 shadow-md"
                           : "border-[#e8e8e4] bg-white hover:border-[#1e3a1e]/30"
@@ -177,9 +178,9 @@ export default function Kit() {
                           <Check className="w-3 h-3 text-white" />
                         </div>
                       )}
-                      <span className="text-2xl font-bold text-[#1a1a1a]">{size.qty}</span>
-                      <span className="text-xs text-[#9b9b9b] mt-0.5">pratos</span>
-                      <span className="text-xs font-semibold text-[#1e3a1e] mt-1.5 bg-[#1e3a1e]/10 px-2 py-0.5 rounded-full">
+                      <span className="text-xl sm:text-2xl font-bold text-[#1a1a1a]">{size.qty}</span>
+                      <span className="text-[10px] sm:text-xs text-[#9b9b9b] mt-0.5">pratos</span>
+                      <span className="text-[10px] sm:text-xs font-semibold text-[#1e3a1e] mt-1 sm:mt-1.5 bg-[#1e3a1e]/10 px-1.5 sm:px-2 py-0.5 rounded-full">
                         -{size.discount}%
                       </span>
                     </button>
@@ -255,8 +256,8 @@ export default function Kit() {
             )}
           </div>
 
-          {/* Right — Sidebar Summary */}
-          <div className="lg:w-[340px] flex-shrink-0">
+          {/* Right — Desktop Sidebar Summary */}
+          <div className="hidden lg:block lg:w-[340px] flex-shrink-0">
             <div className="bg-white rounded-2xl border border-[#e8e8e4] p-6 lg:sticky lg:top-24">
               <h2 className="font-['DM_Serif_Display'] text-xl text-[#1a1a1a] mb-1">
                 {meta.name}
@@ -286,6 +287,7 @@ export default function Kit() {
                 </div>
               )}
 
+              <PixCallout variant="card" className="mb-3" />
               <BenefitsSummary className="mb-5" />
 
               {/* Add Kit Button */}
@@ -311,6 +313,37 @@ export default function Kit() {
           </div>
         </div>
       </main>
+
+      {/* Mobile Bottom Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#e8e8e4] p-4 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] z-50">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-sans font-medium text-[#1a1a1a]">
+            {kitSize.label} · -{kitSize.discount}%
+          </span>
+          {products.length > 0 && (
+            <span className="text-lg font-bold text-[#1a1a1a] font-sans">
+              ~R$ {formatPrice(estimatedDiscounted)}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={handleAddKit}
+          disabled={isAdding || isLoading || products.length === 0}
+          className="w-full h-12 bg-[#1e3a1e] text-white rounded-xl font-bold text-sm font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+          {isAdding ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <>
+              <ShoppingBag className="w-4 h-4" />
+              Adicionar {kitSize.label} ao Carrinho
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Spacer for mobile bottom bar */}
+      <div className="lg:hidden h-[120px]" />
 
       <Footer />
     </div>
