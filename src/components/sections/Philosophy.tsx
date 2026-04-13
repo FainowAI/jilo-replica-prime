@@ -5,7 +5,7 @@ const Philosophy = () => {
     <section id="sobre" className="relative py-20 lg:py-28 overflow-hidden bg-[#1e3a1e]">
       {/* Background Image Setup */}
       <div
-        className="absolute inset-0 bg-[url('/placeholder.svg')] bg-cover bg-center"
+        className="absolute inset-0 bg-[url('/images/philosophy-banner.png')] bg-cover bg-center"
         style={{ backgroundPosition: 'center right' }}
       />
       {/* Gradient Overlay from Figma */}
