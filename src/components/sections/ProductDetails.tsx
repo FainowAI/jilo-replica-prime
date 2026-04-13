@@ -77,14 +77,6 @@ export function ProductDetails() {
                             <div className="flex items-baseline gap-2 mb-2">
                                 <span className="text-3xl font-bold text-secondary-foreground">R$ 24,90</span>
                             </div>
-                            <div className="flex items-center gap-1 text-muted-foreground text-sm mb-4">
-                                <span>ou</span>
-                                <span className="font-semibold text-secondary-foreground">R$ 23,66</span>
-                                <span>via Pix</span>
-                            </div>
-                            <div className="inline-flex items-center gap-2 bg-[#E8F5E9] text-[#2E7D32] px-3 py-2 rounded-lg text-sm font-medium">
-                                💰 5% OFF para pagamentos no PIX
-                            </div>
                         </div>
 
                         {/* Quantity and Add to Cart */}

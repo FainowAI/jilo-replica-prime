@@ -22,10 +22,7 @@ const formatPrice = (amount: string) => {
   return `R$ ${parseFloat(amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-const getPixDiscount = (amount: string) => {
-  const price = parseFloat(amount);
-  return price * 0.95;
-};
+
 
 const CATEGORY_EMOJIS: Record<string, string> = {
   "Aves e Suinos": "🍗",
@@ -125,7 +122,7 @@ export default function Product() {
   )?.node;
 
   const price = selectedVariant?.price?.amount || productData.priceRange.minVariantPrice.amount;
-  const pixPrice = getPixDiscount(price);
+
 
   const images = productData.images.edges.map((e: any) => e.node);
   const relatedProducts = relatedData?.filter((p: any) => p.node.handle !== handle).slice(0, 4) || [];
@@ -268,9 +265,8 @@ export default function Product() {
               </div>
               <div className="flex flex-wrap items-baseline gap-[8px]">
                 <span className="text-[36px] font-bold text-[#1e3a1e] font-sans leading-[36px] tracking-[-0.72px]">
-                  {formatPrice(pixPrice.toString())}
+                  {formatPrice(price.toString())}
                 </span>
-                <span className="text-[15px] font-bold text-[#1e3a1e] font-sans">via Pix</span>
               </div>
             </div>
 

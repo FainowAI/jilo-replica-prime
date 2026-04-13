@@ -474,10 +474,6 @@ const Carrinho = () => {
                   </span>
                 </div>
 
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#9b9b9b] italic">PIX (5% off)</span>
-                  <span className="text-[#9b9b9b] italic">Aplicado no checkout</span>
-                </div>
               </div>
 
               {/* Divider */}
@@ -494,42 +490,19 @@ const Carrinho = () => {
                 Descontos aplicados no checkout Shopify
               </p>
 
-              {/* PIX Banner */}
-              <div className="bg-[#1e3a1e]/5 border border-[#1e3a1e]/20 rounded-xl px-4 py-3 mb-5 flex items-center justify-center gap-2">
-                <span className="text-sm text-[#1e3a1e] font-sans">
-                  💰 Pague no PIX e ganhe <span className="font-bold">5% de desconto</span> — use o código <span className="font-bold">PIX5</span> no checkout
-                </span>
-              </div>
+
 
               {/* Payment Methods */}
               <div className="space-y-3 mb-5 font-sans">
                 <div>
                   <p className="text-[10px] text-[#9b9b9b] uppercase tracking-wider mb-1.5">
-                    Vale-Refeição
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["VA/VR", "Alelo", "Sodexo", "VR", "Ticket", "Flash"].map(
-                      (m) => (
-                        <span
-                          key={m}
-                          className="px-2.5 py-1 bg-[#f0efeb] rounded text-[10px] font-medium text-[#1a1a1a]"
-                        >
-                          {m}
-                        </span>
-                      )
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] text-[#9b9b9b] uppercase tracking-wider mb-1.5">
-                    Cartões
+                    Pagamento Seguro
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
-                      { name: "VISA", bg: "bg-[#1a1f71]", text: "text-white" },
-                      { name: "MASTER", bg: "bg-[#eb001b]", text: "text-white" },
-                      { name: "ELO", bg: "bg-[#1a1a1a]", text: "text-white" },
-                      { name: "HIPER", bg: "bg-[#f37021]", text: "text-white" },
+                      { name: "CARTÃO DE CRÉDITO", bg: "bg-[#1a1a1a]", text: "text-white" },
+                      { name: "PAYPAL", bg: "bg-[#003087]", text: "text-white" },
+                      { name: "PIX", bg: "bg-[#32bcad]", text: "text-white" },
                     ].map((c) => (
                       <span
                         key={c.name}
@@ -538,16 +511,6 @@ const Carrinho = () => {
                         {c.name}
                       </span>
                     ))}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] text-[#9b9b9b] uppercase tracking-wider mb-1.5">
-                    Instantâneo
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="px-2.5 py-1 bg-[#32bcad] text-white rounded text-[10px] font-bold">
-                      PIX
-                    </span>
                   </div>
                 </div>
               </div>

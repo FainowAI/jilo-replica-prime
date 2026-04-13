@@ -253,7 +253,6 @@ const AllDishes = () => {
                   const badge = getBadge(tags);
 
                   const regularPrice = parseFloat(price);
-                  const pixPrice = regularPrice * 0.95; // 5% desconto no PIX
                   const description = product.node.description || '';
 
                   return (
@@ -289,14 +288,8 @@ const AllDishes = () => {
 
                         {/* Price Section */}
                         <div className="flex items-center gap-[6px] mb-[12px]">
-                          <span className="font-sans text-[11px] leading-[11px] text-[#b8b5b0] line-through">
-                            R$ {formatPrice(price)}
-                          </span>
                           <span className="font-sans font-bold text-[15px] leading-[15px] text-[#1e3a1e]">
-                            R$ {pixPrice.toFixed(2).replace('.', ',')}
-                          </span>
-                          <span className="bg-[rgba(212,160,23,0.1)] text-[#d4a017] text-[10px] font-semibold font-sans px-[6px] py-[2px] rounded-[100px] leading-[14px]">
-                            PIX
+                            R$ {formatPrice(price)}
                           </span>
                         </div>
 

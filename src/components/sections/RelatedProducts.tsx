@@ -4,24 +4,20 @@ const relatedProducts = [
     {
         name: "Filé de Frango Pizzaiolo",
         price: "23,90",
-        pixPrice: "22,71",
         badge: "⭐ Mais pedido",
     },
     {
         name: "Sobrecoxa de Frango",
         price: "22,90",
-        pixPrice: "21,76",
     },
     {
         name: "Pernil Suíno Desfiado",
         price: "25,90",
-        pixPrice: "24,61",
         badge: "🌱 Sem glúten",
     },
     {
         name: "Filé de Frango Cubo Grelhado",
         price: "21,90",
-        pixPrice: "20,81",
     },
 ];
 
@@ -68,10 +64,6 @@ export function RelatedProducts() {
                                 <div className="flex flex-col gap-1 mb-4">
                                     <div className="text-lg font-bold text-secondary-foreground bg-secondary/30 px-3 py-1.5 rounded-lg w-fit">
                                         R$ {dish.price}
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-sans px-1">
-                                        <span className="font-semibold text-secondary-foreground">R$ {dish.pixPrice}</span>
-                                        <span>via Pix</span>
                                     </div>
                                 </div>
                                 <button className="w-full bg-primary/10 text-primary font-medium py-2.5 rounded-xl flex items-center justify-center gap-2 group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">

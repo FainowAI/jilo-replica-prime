@@ -6,7 +6,6 @@ import Philosophy from "@/components/sections/Philosophy";
 import QuickCategories from "@/components/sections/QuickCategories";
 import Favorites from "@/components/sections/Favorites";
 import WeeklyKits from "@/components/sections/WeeklyKits";
-import VaVrSection from "@/components/sections/VaVrSection";
 import AllDishes from "@/components/sections/AllDishes";
 import HowItWorks from "@/components/sections/HowItWorks";
 import Testimonials from "@/components/sections/Testimonials";
@@ -26,7 +25,6 @@ const Index = () => {
         <QuickCategories />
         <Favorites />
         <WeeklyKits />
-        <VaVrSection />
         <AllDishes />
         <HowItWorks />
         <Testimonials />

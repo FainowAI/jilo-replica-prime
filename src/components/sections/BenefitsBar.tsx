@@ -28,7 +28,6 @@ const ChefHatIcon = (props: React.SVGProps<SVGSVGElement>) => (
 
 const benefits = [
   { icon: StarIcon, label: "4,7 de 5", sub: "Avaliação dos clientes" },
-  { icon: PercentIcon, label: "5% OFF no PIX", sub: "Em todos os pedidos" },
   { icon: TruckIcon, label: "Entrega em 48h", sub: "Gelado e selado" },
   { icon: ChefHatIcon, label: "Feito artesanalmente", sub: "Sem conservantes" },
 ];

@@ -9,7 +9,7 @@ import { MessageCircle } from "lucide-react";
 const faqs = [
   { q: "Como funciona o congelamento?", a: "Nossos pratos são congelados logo após o preparo, utilizando o método de ultra-congelamento que preserva sabor, textura e nutrientes por até 90 dias." },
   { q: "Qual o prazo de entrega?", a: "Entregamos em até 48 horas úteis para a região metropolitana. Para outras regiões, o prazo pode variar de 3 a 5 dias úteis." },
-  { q: "Posso pagar com vale-refeição?", a: "Sim! Aceitamos as principais bandeiras: Alelo, Sodexo, VR, Ticket e Flash. Basta selecionar a opção no checkout." },
+  { q: "Quais as formas de pagamento?", a: "Aceitamos Pix, cartão de crédito e PayPal. As opções estarão disponíveis no momento do checkout." },
   { q: "Os pratos contêm conservantes?", a: "Não. Nossos pratos são 100% livres de conservantes artificiais. Usamos apenas o congelamento como método de conservação natural." },
   { q: "Como aquecer os pratos?", a: "Micro-ondas: retire a tampa, aqueça por 4-6 minutos. Forno: transfira para refratário, cubra com papel alumínio e aqueça por 20 minutos a 180°C." },
   { q: "Posso cancelar minha assinatura?", a: "Sim, você pode cancelar ou pausar sua assinatura a qualquer momento, sem multa. Basta entrar em contato pelo WhatsApp ou e-mail." },
