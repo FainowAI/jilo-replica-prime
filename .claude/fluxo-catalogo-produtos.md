@@ -64,6 +64,10 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 
 14. **Formato dos metafields multi-line**: Campos como proteina, base e guarnicao usam `\n` como separador de itens. O frontend faz `.split('\n').filter(Boolean)` para renderizar cada linha como item separado.
 
+15. **compareAtPrice riscado no FullMenu**: O grid de pratos do FullMenu exibe o `compareAtPrice` riscado antes do preço atual quando disponível e maior que o preço de venda.
+
+16. **WeeklyKits busca Collections do Shopify**: O componente `WeeklyKits.tsx` busca preço mínimo de cada Collection via `COLLECTION_BY_HANDLE_QUERY` para exibir preço real nos cards de kit. Cada card linka para `/kit/:slug`.
+
 ## Fluxo do usuário
 
 ### Homepage (/)

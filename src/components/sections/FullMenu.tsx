@@ -367,6 +367,18 @@ export function FullMenu() {
                                                             </Link>
 
                                                             <div className="flex items-center gap-3 mb-4 mt-auto">
+                                                                {(() => {
+                                                                  const variant = product.node.variants.edges[0]?.node;
+                                                                  const compareAt = variant?.compareAtPrice?.amount;
+                                                                  if (compareAt && parseFloat(compareAt) > parseFloat(price)) {
+                                                                    return (
+                                                                      <span className="text-[12px] text-[#9b9b9b] line-through font-['DM_Sans'] mr-2">
+                                                                        R$ {formatPrice(compareAt)}
+                                                                      </span>
+                                                                    );
+                                                                  }
+                                                                  return null;
+                                                                })()}
                                                                 <span className="text-[16px] font-bold text-[#1a1a1a] font-['DM_Sans'] leading-[16px]">
                                                                     R$ {formatPrice(price)}
                                                                 </span>

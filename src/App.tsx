@@ -9,6 +9,8 @@ import Product from "./pages/Product";
 import Cardapio from "./pages/Cardapio";
 import Collection from "./pages/Collection";
 import Carrinho from "./pages/Carrinho";
+import Kit from "./pages/Kit";
+import KitLivre from "./pages/KitLivre";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +25,8 @@ const AppContent = () => {
          <Route path="/cardapio" element={<Cardapio />} />
          <Route path="/colecao/:categoria" element={<Collection />} />
          <Route path="/carrinho" element={<Carrinho />} />
+         <Route path="/kit/:slug" element={<Kit />} />
+         <Route path="/kit-livre" element={<KitLivre />} />
          <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

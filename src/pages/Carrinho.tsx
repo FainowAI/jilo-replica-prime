@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag, X } from "lucide-react";
+import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
 import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
-
-const FREE_SHIPPING_THRESHOLD = 150.0;
+import BenefitsSummary from "@/components/BenefitsSummary";
 
 const Carrinho = () => {
   const {
@@ -23,11 +22,11 @@ const Carrinho = () => {
     discountCodes,
     applyDiscountCode,
     removeDiscountCode,
+    cartCost,
+    cartDiscountAllocations,
+    refreshCartDetails,
   } = useCartStore();
 
-  const [cep, setCep] = useState("");
-  const [shippingCalculated, setShippingCalculated] = useState(false);
-  const [shippingCost, setShippingCost] = useState(12.90);
   const [couponCode, setCouponCode] = useState("");
   const [couponError, setCouponError] = useState<string | null>(null);
   const [applyingCoupon, setApplyingCoupon] = useState(false);
@@ -39,18 +38,16 @@ const Carrinho = () => {
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
-  const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
-  const freeShippingProgress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
-  const hasFreeShipping = subtotal >= FREE_SHIPPING_THRESHOLD;
-  const shipping = hasFreeShipping ? 0 : shippingCalculated ? shippingCost : 0;
-  const total = subtotal + shipping;
+  const shopifyTotal = cartCost ? parseFloat(cartCost.totalAmount) : null;
+  const displayTotal = shopifyTotal ?? subtotal;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
 
   useEffect(() => {
     syncCart();
-  }, [syncCart]);
+    refreshCartDetails();
+  }, [syncCart, refreshCartDetails]);
 
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
@@ -76,12 +73,6 @@ const Carrinho = () => {
   useEffect(() => {
     fetchSuggestions();
   }, [fetchSuggestions]);
-
-  const handleCalculateShipping = () => {
-    if (cep.replace(/\D/g, "").length === 8) {
-      setShippingCalculated(true);
-    }
-  };
 
   const handleApplyCoupon = async () => {
     const code = couponCode.trim().toUpperCase();
@@ -128,12 +119,6 @@ const Carrinho = () => {
       quantity: 1,
       selectedOptions: variant.selectedOptions,
     });
-  };
-
-  const formatCep = (value: string) => {
-    const digits = value.replace(/\D/g, "").slice(0, 8);
-    if (digits.length > 5) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
-    return digits;
   };
 
   const getCategoryEmoji = (product: ShopifyProduct) => {
@@ -207,33 +192,12 @@ const Carrinho = () => {
           {/* Left Column — Cart Items */}
           <div className="flex-1">
             {/* Free Shipping Bar */}
-            <div className="bg-white rounded-2xl p-4 mb-6 border border-[#e8e8e4]">
+            <div className="bg-[#1e3a1e]/5 rounded-2xl p-4 mb-6 border border-[#1e3a1e]/10">
               <div className="flex items-center gap-3">
                 <Truck className="h-5 w-5 text-[#1e3a1e] flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-sm text-[#1a1a1a] font-sans">
-                    {amountToFreeShipping > 0 ? (
-                      <>
-                        Faltam{" "}
-                        <span className="font-bold text-[#1e3a1e]">
-                          R$ {amountToFreeShipping.toFixed(2).replace(".", ",")}
-                        </span>{" "}
-                        para ganhar{" "}
-                        <span className="font-bold">FRETE GRÁTIS!</span>
-                      </>
-                    ) : (
-                      <span className="font-bold text-[#1e3a1e]">
-                        Você ganhou FRETE GRÁTIS! 🎉
-                      </span>
-                    )}
-                  </p>
-                  <div className="w-full h-2 bg-[#e8e8e4] rounded-full overflow-hidden mt-2">
-                    <div
-                      className="h-full bg-[#d4a017] rounded-full transition-all duration-500"
-                      style={{ width: `${freeShippingProgress}%` }}
-                    />
-                  </div>
-                </div>
+                <p className="text-sm font-sans">
+                  <span className="font-bold text-[#1e3a1e]">Frete grátis!</span>{" "}Entrega em até 48h — cortesia Jilo
+                </p>
               </div>
             </div>
 
@@ -405,57 +369,28 @@ const Carrinho = () => {
                 Resumo do Pedido
               </h2>
 
-              {/* CEP Calculator */}
-              <p className="text-sm text-[#9b9b9b] font-sans mb-2">Calcule o frete</p>
-              <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  value={cep}
-                  onChange={(e) => setCep(formatCep(e.target.value))}
-                  placeholder="00000-000"
-                  className="flex-1 px-4 py-2.5 border border-[#e8e8e4] rounded-lg text-sm font-sans bg-transparent focus:outline-none focus:border-[#1e3a1e] transition-colors"
-                  maxLength={9}
-                  onKeyDown={(e) => e.key === "Enter" && handleCalculateShipping()}
-                />
-                <button
-                  onClick={handleCalculateShipping}
-                  className="px-5 py-2.5 bg-[#1e3a1e] text-white rounded-lg text-sm font-bold font-sans hover:bg-[#1e3a1e]/90 transition-colors"
-                >
-                  OK
-                </button>
-              </div>
-
-              {/* Shipping Estimate */}
-              {shippingCalculated && (
-                <div className="flex items-center gap-2 bg-[#faf7f2] rounded-lg px-3 py-2.5 mb-5 border border-[#e8e8e4]/60">
-                  <Truck className="h-4 w-4 text-[#d4a017] flex-shrink-0" />
-                  <p className="text-xs text-[#1a1a1a] font-sans">
-                    Entrega em até 48h —{" "}
-                    {hasFreeShipping ? (
-                      <span className="font-bold text-[#1e3a1e]">GRÁTIS</span>
-                    ) : (
-                      <span className="font-semibold">
-                        R$ {shippingCost.toFixed(2).replace(".", ",")}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              )}
+              <BenefitsSummary className="mb-6" />
 
               {/* Divider */}
               <div className="h-px bg-[#e8e8e4] mb-4" />
 
               {/* Price Breakdown */}
               <div className="space-y-2.5 mb-4 font-sans">
+                {/* Subtotal */}
                 <div className="flex justify-between text-sm">
-                  <span className="text-[#1a1a1a]">
-                    Subtotal ({totalItems} {totalItems === 1 ? "prato" : "pratos"})
-                  </span>
-                  <span className="font-semibold text-[#1a1a1a]">
-                    R$ {subtotal.toFixed(2).replace(".", ",")}
-                  </span>
+                  <span className="text-[#1a1a1a]">Subtotal ({totalItems} {totalItems === 1 ? "prato" : "pratos"})</span>
+                  <span className="font-semibold text-[#1a1a1a]">R$ {subtotal.toFixed(2).replace(".", ",")}</span>
                 </div>
 
+                {/* Desconto automático do Shopify */}
+                {cartDiscountAllocations.length > 0 && cartDiscountAllocations.map((alloc, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-[#1e3a1e]">{alloc.title || alloc.code || "Desconto de kit"}</span>
+                    <span className="font-semibold text-[#1e3a1e]">-R$ {parseFloat(alloc.discountedAmount.amount).toFixed(2).replace(".", ",")}</span>
+                  </div>
+                ))}
+
+                {/* Cupom manual */}
                 {hasAppliedCoupon && (
                   <div className="flex justify-between text-sm">
                     <span className="text-[#1e3a1e]">Cupom {appliedDiscount!.code}</span>
@@ -463,17 +398,14 @@ const Carrinho = () => {
                   </div>
                 )}
 
+                {/* Frete */}
                 <div className="flex justify-between text-sm">
                   <span className="text-[#9b9b9b]">Frete</span>
-                  <span className="text-[#9b9b9b]">
-                    {!shippingCalculated
-                      ? "Calcule acima"
-                      : hasFreeShipping
-                        ? "GRÁTIS"
-                        : `R$ ${shippingCost.toFixed(2).replace(".", ",")}`}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-[#9b9b9b] line-through text-xs mr-1">R$ 12,90</span>
+                    <span className="font-semibold text-[#1e3a1e]">Grátis</span>
+                  </div>
                 </div>
-
               </div>
 
               {/* Divider */}
@@ -483,7 +415,7 @@ const Carrinho = () => {
               <div className="flex justify-between items-baseline mb-1">
                 <span className="text-lg font-bold text-[#1a1a1a] font-sans">TOTAL</span>
                 <span className="text-2xl font-bold text-[#1a1a1a] font-sans">
-                  R$ {total.toFixed(2).replace(".", ",")}
+                  R$ {displayTotal.toFixed(2).replace(".", ",")}
                 </span>
               </div>
               <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">

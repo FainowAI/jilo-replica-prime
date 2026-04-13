@@ -24,12 +24,12 @@ const Philosophy = () => {
 
           <h2 className="text-[34px] leading-[1.1] text-[#1e3a1e] mb-6 font-['DM_Serif_Display'] italic">
             Sem improviso.<br />
-            Sem decisão.<br />
-            Só prazer.
+            Sem preocupação.<br />
+            Mais tempo para o que importa.
           </h2>
 
           <p className="text-[#1e3a1e]/70 font-sans mb-8 leading-[24px] text-[15px]">
-            Planeje sua semana com a Jilo e tenha mais tempo para o que importa de verdade.
+            Planeje suas refeições com a Jilo e simplifique sua rotina na cozinha.
           </p>
 
           <a

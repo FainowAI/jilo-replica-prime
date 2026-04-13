@@ -9,6 +9,7 @@ import {
   fetchShopifyCart,
   applyDiscountCodesToCart,
   removeDiscountCodesFromCart,
+  fetchCartFull,
 } from '@/lib/shopify';
 
 export interface CartItem {
@@ -28,6 +29,15 @@ interface CartStore {
   isLoading: boolean;
   isSyncing: boolean;
   discountCodes: Array<{ code: string; applicable: boolean }>;
+  cartCost: {
+    totalAmount: string;
+    subtotalAmount: string;
+  } | null;
+  cartDiscountAllocations: Array<{
+    discountedAmount: { amount: string; currencyCode: string };
+    title?: string;
+    code?: string;
+  }>;
   addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
@@ -36,6 +46,7 @@ interface CartStore {
   getCheckoutUrl: () => string | null;
   applyDiscountCode: (code: string) => Promise<{ success: boolean; applicable?: boolean }>;
   removeDiscountCode: () => Promise<void>;
+  refreshCartDetails: () => Promise<void>;
 }
 
 export const useCartStore = create<CartStore>()(
@@ -47,6 +58,8 @@ export const useCartStore = create<CartStore>()(
       isLoading: false,
       isSyncing: false,
       discountCodes: [],
+      cartCost: null,
+      cartDiscountAllocations: [],
 
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
@@ -71,6 +84,7 @@ export const useCartStore = create<CartStore>()(
               set({ items: [...get().items, { ...item, lineId: result.lineId ?? null }] });
             } else if (result.cartNotFound) clearCart();
           }
+          await get().refreshCartDetails();
         } catch (error) {
           console.error('Failed to add item:', error);
         } finally {
@@ -89,6 +103,7 @@ export const useCartStore = create<CartStore>()(
           if (result.success) {
             set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
           } else if (result.cartNotFound) clearCart();
+          await get().refreshCartDetails();
         } finally { set({ isLoading: false }); }
       },
 
@@ -103,10 +118,11 @@ export const useCartStore = create<CartStore>()(
             const newItems = get().items.filter(i => i.variantId !== variantId);
             newItems.length === 0 ? clearCart() : set({ items: newItems });
           } else if (result.cartNotFound) clearCart();
+          await get().refreshCartDetails();
         } finally { set({ isLoading: false }); }
       },
 
-      clearCart: () => set({ items: [], cartId: null, checkoutUrl: null, discountCodes: [] }),
+      clearCart: () => set({ items: [], cartId: null, checkoutUrl: null, discountCodes: [], cartCost: null, cartDiscountAllocations: [] }),
       getCheckoutUrl: () => get().checkoutUrl,
 
       syncCart: async () => {
@@ -146,6 +162,24 @@ export const useCartStore = create<CartStore>()(
         }
       },
 
+      refreshCartDetails: async () => {
+        const { cartId } = get();
+        if (!cartId) return;
+        try {
+          const cart = await fetchCartFull(cartId);
+          if (!cart) return;
+          set({
+            cartCost: cart.cost ? {
+              totalAmount: cart.cost.totalAmount.amount,
+              subtotalAmount: cart.cost.subtotalAmount.amount,
+            } : null,
+            cartDiscountAllocations: cart.discountAllocations || [],
+          });
+        } catch (error) {
+          console.error('Failed to refresh cart details:', error);
+        }
+      },
+
       removeDiscountCode: async () => {
         const { cartId, clearCart } = get();
         if (!cartId) return;
@@ -164,7 +198,7 @@ export const useCartStore = create<CartStore>()(
     {
       name: 'shopify-cart',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl, discountCodes: state.discountCodes }),
+      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl, discountCodes: state.discountCodes, cartCost: state.cartCost, cartDiscountAllocations: state.cartDiscountAllocations }),
     }
   )
 );

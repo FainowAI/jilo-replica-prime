@@ -16,6 +16,7 @@ import {
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import ProductComposition from "@/components/sections/ProductComposition";
+import FreeBadge from "@/components/FreeBadge";
 import { toast } from "sonner";
 
 const formatPrice = (amount: string) => {
@@ -283,6 +284,7 @@ export default function Product() {
                   {formatPrice(price.toString())}
                 </span>
               </div>
+              <FreeBadge size="md" className="mt-3" />
             </div>
 
             {/* Quantity and Actions row */}

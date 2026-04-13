@@ -205,6 +205,68 @@ export const PRODUCT_BY_HANDLE_QUERY = `
   }
 `;
 
+export const COLLECTION_BY_HANDLE_QUERY = `
+  query GetCollectionByHandle($handle: String!, $first: Int!) {
+    collectionByHandle(handle: $handle) {
+      id
+      title
+      handle
+      description
+      image {
+        url
+        altText
+      }
+      products(first: $first) {
+        edges {
+          node {
+            id
+            title
+            description
+            handle
+            productType
+            tags
+            priceRange {
+              minVariantPrice {
+                amount
+                currencyCode
+              }
+            }
+            images(first: 3) {
+              edges {
+                node {
+                  url
+                  altText
+                }
+              }
+            }
+            variants(first: 10) {
+              edges {
+                node {
+                  id
+                  title
+                  price {
+                    amount
+                    currencyCode
+                  }
+                  compareAtPrice {
+                    amount
+                    currencyCode
+                  }
+                  availableForSale
+                  selectedOptions {
+                    name
+                    value
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // Cart mutations
 const CART_QUERY = `
   query cart($id: ID!) {
@@ -413,5 +475,89 @@ export async function removeDiscountCodesFromCart(
 
 export async function fetchCartWithDiscounts(cartId: string) {
   const data = await storefrontApiRequest(CART_WITH_DISCOUNTS_QUERY, { id: cartId });
+  return data?.data?.cart;
+}
+
+export const CART_FULL_QUERY = `
+  query cartFull($id: ID!) {
+    cart(id: $id) {
+      id
+      totalQuantity
+      checkoutUrl
+      discountCodes {
+        code
+        applicable
+      }
+      discountAllocations {
+        discountedAmount {
+          amount
+          currencyCode
+        }
+        ... on CartAutomaticDiscountAllocation {
+          title
+        }
+        ... on CartCodeDiscountAllocation {
+          code
+        }
+      }
+      cost {
+        totalAmount {
+          amount
+          currencyCode
+        }
+        subtotalAmount {
+          amount
+          currencyCode
+        }
+        totalTaxAmount {
+          amount
+          currencyCode
+        }
+      }
+      lines(first: 100) {
+        edges {
+          node {
+            id
+            quantity
+            merchandise {
+              ... on ProductVariant {
+                id
+                title
+                price {
+                  amount
+                  currencyCode
+                }
+                product {
+                  title
+                  handle
+                  productType
+                  images(first: 1) {
+                    edges {
+                      node {
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            discountAllocations {
+              discountedAmount {
+                amount
+                currencyCode
+              }
+              ... on CartAutomaticDiscountAllocation {
+                title
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export async function fetchCartFull(cartId: string) {
+  const data = await storefrontApiRequest(CART_FULL_QUERY, { id: cartId });
   return data?.data?.cart;
 }

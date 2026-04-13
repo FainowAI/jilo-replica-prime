@@ -4,16 +4,12 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 
-const FREE_SHIPPING_THRESHOLD = 150.0;
-
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
-  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart } = useCartStore();
+  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, cartDiscountAllocations } = useCartStore();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.price.amount) * item.quantity), 0);
-  const amountToFreeShipping = Math.max(0, FREE_SHIPPING_THRESHOLD - subtotal);
-  const freeShippingProgress = Math.min(100, (subtotal / FREE_SHIPPING_THRESHOLD) * 100);
 
   useEffect(() => { if (isOpen) syncCart(); }, [isOpen, syncCart]);
 
@@ -72,27 +68,11 @@ export const CartDrawer = () => {
           </div>
         ) : (
           <>
-            {/* Free Shipping Progress */}
+            {/* Free Shipping */}
             <div className="bg-[#faf7f2] px-5 pt-3 pb-4">
-              <div className="flex items-start gap-2.5">
-                <Truck className="h-[18px] w-[18px] text-[#1e3a1e] mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  <p className="text-[13px] text-[#1a1a1a] leading-[16.9px] mb-2">
-                    {amountToFreeShipping > 0 ? (
-                      <>
-                        Faltam <span className="font-bold text-[#1e3a1e]">R$ {amountToFreeShipping.toFixed(2)}</span> para ganhar <span className="font-bold">FRETE GRÁTIS!</span>
-                      </>
-                    ) : (
-                      <span className="font-bold text-[#1e3a1e]">Você ganhou FRETE GRÁTIS! 🎉</span>
-                    )}
-                  </p>
-                  <div className="w-full h-1.5 bg-[#e8e8e4] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[#d4a017] rounded-full transition-all duration-300"
-                      style={{ width: `${freeShippingProgress}%` }}
-                    />
-                  </div>
-                </div>
+              <div className="flex items-center gap-2 px-4 py-2 bg-[#1e3a1e]/5 rounded-lg mb-3">
+                <Truck className="h-4 w-4 text-[#1e3a1e]" />
+                <p className="text-xs text-[#1e3a1e] font-sans font-medium">Frete grátis — entrega em até 48h</p>
               </div>
             </div>
 
@@ -182,9 +162,19 @@ export const CartDrawer = () => {
                   <span className="text-sm text-[#1a1a1a]">Subtotal ({totalItems} {totalItems === 1 ? 'prato' : 'pratos'})</span>
                   <span className="text-sm font-semibold text-[#1a1a1a]">R$ {subtotal.toFixed(2)}</span>
                 </div>
+                {cartDiscountAllocations.length > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-[#1e3a1e] font-sans font-medium">
+                      {cartDiscountAllocations[0].title || cartDiscountAllocations[0].code || "Desconto de kit"}
+                    </span>
+                    <span className="text-xs font-semibold text-[#1e3a1e]">
+                      -R$ {parseFloat(cartDiscountAllocations[0].discountedAmount.amount).toFixed(2).replace(".", ",")}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-[13px] text-[#9b9b9b]">Frete</span>
-                  <span className="text-[13px] text-[#9b9b9b]">Calcular no checkout</span>
+                  <span className="text-[13px] font-semibold text-[#1e3a1e]">Grátis</span>
                 </div>
               </div>
 

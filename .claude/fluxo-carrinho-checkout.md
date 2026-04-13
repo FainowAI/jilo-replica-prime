@@ -8,7 +8,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 ### Store
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage key `shopify-cart`). Gerencia items, cartId, checkoutUrl, discountCodes. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl, applyDiscountCode, removeDiscountCode |
+| `src/stores/cartStore.ts` | Store Zustand com persist (localStorage key `shopify-cart`). Gerencia items, cartId, checkoutUrl, discountCodes, cartCost, cartDiscountAllocations. Actions: addItem, updateQuantity, removeItem, clearCart, syncCart, getCheckoutUrl, applyDiscountCode, removeDiscountCode, refreshCartDetails |
 
 ### Hooks
 | Arquivo | Descrição |
@@ -37,10 +37,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 | Constante | Valor | Onde é usada |
 |-----------|-------|-------------|
-| `FREE_SHIPPING_THRESHOLD` | R$ 150,00 | CartDrawer.tsx, Carrinho.tsx |
 | `PIX5` (cupom Shopify) | 5% off | Shopify Admin, orientação no Carrinho.tsx |
 | Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
-| Frete padrão | R$ 12,90 | Carrinho.tsx (mock, sem integração CEP real) |
+| Frete | Sempre grátis (cortesia Jilo) | Carrinho.tsx, CartDrawer.tsx |
 
 ## Regras de negócio
 
@@ -56,13 +55,13 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 6. **Remoção**: Quantidade → 0 chama removeItem. Último item removido → clearCart.
 
-7. **Frete grátis**: Compras ≥ R$150 ganham frete grátis. Barra de progresso visual em CartDrawer e Carrinho.
+7. **Frete SEMPRE grátis**: Frete é sempre grátis (cortesia Jilo). Exibido como R$12,90 riscado → Grátis no resumo do pedido.
 
 8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
 9. **Desconto PIX (5%)**: Cupom PIX5 configurado no Shopify Admin. Frontend orienta o usuário a usar o código PIX5 no checkout. Não há mais cálculo de desconto PIX no frontend.
 
-10. **Frete**: Valor padrão R$12,90. Calculador de CEP é UI-only (valida se tem 8 dígitos, não consulta API). Se tem frete grátis, mostra R$0.
+10. **Calculadora de CEP removida (Sprint 3)**: Não há mais cálculo de frete — frete é sempre grátis.
 
 11. **Sugestões ("Complete sua semana")**: Carrega 20 produtos, filtra os que já estão no carrinho, embaralha e mostra 4 sugestões aleatórias.
 
@@ -71,6 +70,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 13. **CartDrawer → /carrinho**: O botão "Ir para o Carrinho" no CartDrawer navega para `/carrinho` (não redireciona direto para Shopify).
 
 14. **CartItem interface**: Cada item tem `lineId` (Shopify), `product` (ShopifyProduct), `variantId`, `variantTitle`, `price`, `quantity`, `selectedOptions`.
+
+15. **cartCost e cartDiscountAllocations**: O cartStore agora armazena `cartCost` (totalAmount, subtotalAmount) e `cartDiscountAllocations` retornados pelo Shopify via `fetchCartFull`. O Carrinho exibe o desconto automático do Shopify (Automatic Discount por quantidade). `refreshCartDetails()` é chamado após cada mutação do cart e no mount da página `/carrinho`.
 
 ## Fluxo do usuário
 
@@ -124,3 +125,6 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - A seção de sugestões usa `Math.random()` para embaralhar — a cada render os resultados mudam
 - O `handleCheckout` na página Carrinho abre o checkout em nova aba (`_blank`), enquanto o "Comprar Agora" na página de produto usa `window.location.href`
 - Métodos de pagamento listados na UI (Alelo, Sodexo, VR, Ticket, Flash, VISA, MASTER, ELO, HIPER, PIX) são puramente visuais — dependem do gateway configurado no Shopify
+- O desconto de kit é um Automatic Discount no Shopify — ele aparece em `cart.discountAllocations`. Se os discounts não estiverem configurados no Shopify Admin, o carrinho funciona mas sem desconto.
+- `cartCost` pode ser null em carts salvos antes da Sprint 3 (localStorage stale) — o frontend faz fallback para cálculo local com `??`
+- `FREE_SHIPPING_THRESHOLD` foi removido — frete é sempre grátis, não há mais barra de progresso
