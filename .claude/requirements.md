@@ -26,6 +26,13 @@
 - R15. Timeline de status é populada automaticamente via trigger
 - R16. Frete é sempre grátis (cortesia Jilo — regra R20 do carrinho)
 
+### Sincronização Shopify (Sprint 2)
+- R23. Cada profile no Supabase tem exatamente 1 customer correspondente no Shopify, identificado pelo email
+- R24. O campo `shopify_customer_id` só é preenchido pela edge function `shopify-customer-sync` — nunca pelo usuário, nunca pelo frontend direto
+- R25. Usuário não autenticado NÃO pode finalizar compra — o botão de checkout em `/carrinho` abre modal de signup se `user === null`
+- R26. Falha de sync Shopify NÃO bloqueia a UX — o perfil é salvo normalmente, erro vai só pro console
+- R27. Sync é idempotente via argumento `identifier: { emailAddress }` na mutation `customerCreate`
+
 ## Carrinho e checkout (já existia)
 - R17. Frete sempre grátis
 - R18. Checkout redirect para Shopify

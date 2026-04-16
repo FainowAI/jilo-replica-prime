@@ -38,8 +38,25 @@ export const useUpdateProfile = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: async (updatedProfile) => {
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+
+      // Dispara sync Shopify se ainda não existe shopify_customer_id
+      // Fire-and-forget: se falhar, não impacta a UX (perfil já foi salvo)
+      if (updatedProfile && !updatedProfile.shopify_customer_id) {
+        try {
+          const { data, error } = await supabase.functions.invoke("shopify-customer-sync");
+          if (error) {
+            console.warn("Shopify sync failed:", error);
+          } else {
+            console.info("Shopify sync result:", data);
+            // Re-invalidar profile pra pegar o shopify_customer_id atualizado
+            queryClient.invalidateQueries({ queryKey: ["profile"] });
+          }
+        } catch (err) {
+          console.warn("Shopify sync threw:", err);
+        }
+      }
     },
   });
 };

@@ -11,6 +11,8 @@ import BenefitsSummary from "@/components/BenefitsSummary";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
 import CepChecker from "@/components/CepChecker";
 import { type CepValidationResult } from "@/lib/cepValidator";
+import AuthDialog from "@/components/AuthDialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Carrinho = () => {
   const {
@@ -36,6 +38,9 @@ const Carrinho = () => {
   const [suggestions, setSuggestions] = useState<ShopifyProduct[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(true);
   const [deliveryCheck, setDeliveryCheck] = useState<CepValidationResult | null>(null);
+  const { user } = useAuth();
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [pendingCheckout, setPendingCheckout] = useState(false);
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce(
@@ -111,11 +116,27 @@ const Carrinho = () => {
   };
 
   const handleCheckout = () => {
+    if (!user) {
+      setPendingCheckout(true);
+      setAuthDialogOpen(true);
+      return;
+    }
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
       window.open(checkoutUrl, "_blank");
     }
   };
+
+  // Se usuário logou depois de clicar em "Ir para o Checkout", finaliza o fluxo automaticamente
+  useEffect(() => {
+    if (user && pendingCheckout) {
+      setPendingCheckout(false);
+      const checkoutUrl = getCheckoutUrl();
+      if (checkoutUrl) {
+        window.open(checkoutUrl, "_blank");
+      }
+    }
+  }, [user, pendingCheckout, getCheckoutUrl]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;
@@ -459,6 +480,11 @@ const Carrinho = () => {
                   "Região não atendida"
                 ) : isLoading || isSyncing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
+                ) : !user ? (
+                  <>
+                    Entrar para finalizar
+                    <ChevronRight className="h-4 w-4" />
+                  </>
                 ) : (
                   <>
                     Ir para o Checkout
@@ -577,6 +603,18 @@ const Carrinho = () => {
             </div>
           )}
         </section>
+
+        <AuthDialog
+          open={authDialogOpen}
+          onOpenChange={(open) => {
+            setAuthDialogOpen(open);
+            if (!open && !user) {
+              // Usuário fechou o modal sem logar — cancela o pending checkout
+              setPendingCheckout(false);
+            }
+          }}
+          initialMode="signup"
+        />
       </main>
 
       <Footer />

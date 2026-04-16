@@ -80,6 +80,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 16. **cartCost e cartDiscountAllocations**: O cartStore agora armazena `cartCost` (totalAmount, subtotalAmount) e `cartDiscountAllocations` retornados pelo Shopify via `fetchCartFull`. O Carrinho exibe o desconto automático do Shopify (Automatic Discount por quantidade). `refreshCartDetails()` é chamado após cada mutação do cart e no mount da página `/carrinho`.
 
+17. **Checkout requer login (Sprint 2)**: Na página `/carrinho`, o botão "Ir para o Checkout" verifica `useAuth().user`. Se `null`, abre o `AuthDialog` em modo signup ao invés de redirecionar pro Shopify. O label do botão muda para "Entrar para finalizar". Após login/signup bem-sucedido, o `useEffect` que escuta mudanças em `user` dispara o checkout automaticamente via `getCheckoutUrl() + window.open`. Se o usuário fecha o modal sem logar, o `pendingCheckout` state é resetado. O CartDrawer não precisa de gating porque o botão "Finalizar Compra" apenas navega para `/carrinho` — a verificação acontece lá.
+
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho
