@@ -7,13 +7,164 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
+      addresses: {
+        Row: {
+          cep: string
+          city: string
+          complement: string | null
+          created_at: string
+          id: string
+          is_default: boolean
+          label: string
+          neighborhood: string
+          number: string
+          recipient_name: string | null
+          state: string
+          street: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cep: string
+          city: string
+          complement?: string | null
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          label?: string
+          neighborhood: string
+          number: string
+          recipient_name?: string | null
+          state: string
+          street: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cep?: string
+          city?: string
+          complement?: string | null
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          label?: string
+          neighborhood?: string
+          number?: string
+          recipient_name?: string | null
+          state?: string
+          street?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "addresses_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      order_items: {
+        Row: {
+          created_at: string
+          id: string
+          line_total_cents: number
+          order_id: string
+          product_handle: string | null
+          product_title: string
+          properties: Json | null
+          quantity: number
+          shopify_line_item_id: string | null
+          shopify_product_id: string | null
+          shopify_variant_id: string | null
+          unit_price_cents: number
+          variant_title: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          line_total_cents: number
+          order_id: string
+          product_handle?: string | null
+          product_title: string
+          properties?: Json | null
+          quantity: number
+          shopify_line_item_id?: string | null
+          shopify_product_id?: string | null
+          shopify_variant_id?: string | null
+          unit_price_cents: number
+          variant_title?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          line_total_cents?: number
+          order_id?: string
+          product_handle?: string | null
+          product_title?: string
+          properties?: Json | null
+          quantity?: number
+          shopify_line_item_id?: string | null
+          shopify_product_id?: string | null
+          shopify_variant_id?: string | null
+          unit_price_cents?: number
+          variant_title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      order_status_history: {
+        Row: {
+          changed_at: string
+          from_status: string | null
+          id: string
+          note: string | null
+          order_id: string
+          source: string
+          to_status: string
+        }
+        Insert: {
+          changed_at?: string
+          from_status?: string | null
+          id?: string
+          note?: string | null
+          order_id: string
+          source?: string
+          to_status: string
+        }
+        Update: {
+          changed_at?: string
+          from_status?: string | null
+          id?: string
+          note?: string | null
+          order_id?: string
+          source?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_status_history_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       orders: {
         Row: {
           bling_nfe_id: string | null
@@ -30,6 +181,7 @@ export type Database = {
           notes: string | null
           payment_method: string | null
           payment_status: string | null
+          placed_at: string | null
           shipping_address: Json | null
           shipping_cents: number | null
           shopify_checkout_token: string | null
@@ -56,6 +208,7 @@ export type Database = {
           notes?: string | null
           payment_method?: string | null
           payment_status?: string | null
+          placed_at?: string | null
           shipping_address?: Json | null
           shipping_cents?: number | null
           shopify_checkout_token?: string | null
@@ -82,6 +235,7 @@ export type Database = {
           notes?: string | null
           payment_method?: string | null
           payment_status?: string | null
+          placed_at?: string | null
           shipping_address?: Json | null
           shipping_cents?: number | null
           shopify_checkout_token?: string | null
@@ -104,10 +258,12 @@ export type Database = {
           city: string | null
           cpf: string | null
           created_at: string | null
+          default_shipping_address_id: string | null
           full_name: string | null
           id: string
           neighborhood: string | null
           phone: string | null
+          shopify_customer_id: string | null
           state: string | null
           updated_at: string | null
         }
@@ -119,10 +275,12 @@ export type Database = {
           city?: string | null
           cpf?: string | null
           created_at?: string | null
+          default_shipping_address_id?: string | null
           full_name?: string | null
           id: string
           neighborhood?: string | null
           phone?: string | null
+          shopify_customer_id?: string | null
           state?: string | null
           updated_at?: string | null
         }
@@ -134,14 +292,24 @@ export type Database = {
           city?: string | null
           cpf?: string | null
           created_at?: string | null
+          default_shipping_address_id?: string | null
           full_name?: string | null
           id?: string
           neighborhood?: string | null
           phone?: string | null
+          shopify_customer_id?: string | null
           state?: string | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_default_shipping_address_fkey"
+            columns: ["default_shipping_address_id"]
+            isOneToOne: false
+            referencedRelation: "addresses"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       webhook_events: {
         Row: {

@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { Menu, Search, User, X, ChevronDown, ArrowRight } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Menu, Search, User, X, ChevronDown, ArrowRight, LogOut, Package, MapPin, UserCircle2 } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import AuthDialog from "@/components/AuthDialog";
+import { useAuth } from "@/contexts/AuthContext";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
-import { useNavigate } from "react-router-dom";
 
 const navLinks = [
   { label: "Cardápio", href: "/cardapio" },
@@ -15,6 +18,8 @@ const Header = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -103,9 +108,45 @@ const Header = () => {
           >
             {isSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
           </button>
-          <button className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
-            <User className="h-5 w-5" />
-          </button>
+          {user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+                  <UserCircle2 className="h-5 w-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5 text-xs text-[#9b9b9b] font-sans truncate">{user.email}</div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to="/conta/perfil" className="flex items-center gap-2 cursor-pointer">
+                    <UserCircle2 className="h-4 w-4" /> Meu perfil
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/conta/pedidos" className="flex items-center gap-2 cursor-pointer">
+                    <Package className="h-4 w-4" /> Meus pedidos
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/conta/enderecos" className="flex items-center gap-2 cursor-pointer">
+                    <MapPin className="h-4 w-4" /> Endereços
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 cursor-pointer text-[#9b9b9b]">
+                  <LogOut className="h-4 w-4" /> Sair
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <>
+              <button onClick={() => setAuthDialogOpen(true)} className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+                <User className="h-5 w-5" />
+              </button>
+              <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
+            </>
+          )}
           <CartDrawer />
           <a href="/#kits" className="hidden lg:inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground px-5 py-2.5 text-sm font-semibold hover:bg-primary/90 transition-colors">
             Montar meu Kit

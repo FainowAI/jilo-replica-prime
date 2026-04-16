@@ -1,26 +1,37 @@
-# Estado do Projeto
+# Estado do projeto Jilo
 
 ## Última atualização
 2026-04-16
 
-## O que foi feito na última sessão
-- Ajustes de dados institucionais no Footer (CNPJ 39.659.013/0001-02, WhatsApp +55 12 98895-0426, ano 2026, nomes oficiais dos kits, remoção do e-mail)
-- FAQ: WhatsApp corrigido, resposta de prazo de entrega atualizada (18h-23h, 48h após confirmação), nova pergunta sobre frete grátis
-- Hero: chip "Frete grátis" adicionado à primeira dobra
-- BenefitsBar: "4,7 de 5" substituído por "Frete Grátis"
-- Novo componente `PaymentMethodSelector` no carrinho — aplica cupom PIX5 automaticamente ao selecionar PIX
-- Removido `PixCallout` da página `/carrinho` (continua em Product/CartDrawer/Kit/KitLivre)
-
-## Arquivos afetados
-- Editados: Footer.tsx, FAQ.tsx, BenefitsBar.tsx, Hero.tsx, Carrinho.tsx
-- Criados: PaymentMethodSelector.tsx
-- Docs atualizados: fluxo-carrinho-checkout.md, fluxo-infraestrutura.md, state.md (novo)
+## O que foi feito na última sessão (Sprint 1 — Área do Cliente)
+- Migration aplicada no Supabase com novas tabelas `addresses`, `order_items`, `order_status_history`, extensões em `profiles` e `orders`
+- 10 prompts executados implementando:
+  - AuthContext + AuthDialog + ProtectedRoute
+  - Páginas `/login` e `/cadastro`
+  - Layout `/conta/*` com sidebar
+  - Perfil editável (`/conta/perfil`)
+  - CRUD de endereços (`/conta/enderecos`)
+  - Lista e detalhes de pedidos com timeline (`/conta/pedidos`)
+  - 4 hooks de dados com TanStack Query
+  - 19 arquivos criados, 3 editados
+  - 1 migration SQL aplicada (trigger updated_at em profiles)
+  - types.ts regenerado manualmente
 
 ## Pendências
-- Validar que o cupom `PIX5` existe no Shopify Admin e está ativo (verificar painel Shopify)
-- Testar fluxo de substituição de cupom: aplicar BEMVINDO10 → clicar PIX → confirmar substituição
-- QA mobile do PaymentMethodSelector em 375px
+- Testar fluxo completo de signup → confirmação de email → login → área do cliente
+- Validar em mobile (375px)
+- Verificar se `line_items` JSONB legado em orders pode ser removido (check se algum código ainda consome)
+- Débito técnico: validação de CPF com máscara + checksum
+- Débito técnico: integração ViaCEP no AddressFormDialog
+- Débito de segurança: migrar anon key do Supabase para `.env`
+
+## Próximo passo planejado (Sprint 2)
+Edge Functions para sincronização Shopify ↔ Supabase:
+1. `customer-signup-sync` — cria Shopify Customer após signup Supabase
+2. `shopify-order-webhook` — processa webhook de pedidos
+3. `address-sync` — mantém endereços sincronizados bidirecionalmente
 
 ## Notas para a próxima sessão
-- A próxima etapa planejada é a integração Getnet custom checkout (substitui o redirect Shopify). Quando essa integração ocorrer, o `PaymentMethodSelector` passa a controlar de verdade o método de pagamento, e a lógica de cupom PIX5 será replicada/migrada para o fluxo Getnet.
-- A whitelist de CEP em `cepValidator.ts` continua estática — avaliar migrar para Supabase ou metafields do Shopify quando a operação expandir geograficamente.
+- A tabela `order_items` só vai ser preenchida quando a Edge Function do Sprint 2 rodar — até lá, pedidos existentes mostram "Nenhum item detalhado disponível"
+- O `shopify_customer_id` em profiles também só é preenchido pela Edge Function — inicialmente fica null
+- Se for implementar Sprint 2, o fluxo de cadastro/login deve ser testado com pedidos reais do Shopify

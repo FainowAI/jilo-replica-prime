@@ -47,7 +47,10 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 ### Tabelas
 | Tabela | Descrição | Colunas principais | RLS |
 |--------|-----------|-------------------|-----|
-| `profiles` | Perfil do usuário (endereço para entrega) | id (UUID, FK auth.users), full_name, phone, cpf, cep, address, address_number, address_complement, neighborhood, city, state, created_at, updated_at | Sim — SELECT/UPDATE/INSERT own |
+| `profiles` | Perfil do usuário (endereço para entrega) | id (UUID, FK auth.users), full_name, phone, cpf, cep, address, address_number, address_complement, neighborhood, city, state, created_at, updated_at, **shopify_customer_id** (Sprint 1), **default_shipping_address_id** (Sprint 1, FK addresses) | Sim — SELECT/UPDATE/INSERT own |
+| `addresses` | Multi-endereços por usuário. Trigger garante que só existe 1 `is_default=true` por `user_id` via índice parcial único | id (UUID), user_id (FK auth.users), label, recipient_name, cep, street, number, complement, neighborhood, city, state (2 chars upper), is_default (bool), created_at, updated_at | Sim — SELECT/UPDATE/INSERT/DELETE own |
+| `order_items` | Itens normalizados do pedido (substitui o `line_items` JSONB legado em `orders`) | id (UUID), order_id (FK orders), shopify_line_item_id, shopify_product_id, shopify_variant_id, product_title, variant_title, product_handle, quantity, unit_price_cents, line_total_cents, properties (jsonb), created_at | Sim — SELECT via JOIN com orders |
+| `order_status_history` | Timeline de status do pedido. Alimentada exclusivamente pelo trigger `orders_log_status_change` a cada update de `orders.status` | id (UUID), order_id (FK orders), from_status, to_status, source, note, changed_at | Sim — SELECT via JOIN com orders |
 
 ### Foreign Keys
 | Origem | Destino | Tipo |
@@ -65,6 +68,10 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 | Função | Trigger | Descrição |
 |--------|---------|-----------|
 | handle_new_user() | on_auth_user_created (AFTER INSERT on auth.users) | Cria automaticamente um registro em profiles quando um novo usuário se registra |
+| update_updated_at_column() | `profiles_updated_at` (BEFORE UPDATE on profiles), `addresses_updated_at` (BEFORE UPDATE on addresses), e outros homônimos por tabela | Atualiza `updated_at = now()` automaticamente a cada UPDATE. Aplicada em `profiles` via migration `20260417000000_profiles_updated_at_trigger.sql` |
+| ensure_single_default_address() | `addresses_ensure_single_default` (BEFORE INSERT/UPDATE on addresses) | Quando um endereço é marcado `is_default=true`, desmarca automaticamente todos os outros endereços do mesmo `user_id`. Garante unicidade reforçada também por índice parcial único |
+| sync_profile_default_address() | `addresses_sync_profile_default` (AFTER INSERT/UPDATE/DELETE on addresses) | Mantém `profiles.default_shipping_address_id` sincronizado como cache do endereço com `is_default=true` do usuário |
+| log_order_status_change() | `orders_log_status_change` (AFTER UPDATE on orders) | Quando `status` muda, insere automaticamente uma linha em `order_status_history` com `from_status`, `to_status` e timestamp. Alimenta a timeline exibida em `/conta/pedidos/:id` |
 
 ### Observações do banco
 - Apenas 1 tabela no schema public (`profiles`) — o banco é enxuto porque produtos, pedidos e checkout são gerenciados pelo Shopify.

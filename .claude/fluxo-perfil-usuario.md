@@ -1,73 +1,108 @@
-# Fluxo: Perfil de Usuário
+# Fluxo: Perfil de Usuário e Área do Cliente
 
 ## Visão geral
-O perfil de usuário é armazenado no Supabase (tabela `profiles`), criado automaticamente via trigger quando um novo usuário se registra no auth. Contém dados pessoais e de endereço para entrega. Atualmente, o frontend NÃO tem UI de perfil implementada — a tabela existe mas não é consumida por nenhuma página.
+A área do cliente Jilo é um sistema completo de gestão pessoal, acessível via `/conta/*` com autenticação obrigatória. Cobre: perfil editável, endereços múltiplos, lista de pedidos, detalhes de pedido com timeline de status. Implementada no Sprint 1 (Abril 2026).
 
 ## Arquivos envolvidos
 
-### Integração Supabase
+### Autenticação
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/integrations/supabase/client.ts` | Client Supabase configurado com URL e anon key (hardcoded) |
-| `src/integrations/supabase/types.ts` | Tipos TypeScript gerados — define interface `profiles` |
+| `src/contexts/AuthContext.tsx` | Context provider global — expõe `user`, `session`, `signIn`, `signUp`, `signOut`. Escuta `onAuthStateChange` |
+| `src/components/AuthDialog.tsx` | Modal reutilizável de login/cadastro (alterna entre modos) |
+| `src/components/ProtectedRoute.tsx` | Guarda rotas — redireciona para `/login?redirect=X` se não autenticado |
+| `src/pages/Login.tsx` | Página dedicada de login |
+| `src/pages/Cadastro.tsx` | Página dedicada de cadastro |
 
-### Migration
+### Layout da área do cliente
+| Arquivo | Rota | Descrição |
+|---------|------|-----------|
+| `src/pages/Conta.tsx` | `/conta` | Layout com sidebar + `<Outlet />` |
+| `src/components/conta/ContaSidebar.tsx` | — | Sidebar navegável (Perfil, Pedidos, Endereços, Sair) |
+
+### Páginas aninhadas
+| Arquivo | Rota | Descrição |
+|---------|------|-----------|
+| `src/pages/conta/Perfil.tsx` | `/conta/perfil` (+ index) | Editar nome, telefone, CPF |
+| `src/pages/conta/Enderecos.tsx` | `/conta/enderecos` | Lista de endereços + CRUD |
+| `src/pages/conta/Pedidos.tsx` | `/conta/pedidos` | Lista de pedidos do usuário |
+| `src/pages/conta/PedidoDetalhe.tsx` | `/conta/pedidos/:id` | Detalhes com itens, timeline e endereço |
+
+### Componentes da área do cliente
 | Arquivo | Descrição |
 |---------|-----------|
-| `supabase/migrations/20260304221228_*.sql` | Cria tabela profiles, RLS policies, function handle_new_user(), trigger on_auth_user_created |
+| `src/components/conta/AddressCard.tsx` | Card visual de endereço com ações |
+| `src/components/conta/AddressFormDialog.tsx` | Dialog de criação/edição |
+| `src/components/conta/OrderStatusBadge.tsx` | Badge colorido de status do pedido |
+| `src/components/conta/OrderStatusTimeline.tsx` | Timeline vertical do histórico |
 
-## Tabelas do banco
+### Hooks de dados
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/hooks/useProfile.ts` | `useProfile()`, `useUpdateProfile()` |
+| `src/hooks/useAddresses.ts` | `useAddresses()`, `useCreateAddress()`, `useUpdateAddress()`, `useDeleteAddress()` |
+| `src/hooks/useOrders.ts` | `useOrders()` — lista ordenada por `placed_at desc` |
+| `src/hooks/useOrderDetails.ts` | `useOrderDetails(id)` — fetch paralelo de order + items + history |
 
-### profiles
-| Coluna | Tipo | Nullable | Default | Descrição |
-|--------|------|----------|---------|-----------|
-| id | UUID (PK) | NÃO | — | FK para auth.users(id) ON DELETE CASCADE |
-| full_name | TEXT | SIM | NULL | Nome completo |
-| phone | TEXT | SIM | NULL | Telefone |
-| cpf | TEXT | SIM | NULL | CPF do usuário |
-| cep | TEXT | SIM | NULL | CEP para entrega |
-| address | TEXT | SIM | NULL | Rua/logradouro |
-| address_number | TEXT | SIM | NULL | Número |
-| address_complement | TEXT | SIM | NULL | Complemento |
-| neighborhood | TEXT | SIM | NULL | Bairro |
-| city | TEXT | SIM | NULL | Cidade |
-| state | TEXT | SIM | NULL | Estado (UF) |
-| created_at | TIMESTAMPTZ | SIM | now() | Data de criação |
-| updated_at | TIMESTAMPTZ | SIM | now() | Data de atualização |
-
-### RLS
-- SELECT: `auth.uid() = id`
-- UPDATE: `auth.uid() = id`
-- INSERT: `auth.uid() = id`
-
-### Triggers
-- `on_auth_user_created` → `handle_new_user()` → insere profile vazio com o id do novo usuário
+## Tabelas do banco (ver `fluxo-infraestrutura.md` para schema completo)
+- `profiles` — dados pessoais + `shopify_customer_id` + `default_shipping_address_id`
+- `addresses` — múltiplos endereços por usuário com `is_default`
+- `orders` — pedidos (populados via webhook Shopify)
+- `order_items` — itens normalizados de cada pedido
+- `order_status_history` — timeline automática via trigger
 
 ## Regras de negócio
 
-1. **Criação automática**: Profile criado vazio (só `id`) quando o usuário se registra — campos preenchidos depois.
-2. **RLS restritiva**: Cada usuário só acessa o próprio perfil — sem role admin.
-3. **Sem validação de CPF**: Campo TEXT sem constraint — qualquer string aceita.
-4. **updated_at não é automático**: Default `now()` na criação, mas NÃO atualiza no UPDATE. Precisa de trigger ou update manual.
+1. **Login obrigatório em `/conta/*`** — `ProtectedRoute` redireciona pra `/login?redirect=<path>`
+2. **Signup cria profile vazio** — trigger `handle_new_user` no DB faz isso automaticamente
+3. **E-mail não editável** — vive em `auth.users`, profile só exibe
+4. **Endereço default único** — trigger `ensure_single_default_address` desmarca os outros
+5. **`profiles.default_shipping_address_id` é cache** — sync automático via trigger `sync_profile_default_address`
+6. **Pedidos são read-only** — usuário só visualiza; escrita é exclusiva do service_role (webhook Shopify)
+7. **Timeline automática** — trigger `log_order_status_change` insere em `order_status_history` a cada mudança de status
+8. **Validação CEP no frontend** — regex `^[0-9]{5}-?[0-9]{3}$` espelha o CHECK do DB
+9. **UF uppercase e 2 chars** — input auto-uppercase espelha CHECK do DB
 
-## Fluxo do usuário (futuro — não implementado)
-1. Usuário se registra (Supabase Auth) → trigger cria profile vazio
-2. Usuário acessa página de perfil → lê dados via Supabase client
-3. Usuário preenche/edita dados pessoais e endereço
-4. Dados salvos via UPDATE na tabela profiles
+## Fluxo do usuário
+
+### Signup + primeiro login
+1. Usuário clica em ícone User no Header → abre `AuthDialog` em modo signup
+2. Preenche nome, e-mail, senha (min 6 chars)
+3. Supabase envia e-mail de confirmação
+4. Trigger `handle_new_user` cria profile vazio automaticamente
+5. Após confirmação, usuário volta ao site e faz login
+6. Redirecionado para `/conta/perfil` (ou `?redirect` se veio de rota protegida)
+
+### Gestão de endereços
+1. Acessa `/conta/enderecos`
+2. Clica "Novo endereço" → abre `AddressFormDialog`
+3. Preenche campos obrigatórios + marca "padrão" se quiser
+4. `useCreateAddress` insere via Supabase com `user_id` automático
+5. Trigger do DB garante unicidade de default
+6. Lista recarrega via `queryClient.invalidateQueries`
+
+### Visualização de pedidos
+1. Acessa `/conta/pedidos` → lista via `useOrders()` filtrada por `user_id`
+2. Clica em um pedido → navega para `/conta/pedidos/:id`
+3. `useOrderDetails` faz 3 queries paralelas (order + items + history)
+4. Renderiza: itens, timeline vertical, resumo de valores, endereço de entrega
+5. Sem ações de edição — tudo read-only
 
 ## Integrações
 | Integração | Tipo | Descrição |
 |-----------|------|-----------|
-| Supabase Auth | auth.users | Registro e login |
-| Supabase DB | profiles | Dados de perfil e endereço |
+| Supabase Auth | auth.users | Signup, login, sessão persistente em localStorage |
+| Supabase DB | 5 tabelas | Profile, addresses, orders, order_items, order_status_history |
+| RLS | Todas as tabelas | `auth.uid() = user_id` em queries — isolamento automático |
+| TanStack Query | Cache | Todas as queries cachadas por `queryKey` + invalidação em mutations |
 
 ## Gotchas e armadilhas
-- Não há UI de perfil no frontend — tabela preparada mas não consumida
-- `updated_at` NÃO atualiza automaticamente — precisa de trigger
-- `cpf` não tem validação — qualquer string aceita
-- `state` é TEXT livre — não é ENUM de UFs
-- A anon key do Supabase está hardcoded no client.ts — deveria estar em .env
-- Cascade delete: deletar usuário no auth remove o profile
-- Não há campo `email` na tabela profiles — email vive no auth.users
-- O botão de User (ícone) no Header existe mas não tem ação — placeholder para futura implementação
+- `AuthProvider` DEVE estar dentro do `BrowserRouter` (ProtectedRoute usa `useLocation`)
+- `useOrderDetails` faz 3 queries paralelas com `Promise.all` — se uma falhar, a query falha toda
+- `shipping_address` em `orders` é JSONB — frontend faz cast para interface `ShippingAddress`
+- Pedidos antigos sem `order_items` ainda aparecem — só a seção de itens mostra "Nenhum item detalhado disponível"
+- `line_items` JSONB em `orders` é **legado** — não consumimos no frontend, usamos `order_items` normalizada
+- `shopify_customer_id` NÃO é preenchido pelo frontend — vai ser populado pela Edge Function do Sprint 2
+- Validação de CPF não é implementada (campo TEXT livre) — débito técnico
+- A anon key do Supabase continua hardcoded em `client.ts` — débito de segurança
+- Sem integração ViaCEP no formulário de endereço — usuário digita tudo manualmente
