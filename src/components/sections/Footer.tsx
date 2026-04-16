@@ -1,4 +1,5 @@
 import { Instagram, Facebook } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Footer = () => {
   return (
@@ -36,10 +37,11 @@ const Footer = () => {
           <div>
             <h4 className="font-sans font-semibold text-sm mb-4">Kits</h4>
             <ul className="space-y-2.5 text-sm text-primary-foreground/60 font-sans">
-              <li><a href="#kits" className="hover:text-primary-foreground transition-colors">Kit Semana Leve</a></li>
-              <li><a href="#kits" className="hover:text-primary-foreground transition-colors">Kit Família</a></li>
-              <li><a href="#kits" className="hover:text-primary-foreground transition-colors">Kit Fitness</a></li>
-              <li><a href="#kits" className="hover:text-primary-foreground transition-colors">Kit Vegano</a></li>
+              <li><Link to="/kit/kit-leveza" className="hover:text-primary-foreground transition-colors">Kit Leveza</Link></li>
+              <li><Link to="/kit/kit-sabor" className="hover:text-primary-foreground transition-colors">Kit Sabor</Link></li>
+              <li><Link to="/kit/kit-forca" className="hover:text-primary-foreground transition-colors">Kit Força</Link></li>
+              <li><Link to="/kit/kit-verde" className="hover:text-primary-foreground transition-colors">Kit Verde</Link></li>
+              <li><Link to="/kit-livre" className="hover:text-primary-foreground transition-colors">Kit Livre</Link></li>
             </ul>
           </div>
 
@@ -48,16 +50,15 @@ const Footer = () => {
             <h4 className="font-sans font-semibold text-sm mb-4">Atendimento</h4>
             <ul className="space-y-2.5 text-sm text-primary-foreground/60 font-sans">
               <li><a href="#faq" className="hover:text-primary-foreground transition-colors">FAQ</a></li>
-              <li><a href="https://wa.me/5511999999999" target="_blank" rel="noopener noreferrer" className="hover:text-primary-foreground transition-colors">WhatsApp</a></li>
-              <li><a href="mailto:contato@jilo.com.br" className="hover:text-primary-foreground transition-colors">contato@jilo.com.br</a></li>
+              <li><a href="https://wa.me/5512988950426" target="_blank" rel="noopener noreferrer" className="hover:text-primary-foreground transition-colors">WhatsApp</a></li>
             </ul>
           </div>
         </div>
       </div>
       <div className="border-t border-primary-foreground/10">
         <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-primary-foreground/40 font-sans">
-          <p>© 2024 Jilo. Todos os direitos reservados.</p>
-          <p>CNPJ: 00.000.000/0001-00</p>
+          <p>© 2026 Jilo. Todos os direitos reservados.</p>
+          <p>CNPJ: 39.659.013/0001-02</p>
         </div>
       </div>
     </footer>
