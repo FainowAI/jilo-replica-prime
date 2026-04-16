@@ -26,6 +26,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 | `src/components/CartDrawer.tsx` | Drawer lateral (Sheet) — mini-cart com itens, barra de frete grátis, PixCallout, botão que navega para `/carrinho` |
 | `src/components/CepChecker.tsx` | Input de CEP com validação via ViaCEP. Callback `onResult` informa se região é atendida |
 | `src/components/PixCallout.tsx` | Card ou inline que orienta uso do código PIX5 no checkout. Variantes: `inline` (texto) e `card` (box com valor calculado) |
+| `src/components/PaymentMethodSelector.tsx` | Seletor ativo de método de pagamento (PIX, Crédito, PayPal). Ao selecionar PIX, aplica automaticamente o cupom PIX5 via `applyDiscountCode`. Usado apenas em `/carrinho`. |
 | `src/components/BenefitsSummary.tsx` | Lista de benefícios (desconto de kit, frete grátis, PIX) |
 
 ### Lib
@@ -63,11 +64,11 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
-9. **Desconto PIX (5%)**: Cupom PIX5 configurado no Shopify Admin. Frontend orienta o usuário a usar o código PIX5 no checkout. Não há mais cálculo de desconto PIX no frontend.
+9. **Desconto PIX (5%) ativo via seletor**: Na página `/carrinho`, o componente `PaymentMethodSelector` oferece 3 opções (PIX, Cartão de Crédito, PayPal). Ao selecionar PIX, o cupom `PIX5` é aplicado automaticamente via `applyDiscountCode()` no Shopify Cart API. Ao selecionar outro método, se o PIX estava ativo, o cupom é removido via `removeDiscountCode()`. Se houver um cupom manual ativo (ex: `BEMVINDO10`), o seletor mostra `window.confirm` antes de substituir. No `CartDrawer`, o `PixCallout` continua sendo exibido em modo passivo (educativo) — o seletor ativo só existe no `/carrinho`.
 
 10. **Validação de CEP via ViaCEP (Sprint 2)**: `CepChecker` no resumo do pedido consulta a API ViaCEP e verifica contra a whitelist `DELIVERY_AREAS` em `src/lib/cepValidator.ts`. Se a região NÃO é atendida, o botão de checkout é desabilitado com "Região não atendida". Se o CEP não foi verificado, o checkout funciona normalmente — a verificação é recomendada, não obrigatória.
 
-11. **PixCallout orienta uso do PIX5**: Componente `PixCallout` aparece em Product.tsx, CartDrawer.tsx e Carrinho.tsx. Exibe "PIX com 5% off → R$ X" e instrui o usuário a usar o código PIX5 no checkout Shopify. NÃO aplica desconto — apenas comunica.
+11. **PixCallout orienta uso do PIX5 em contextos passivos**: Componente `PixCallout` aparece em `Product.tsx`, `CartDrawer.tsx`, `Kit.tsx` e `KitLivre.tsx` com função educativa — mostra "PIX 5% off → R$ X" sem aplicar cupom. Na página `/carrinho` foi removido e substituído pelo `PaymentMethodSelector` (que aplica o cupom ativamente).
 
 12. **Sugestões ("Complete sua semana")**: Carrega 20 produtos, filtra os que já estão no carrinho, embaralha e mostra 4 sugestões aleatórias.
 

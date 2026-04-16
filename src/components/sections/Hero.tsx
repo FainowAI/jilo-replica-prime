@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock, Snowflake, ArrowRight } from "lucide-react";
+import { CheckCircle2, Clock, Snowflake, ArrowRight, Truck } from "lucide-react";
 
 const Hero = () => {
   return (
@@ -44,6 +44,9 @@ const Hero = () => {
             </span>
             <span className="inline-flex items-center gap-[6px] bg-[rgba(30,58,30,0.55)] border-[0.8px] border-[rgba(255,255,255,0.18)] text-white rounded-full px-[14px] py-[6px] text-[12px] font-sans font-medium backdrop-blur-md">
               <Snowflake className="h-[13px] w-[13px] text-[#d4a017]" /> Congelado artesanal
+            </span>
+            <span className="inline-flex items-center gap-[6px] bg-[rgba(30,58,30,0.55)] border-[0.8px] border-[rgba(255,255,255,0.18)] text-white rounded-full px-[14px] py-[6px] text-[12px] font-sans font-medium backdrop-blur-md">
+              <Truck className="h-[13px] w-[13px] text-[#d4a017]" /> Frete grátis
             </span>
           </div>
         </div>

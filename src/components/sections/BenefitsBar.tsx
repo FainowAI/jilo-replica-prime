@@ -1,11 +1,5 @@
 import React from "react";
 
-const StarIcon = (props: React.SVGProps<SVGSVGElement>) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
-    <path d="M7.99992 11.4533L11.5266 13.56L10.5933 9.53331L13.7333 6.84665L9.61992 6.50665L7.99992 2.66665L6.37992 6.50665L2.26659 6.84665L5.40659 9.53331L4.47326 13.56L7.99992 11.4533Z" fill="currentColor" />
-  </svg>
-);
-
 const PercentIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
     <path d="M4.66667 8C5.40305 8 6 7.40305 6 6.66667C6 5.93029 5.40305 5.33333 4.66667 5.33333C3.93029 5.33333 3.33333 5.93029 3.33333 6.66667C3.33333 7.40305 3.93029 8 4.66667 8ZM11.3333 10.6667C12.0697 10.6667 12.6667 10.0697 12.6667 9.33333C12.6667 8.59695 12.0697 8 11.3333 8C10.597 8 10 8.59695 10 9.33333C10 10.0697 10.597 10.6667 11.3333 10.6667ZM12.6667 4L3.33333 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -27,7 +21,7 @@ const ChefHatIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const benefits = [
-  { icon: StarIcon, label: "4,7 de 5", sub: "Avaliação dos clientes" },
+  { icon: TruckIcon, label: "Frete Grátis", sub: "Cortesia Jilo em toda região atendida" },
   { icon: TruckIcon, label: "Entrega em 48h", sub: "Gelado e selado" },
   { icon: ChefHatIcon, label: "Feito artesanalmente", sub: "Sem conservantes" },
 ];

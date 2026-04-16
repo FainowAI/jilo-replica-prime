@@ -32,6 +32,16 @@
 | Fontes | DM Sans (corpo) + DM Serif Display (títulos) — carregadas via Google Fonts no `index.html` |
 | Cores principais | Verde escuro #1E3A1E, off-white #FAF7F2, bege #f0efeb, dourado #d4a017, cinza texto #6b6b6b/#9b9b9b |
 
+## Dados institucionais da marca
+| Campo | Valor |
+|-------|-------|
+| Razão social | DaJu Alimentação |
+| CNPJ | 39.659.013/0001-02 |
+| WhatsApp oficial | +55 12 98895-0426 (link: https://wa.me/5512988950426) |
+| Ano de copyright corrente | 2026 |
+
+Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de atendimento) e `src/components/sections/FAQ.tsx` (botão "Falar no WhatsApp"). Qualquer alteração deve ser replicada em ambos.
+
 ## Banco de dados (Supabase)
 
 ### Tabelas

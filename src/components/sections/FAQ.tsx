@@ -8,7 +8,8 @@ import { MessageCircle } from "lucide-react";
 
 const faqs = [
   { q: "Como funciona o congelamento?", a: "Nossos pratos são congelados logo após o preparo, utilizando o método de ultra-congelamento que preserva sabor, textura e nutrientes por até 90 dias." },
-  { q: "Qual o prazo de entrega?", a: "Entregamos em até 48 horas úteis para a região metropolitana. Para outras regiões, o prazo pode variar de 3 a 5 dias úteis." },
+  { q: "Qual o prazo de entrega?", a: "Entregamos diariamente entre 18h e 23h. O prazo é de 48h após a confirmação do pedido — pedidos feitos até meia-noite são entregues no segundo dia seguinte. Você não escolhe o dia: ao confirmar, você recebe automaticamente a data prevista de entrega." },
+  { q: "Quanto custa o frete?", a: "O frete é grátis — cortesia Jilo para toda região atendida. Verifique no carrinho se entregamos no seu CEP." },
   { q: "Quais as formas de pagamento?", a: "Aceitamos Pix, cartão de crédito e PayPal. As opções estarão disponíveis no momento do checkout." },
   { q: "Os pratos contêm conservantes?", a: "Não. Nossos pratos são 100% livres de conservantes artificiais. Usamos apenas o congelamento como método de conservação natural." },
   { q: "Como aquecer os pratos?", a: "Micro-ondas: retire a tampa, aqueça por 4-6 minutos. Forno: transfira para refratário, cubra com papel alumínio e aqueça por 20 minutos a 180°C." },
@@ -38,7 +39,7 @@ const FAQ = () => {
           </Accordion>
           <div className="text-center mt-10">
             <a
-              href="https://wa.me/5511999999999"
+              href="https://wa.me/5512988950426"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[hsl(142,70%,40%)] text-white px-8 py-3 text-sm font-semibold font-sans hover:opacity-90 transition-opacity"

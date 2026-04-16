@@ -8,7 +8,7 @@ import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
-import PixCallout from "@/components/PixCallout";
+import PaymentMethodSelector from "@/components/PaymentMethodSelector";
 import CepChecker from "@/components/CepChecker";
 import { type CepValidationResult } from "@/lib/cepValidator";
 
@@ -53,6 +53,10 @@ const Carrinho = () => {
     syncCart();
     refreshCartDetails();
   }, [syncCart, refreshCartDetails]);
+
+  useEffect(() => {
+    refreshCartDetails();
+  }, [discountCodes, refreshCartDetails]);
 
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
@@ -424,8 +428,6 @@ const Carrinho = () => {
                 </div>
               </div>
 
-              <PixCallout variant="card" originalCents={Math.round(subtotal * 100)} className="mt-3 mb-4" />
-
               {/* Divider */}
               <div className="h-px bg-[#e8e8e4] mb-4" />
 
@@ -442,27 +444,9 @@ const Carrinho = () => {
 
 
 
-              {/* Payment Methods */}
-              <div className="space-y-3 mb-5 font-sans">
-                <div>
-                  <p className="text-[10px] text-[#9b9b9b] uppercase tracking-wider mb-1.5">
-                    Pagamento Seguro
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { name: "CARTÃO DE CRÉDITO", bg: "bg-[#1a1a1a]", text: "text-white" },
-                      { name: "PAYPAL", bg: "bg-[#003087]", text: "text-white" },
-                      { name: "PIX", bg: "bg-[#32bcad]", text: "text-white" },
-                    ].map((c) => (
-                      <span
-                        key={c.name}
-                        className={`px-2.5 py-1 ${c.bg} ${c.text} rounded text-[10px] font-bold`}
-                      >
-                        {c.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+              {/* Payment Method Selector */}
+              <div className="mb-5">
+                <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} />
               </div>
 
               {/* Checkout Button */}
