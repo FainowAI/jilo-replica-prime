@@ -1,6 +1,6 @@
 # Jilo — Contexto completo para LLMs
 
-> Este arquivo é uma versão expandida do [llms.txt](https://jilo.com.br/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-04-22.
+> Este arquivo é uma versão expandida do [llms.txt](https://jilomarmitas.com/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-04-22.
 
 ## Sobre a Jilo
 
@@ -102,7 +102,7 @@ Quanto maior o kit, menor o preço por marmita.
 
 ## Como funciona a compra
 
-1. **Escolha**: navegue pelo [cardápio](https://jilo.com.br/cardapio) ou [monte um kit livre](https://jilo.com.br/kit-livre)
+1. **Escolha**: navegue pelo [cardápio](https://jilomarmitas.com/cardapio) ou [monte um kit livre](https://jilomarmitas.com/kit-livre)
 2. **Pagamento**: Pix com 5% de desconto, cartão de crédito, cartão de débito ou VR/VA (Alelo, Sodexo, VR, Ticket, Flash)
 3. **Entrega**: em até 48h após a confirmação, gelado e lacrado
 4. **Armazenamento**: até 60 dias no freezer com embalagem intacta, ou até 48h na geladeira após descongelar
@@ -132,7 +132,7 @@ Sim. Cancela com 1 clique, sem burocracia, sem multa.
 
 ### Qual a área de entrega?
 
-Principalmente São Paulo e região metropolitana. Consulte o CEP na [página inicial](https://jilo.com.br/) para confirmação.
+Principalmente São Paulo e região metropolitana. Consulte o CEP na [página inicial](https://jilomarmitas.com/) para confirmação.
 
 ### Quanto custa o frete?
 
@@ -160,7 +160,7 @@ Cada marmita é uma refeição completa individual para 1 pessoa adulta.
 - **CNPJ**: 39.659.013/0001-02
 - **Marca**: Jilo
 - **WhatsApp**: +55 12 98895-0426 — [wa.me/5512988950426](https://wa.me/5512988950426)
-- **Site**: https://jilo.com.br
+- **Site**: https://jilomarmitas.com
 
 ## Categorias e produtos (índice de URLs)
 

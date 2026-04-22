@@ -6,14 +6,14 @@ A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos
 
 ## Páginas principais
 
-- [Página inicial](https://jilo.com.br/): Homepage com destaques, favoritos da semana e CTAs para montar kit
-- [Cardápio completo](https://jilo.com.br/cardapio): Grid com todos os 26 pratos, filtros por categoria, busca e ordenação
-- [Kit Livre](https://jilo.com.br/kit-livre): Monte um kit personalizado escolhendo pratos avulsos
-- [Contexto completo para LLMs](https://jilo.com.br/llms-full.txt): Versão longa com FAQ, tom de voz, glossário de pratos e detalhes de operação
+- [Página inicial](https://jilomarmitas.com/): Homepage com destaques, favoritos da semana e CTAs para montar kit
+- [Cardápio completo](https://jilomarmitas.com/cardapio): Grid com todos os 26 pratos, filtros por categoria, busca e ordenação
+- [Kit Livre](https://jilomarmitas.com/kit-livre): Monte um kit personalizado escolhendo pratos avulsos
+- [Contexto completo para LLMs](https://jilomarmitas.com/llms-full.txt): Versão longa com FAQ, tom de voz, glossário de pratos e detalhes de operação
 
 ## Pratos individuais
 
-O cardápio completo está em [https://jilo.com.br/cardapio](https://jilo.com.br/cardapio). Cada prato tem página própria em `/produto/:handle` com ingredientes, alérgicos, modo de preparo e informações nutricionais.
+O cardápio completo está em [https://jilomarmitas.com/cardapio](https://jilomarmitas.com/cardapio). Cada prato tem página própria em `/produto/:handle` com ingredientes, alérgicos, modo de preparo e informações nutricionais.
 
 ## Como funciona
 
@@ -33,5 +33,5 @@ O cardápio completo está em [https://jilo.com.br/cardapio](https://jilo.com.br
 
 ## Optional
 
-- [Sitemap XML](https://jilo.com.br/sitemap.xml): Índice completo de URLs para crawlers
-- [Política de robots](https://jilo.com.br/robots.txt): Permissões de crawling para bots e LLMs
+- [Sitemap XML](https://jilomarmitas.com/sitemap.xml): Índice completo de URLs para crawlers
+- [Política de robots](https://jilomarmitas.com/robots.txt): Permissões de crawling para bots e LLMs

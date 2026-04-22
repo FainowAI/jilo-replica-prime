@@ -58,8 +58,8 @@ Disallow: /login
 Disallow: /cadastro
 
 # Sitemaps
-Sitemap: https://jilo.com.br/sitemap.xml
+Sitemap: https://jilomarmitas.com/sitemap.xml
 
 # Referências para LLMs (padrão proposto por Answer.AI)
-# LLMs-txt: https://jilo.com.br/llms.txt
-# LLMs-full-txt: https://jilo.com.br/llms-full.txt
+# LLMs-txt: https://jilomarmitas.com/llms.txt
+# LLMs-full-txt: https://jilomarmitas.com/llms-full.txt
