@@ -9,7 +9,7 @@ const SHOPIFY_STORE = 'jnutg9-u2.myshopify.com';
 const API_VERSION = '2025-07';
 const BASE_URL = `https://${SHOPIFY_STORE}/admin/api/${API_VERSION}`;
 const TOKEN = process.env.SHOPIFY_ADMIN_TOKEN;
-const SITE_URL = process.env.SITE_URL || 'https://jilo.com.br';
+const SITE_URL = process.env.SITE_URL || 'https://jilomarmitas.com';
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
 
 interface ShopifyProductLite {

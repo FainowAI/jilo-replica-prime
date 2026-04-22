@@ -3,23 +3,19 @@
 ## Última atualização
 2026-04-22
 
-## O que foi feito na última sessão (Sprint 3 — SEO + GEO)
-- Script `scripts/generate-seo-files.ts` criado — gera 4 arquivos de SEO/GEO em build time
-- `public/sitemap.xml` gerado com rotas estáticas + produtos + collections do Shopify
-- `public/robots.txt` reescrito — agora permite explicitamente 11 AI crawlers (GPTBot, ClaudeBot, PerplexityBot, etc.) e tem Disallow de rotas privadas
-- `public/llms.txt` gerado — índice markdown curto para LLMs no padrão Answer.AI
-- `public/llms-full.txt` gerado — contexto completo da marca (FAQ, cardápio, tom de voz) pronto para ingestão em ChatGPT/Claude/Perplexity
-- `package.json` atualizado com scripts `seo` e hook `prebuild`
-- Novo doc `.claude/fluxo-seo-geo.md` criado
-- 3 requirements adicionados (R28, R29, R30)
+## O que foi feito na última sessão (Sprint 3 — SEO + GEO, correção de domínio)
+- Sprint 3 inicial: script `scripts/generate-seo-files.ts` criado, 4 arquivos SEO/GEO gerados, hook `prebuild` no package.json, doc `.claude/fluxo-seo-geo.md` criado
+- Correção cirúrgica: fallback da `SITE_URL` em `scripts/generate-seo-files.ts` estava com `https://jilo.com.br` — corrigido para `https://jilomarmitas.com` (domínio real do site)
+- Regra R30 em `.claude/requirements.md` atualizada com a URL correta
+- Menções à URL antiga em `.claude/fluxo-seo-geo.md` sincronizadas
+- Arquivos gerados em `public/` (sitemap.xml, robots.txt, llms.txt, llms-full.txt) já estavam corretos — foram gerados com a env var `SITE_URL` setada na execução original
 
 ## Histórico de sprints
 - **Sprint 1 (2026-04-16)** — Área do cliente completa (auth, perfil, pedidos, endereços, timeline)
 - **Sprint 2 (2026-04-16)** — Shopify customer sync + checkout gating
-- **Sprint 3 (2026-04-22)** — SEO tradicional + GEO (llms.txt) com geração em build time
+- **Sprint 3 (2026-04-22)** — SEO tradicional + GEO (llms.txt) com geração em build time + correção do domínio canônico
 
 ## Pendências
-- Definir URL canônica de produção e setar `SITE_URL` no ambiente de build (atual fallback: `https://jilo.com.br`)
 - Submeter `sitemap.xml` no Google Search Console e Bing Webmaster Tools após o go-live
 - Testar ingestão do `llms-full.txt` em conversas com ChatGPT, Claude e Perplexity — validar se o tom oficial da marca aparece corretamente
 - Débito técnico carryover (Sprint 2): testar fluxo end-to-end de signup → confirmação de email → sync Shopify
@@ -35,7 +31,7 @@ Sprint 4 — Backend de pedidos ligado ao checkout:
 4. Integração Bling ERP
 
 ## Notas para a próxima sessão
-- Ao adicionar novo prato ao cardápio: rodar `npm run seed` depois `npm run seo` e comitar os arquivos gerados. Sem isso, LLMs respondem com cardápio desatualizado
-- Se o domínio de produção mudar, setar `SITE_URL` antes do build e recomitar os 4 arquivos de SEO/GEO
-- O fallback gracioso do `generate-seo-files.ts` garante que o build nunca quebra por causa do Shopify — mas também significa que um erro silencioso pode gerar sitemap incompleto. Monitorar logs do build
-- `llms.txt` e `llms-full.txt` são padrões emergentes (proposta set/2024) — a spec pode evoluir. Monitorar llmstxt.org
+- Domínio canônico do site é `https://jilomarmitas.com` — usar sempre essa URL em qualquer referência a links absolutos
+- Ao adicionar novo prato ao cardápio: rodar `npm run seed` depois `npm run seo` e comitar os arquivos gerados
+- `llms.txt` e `llms-full.txt` são padrões emergentes — a spec pode evoluir. Monitorar llmstxt.org
+- Se em qualquer momento surgir necessidade de adicionar subdomínio (ex: blog.jilomarmitas.com), criar sitemap separado e referenciá-lo no robots.txt

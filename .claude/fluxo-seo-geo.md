@@ -33,7 +33,7 @@ Nenhuma. A feature é puramente estática e não usa Supabase.
 
 1. **R28 — Rotas privadas fora do sitemap**: `/conta/*`, `/carrinho`, `/login`, `/cadastro` NÃO entram no sitemap.xml. Também têm `Disallow` explícito no robots.txt para o User-agent `*`.
 2. **R29 — Geração automática, edição proibida**: os 4 arquivos são regenerados a cada `npm run build`. Editar manualmente é antipadrão — a próxima build sobrescreve.
-3. **R30 — URL canônica única**: env var `SITE_URL` com fallback para `https://jilo.com.br`. Todas as URLs absolutas dos 4 arquivos usam essa fonte.
+3. **R30 — URL canônica única**: env var `SITE_URL` com fallback para `https://jilomarmitas.com`. Todas as URLs absolutas dos 4 arquivos usam essa fonte.
 4. **Permissões de AI crawlers**: robots.txt permite explicitamente GPTBot, ChatGPT-User, OAI-SearchBot, ClaudeBot, Claude-Web, anthropic-ai, PerplexityBot, Perplexity-User, Google-Extended, CCBot, Applebot-Extended.
 5. **Tom de voz do llms-full.txt**: segue o padrão da marca definido em `jilo-context` skill — sem emojis, sem palavras proibidas (vácuo, industrial, barato, produto).
 
@@ -83,7 +83,7 @@ Ambos usam `SHOPIFY_ADMIN_TOKEN` (mesma env var dos scripts de seed).
 Após `npm run seo`, verificar em `public/`:
 
 1. **sitemap.xml**: abrir no navegador, conferir que aparecem todas as rotas públicas + produtos + collections. Validar XML em https://www.xml-sitemaps.com/validate-xml-sitemap.html
-2. **robots.txt**: conferir que tem `Sitemap: https://jilo.com.br/sitemap.xml` no final
+2. **robots.txt**: conferir que tem `Sitemap: https://jilomarmitas.com/sitemap.xml` no final
 3. **llms.txt**: abrir e conferir estrutura markdown (H1 Jilo, blockquote, seções H2)
 4. **llms-full.txt**: conferir que tem FAQ completo + cardápio listado + tom de voz
 
