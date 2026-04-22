@@ -42,3 +42,9 @@
 - R20. Todas as tabelas com escopo de usuário têm RLS ativo filtrado por `auth.uid()`
 - R21. Service role usado apenas server-side (webhooks, Edge Functions)
 - R22. Anon key hardcoded em `client.ts` (débito de segurança — migrar para .env)
+
+## SEO e GEO (Sprint 3, Abril 2026)
+
+- **R28.** O sitemap.xml só inclui rotas públicas. Rotas autenticadas (`/conta/*`, `/carrinho`, `/login`, `/cadastro`) são explicitamente excluídas do sitemap e têm `Disallow` no robots.txt para o User-agent `*`
+- **R29.** Arquivos SEO/GEO (`sitemap.xml`, `robots.txt`, `llms.txt`, `llms-full.txt`) são gerados automaticamente via hook `prebuild` e comitados no repositório. Nunca editar manualmente — rodar `npm run seo` para regenerar
+- **R30.** A URL canônica do site vem da env var `SITE_URL` com fallback para `https://jilo.com.br`. Qualquer link absoluto em SEO/GEO usa essa fonte única

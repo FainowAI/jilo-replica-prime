@@ -110,6 +110,7 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 |--------|---------|-----------|
 | seed | `scripts/seed-products.ts` | Cria produtos no Shopify Admin API. Requer env var `SHOPIFY_ADMIN_TOKEN`. Delay de 500ms entre requests. |
 | seed:collections | `scripts/create-collections.ts` | Cria collections (categorias) no Shopify Admin API. |
+| seo | `scripts/generate-seo-files.ts` | Gera sitemap.xml, robots.txt, llms.txt e llms-full.txt em `public/`. Roda automaticamente antes de cada build via hook `prebuild`. Usa `SHOPIFY_ADMIN_TOKEN` com fallback gracioso. |
 
 **Preços por grupo (seed):**
 - Aves e Suinos: R$18,94
@@ -126,3 +127,5 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 - A anon key do Supabase está hardcoded no client.ts — padrão Lovable, deveria estar em .env
 - Não há tratamento de loading global (skeleton isolado por componente)
 - O projeto usa `lovable-tagger` como devDependency — plugin de tag do Lovable
+- O `prebuild` roda `npm run seo` automaticamente antes de `npm run build` — regenera os 4 arquivos de SEO/GEO. Se a env var `SHOPIFY_ADMIN_TOKEN` não estiver disponível no ambiente de build, o script faz fallback gracioso e gera só com rotas estáticas
+- Arquivos em `public/` gerados pelo script (`sitemap.xml`, `llms.txt`, `llms-full.txt` e `robots.txt` reescrito) SÃO comitados ao repositório — facilita inspeção e não depende do pipeline de deploy rodar o prebuild

@@ -1,0 +1,37 @@
+# Jilo
+
+> Jilo é uma marca brasileira de marmitas artesanais congeladas da DaJu Alimentação. Vende pratos individuais e kits semanais prontos em 5 minutos no micro-ondas, sem conservantes, entregues em até 48h. Cardápio com 26 pratos em 4 grupos: Aves e Suínos, Bovinos, Peixes e Massas, Veganos. Slogan: "Comida para a vida real."
+
+A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos urbanos com rotina cheia. Cada marmita é preparada de forma artesanal, congelada sem aditivos e enviada pronta para o freezer. Aceita cartão de crédito, débito e Pix (com 5% de desconto). Atende principalmente a região metropolitana de São Paulo.
+
+## Páginas principais
+
+- [Página inicial](https://jilo.com.br/): Homepage com destaques, favoritos da semana e CTAs para montar kit
+- [Cardápio completo](https://jilo.com.br/cardapio): Grid com todos os 26 pratos, filtros por categoria, busca e ordenação
+- [Kit Livre](https://jilo.com.br/kit-livre): Monte um kit personalizado escolhendo pratos avulsos
+- [Contexto completo para LLMs](https://jilo.com.br/llms-full.txt): Versão longa com FAQ, tom de voz, glossário de pratos e detalhes de operação
+
+## Pratos individuais
+
+O cardápio completo está em [https://jilo.com.br/cardapio](https://jilo.com.br/cardapio). Cada prato tem página própria em `/produto/:handle` com ingredientes, alérgicos, modo de preparo e informações nutricionais.
+
+## Como funciona
+
+1. Escolha pratos individuais ou um kit semanal
+2. Finalize o pedido (Pix com 5% de desconto, cartão ou débito)
+3. Entrega em até 48h em São Paulo e região
+4. Guarde no freezer por até 60 dias
+5. Na hora de comer: 5 minutos no micro-ondas
+
+## Contato e operação
+
+- **Razão social:** DaJu Alimentação
+- **CNPJ:** 39.659.013/0001-02
+- **WhatsApp:** +55 12 98895-0426 ([wa.me/5512988950426](https://wa.me/5512988950426))
+- **Frete:** grátis para toda a área de cobertura
+- **Prazo de entrega:** até 48h após a confirmação do pagamento
+
+## Optional
+
+- [Sitemap XML](https://jilo.com.br/sitemap.xml): Índice completo de URLs para crawlers
+- [Política de robots](https://jilo.com.br/robots.txt): Permissões de crawling para bots e LLMs

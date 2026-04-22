@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "npx ts-node scripts/seed-products.ts",
-    "seed:collections": "npx ts-node scripts/create-collections.ts"
+    "seed:collections": "npx ts-node scripts/create-collections.ts",
+    "seo": "npx ts-node scripts/generate-seo-files.ts",
+    "prebuild": "npm run seo"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
