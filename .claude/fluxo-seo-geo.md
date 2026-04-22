@@ -13,6 +13,20 @@ A Jilo gera automaticamente 4 arquivos estáticos de SEO/GEO em cada build, via 
 | `public/llms.txt` | Índice curto para LLMs (navegação) | Markdown (spec Jeremy Howard) |
 | `public/llms-full.txt` | Contexto completo da marca para ingestão direta | Markdown (spec Jeremy Howard) |
 
+## Arquivos estáticos (não gerados, versionados manualmente)
+
+Complementares aos arquivos gerados pelo script, estes são servidos pelo SPA estático e são cruciais para o que Googlebot e bots de IA veem na primeira passada (antes do JavaScript executar):
+
+| Arquivo | Propósito |
+|---------|-----------|
+| `index.html` | Shell HTML servido a todos os crawlers. Contém meta tags SEO, Open Graph, Twitter Cards, favicon links, manifest link, e JSON-LD Organization + WebSite schemas. Sem react-helmet — tudo estático |
+| `public/favicon.ico` | Ícone principal (multi-size 16/32/48) — exigido pelo Google para exibir na SERP |
+| `public/favicon-16x16.png`, `public/favicon-32x32.png` | PNGs complementares para browsers modernos |
+| `public/apple-touch-icon.png` | Ícone 180x180 para iOS |
+| `public/android-chrome-192x192.png`, `public/android-chrome-512x512.png` | Ícones Android (referenciados também no manifest) |
+| `public/site.webmanifest` | Manifest PWA-like — nome, ícones, theme color |
+| `public/og-image.jpg` | Imagem 1200x630 usada nas previews sociais (Facebook, LinkedIn, WhatsApp, Twitter). Hospedada no próprio domínio para não depender do CDN temporário da Lovable |
+
 ## Arquivos envolvidos
 
 ### Script gerador
@@ -77,6 +91,10 @@ Ambos usam `SHOPIFY_ADMIN_TOKEN` (mesma env var dos scripts de seed).
 - A ordem das categorias no `llms.txt` e `llms-full.txt` é fixa: Aves e Suinos → Bovinos → Peixes e Massas → Veganos (mesma do FullMenu)
 - Adicionar novo prato ao cardápio: rodar `npm run seed` (popular Shopify), depois `npm run seo` (regerar SEO), depois commit dos arquivos gerados
 - Se a URL do site mudar (mudou domínio), setar `SITE_URL` no ambiente antes de rodar `npm run seo` e recomitar os arquivos gerados
+- O `index.html` é a única fonte de meta tags globais (title, description, og:*, canonical) — o Googlebot e bots de IA NÃO executam o JavaScript na primeira passada, então tudo que importa precisa estar estático aqui. Se quiser meta tags por rota no futuro, usar react-helmet SEM remover as do `index.html` (elas são o fallback)
+- NUNCA referenciar assets em `storage.googleapis.com/gpt-engineer-file-uploads/...` — é o CDN temporário da Lovable e expira. og:image, favicon, apple-touch-icon, etc. DEVEM viver em `public/`
+- Se trocar o logo ou a og:image, lembrar de forçar recrawl no Google Search Console (URL Inspection > Request Indexing) — caso contrário o Google pode levar semanas para atualizar
+- Placeholder de `google-site-verification` está comentado no `index.html` — preencher após criar a propriedade no GSC (método primário de verificação é DNS TXT, este é backup)
 
 ## Como validar
 
