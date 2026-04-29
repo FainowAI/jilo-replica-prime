@@ -49,13 +49,18 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 |--------|-----------|-------------------|-----|
 | `profiles` | Perfil do usuário (endereço para entrega) | id (UUID, FK auth.users), full_name, phone, cpf, cep, address, address_number, address_complement, neighborhood, city, state, created_at, updated_at, **shopify_customer_id** (Sprint 1), **default_shipping_address_id** (Sprint 1, FK addresses) | Sim — SELECT/UPDATE/INSERT own |
 | `addresses` | Multi-endereços por usuário. Trigger garante que só existe 1 `is_default=true` por `user_id` via índice parcial único | id (UUID), user_id (FK auth.users), label, recipient_name, cep, street, number, complement, neighborhood, city, state (2 chars upper), is_default (bool), created_at, updated_at | Sim — SELECT/UPDATE/INSERT/DELETE own |
+| `orders` | Espelho de pedidos Shopify para tracking interno, webhooks e entregas | id (UUID), shopify_order_id, shopify_order_number, user_id, customer_email, status, payment_status, subtotal_cents, shipping_cents, total_cents, shipping_address (jsonb), **delivery_method**, **uber_quote_id**, **uber_delivery_id**, **uber_tracking_url**, **shipping_fee_cents**, **delivery_status**, created_at, updated_at | Sim — SELECT own + service_role full access |
 | `order_items` | Itens normalizados do pedido (substitui o `line_items` JSONB legado em `orders`) | id (UUID), order_id (FK orders), shopify_line_item_id, shopify_product_id, shopify_variant_id, product_title, variant_title, product_handle, quantity, unit_price_cents, line_total_cents, properties (jsonb), created_at | Sim — SELECT via JOIN com orders |
 | `order_status_history` | Timeline de status do pedido. Alimentada exclusivamente pelo trigger `orders_log_status_change` a cada update de `orders.status` | id (UUID), order_id (FK orders), from_status, to_status, source, note, changed_at | Sim — SELECT via JOIN com orders |
+| `webhook_events` | Log idempotente de webhooks recebidos | id (UUID), source, event_type, external_id, payload (jsonb), processed, processed_at, error, created_at | Sim — service_role only |
 
 ### Foreign Keys
 | Origem | Destino | Tipo |
 |--------|---------|------|
 | profiles.id | auth.users.id | CASCADE on DELETE |
+| orders.user_id | auth.users.id | SET NULL on DELETE |
+| order_items.order_id | public.orders.id | FK para o pedido espelhado |
+| order_status_history.order_id | public.orders.id | FK para o pedido espelhado |
 
 ### RLS Policies
 | Tabela | Policy | Ação | Condição |
@@ -74,8 +79,9 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 | log_order_status_change() | `orders_log_status_change` (AFTER UPDATE on orders) | Quando `status` muda, insere automaticamente uma linha em `order_status_history` com `from_status`, `to_status` e timestamp. Alimenta a timeline exibida em `/conta/pedidos/:id` |
 
 ### Observações do banco
-- Apenas 1 tabela no schema public (`profiles`) — o banco é enxuto porque produtos, pedidos e checkout são gerenciados pelo Shopify.
-- Nenhum dado de produto/pedido está no Supabase.
+- Produtos e checkout continuam no Shopify; o Supabase guarda perfis, endereços e espelhos operacionais de pedidos/webhooks.
+- `orders.delivery_method` aceita `uber_direct`, `jilo_own` ou `NULL` para pedidos antigos; `delivery_status` inicia como `pending_dispatch`.
+- Campos Uber em `orders` (`uber_quote_id`, `uber_delivery_id`, `uber_tracking_url`, `shipping_fee_cents`) foram adicionados pela migration `20260429000000_orders_uber_delivery_fields.sql`.
 - Todos os campos de endereço são nullable — o perfil é criado vazio e preenchido depois.
 - `updated_at` NÃO atualiza automaticamente no UPDATE — precisa de trigger ou update manual.
 

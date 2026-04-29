@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "seed": "npx ts-node scripts/seed-products.ts",
     "seed:collections": "npx ts-node scripts/create-collections.ts",
+    "setup:shipping": "npx tsx scripts/setup-shipping-variant.ts",
     "seo": "npx ts-node scripts/generate-seo-files.ts",
     "prebuild": "npm run seo"
   },
