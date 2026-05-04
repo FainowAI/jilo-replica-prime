@@ -4,13 +4,22 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import PixCallout from "@/components/PixCallout";
+import { isFreeShipping, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, cartDiscountAllocations } = useCartStore();
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = items.reduce((sum, item) => sum + (parseFloat(item.price.amount) * item.quantity), 0);
+  const totalNonShippingItems = useNonShippingTotalItems();
+  const visibleItems = useVisibleCartItems();
+  const totalItems = totalNonShippingItems;
+  const subtotal = visibleItems.reduce(
+    (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
+    0
+  );
+  const isFree = isFreeShipping(totalNonShippingItems);
+  const itemsRemaining = SHIPPING_FREE_THRESHOLD - totalNonShippingItems;
 
   useEffect(() => { if (isOpen) syncCart(); }, [isOpen, syncCart]);
 
@@ -73,14 +82,18 @@ export const CartDrawer = () => {
             <div className="bg-[#faf7f2] px-5 pt-3 pb-4">
               <div className="flex items-center gap-2 px-4 py-2 bg-[#1e3a1e]/5 rounded-lg mb-3">
                 <Truck className="h-4 w-4 text-[#1e3a1e]" />
-                <p className="text-xs text-[#1e3a1e] font-sans font-medium">Frete grátis — entrega em até 48h</p>
+                <p className="text-xs text-[#1e3a1e] font-sans font-medium">
+                  {isFree
+                    ? "Frete grátis — entrega Jilo em até 48h"
+                    : `Frete grátis a partir de ${SHIPPING_FREE_THRESHOLD} marmitas (faltam ${itemsRemaining})`}
+                </p>
               </div>
             </div>
 
             {/* Items List */}
             <div className="flex-1 overflow-y-auto px-5 pt-4 pb-3">
               <div className="space-y-3">
-                {items.map((item) => {
+                {visibleItems.map((item) => {
                   const itemTotal = parseFloat(item.price.amount) * item.quantity;
                   const imageUrl = item.product.node.images?.edges?.[0]?.node?.url;
 
@@ -175,7 +188,9 @@ export const CartDrawer = () => {
                 )}
                 <div className="flex justify-between items-center">
                   <span className="text-[13px] text-[#9b9b9b]">Frete</span>
-                  <span className="text-[13px] font-semibold text-[#1e3a1e]">Grátis</span>
+                  <span className="text-[13px] font-semibold text-[#1e3a1e]">
+                    {isFree ? "Grátis" : "Calculado no carrinho"}
+                  </span>
                 </div>
               </div>
 

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, setCartAttributes, type ShopifyProduct } from "@/lib/shopify";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
@@ -13,6 +13,9 @@ import CepChecker from "@/components/CepChecker";
 import { type CepValidationResult } from "@/lib/cepValidator";
 import AuthDialog from "@/components/AuthDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import ShippingMethodSelector from "@/components/ShippingMethodSelector";
+import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 
 const Carrinho = () => {
   const {
@@ -41,9 +44,13 @@ const Carrinho = () => {
   const { user } = useAuth();
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [pendingCheckout, setPendingCheckout] = useState(false);
+  const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
+  const [activeShippingFeeCents, setActiveShippingFeeCents] = useState(0);
 
-  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = items.reduce(
+  const totalNonShippingItems = useNonShippingTotalItems();
+  const visibleItems = useVisibleCartItems();
+  const totalItems = totalNonShippingItems;
+  const subtotal = visibleItems.reduce(
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
@@ -115,11 +122,21 @@ const Carrinho = () => {
     toast.success("Cupom removido");
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!user) {
       setPendingCheckout(true);
       setAuthDialogOpen(true);
       return;
+    }
+    const cartId = useCartStore.getState().cartId;
+    if (cartId) {
+      const attrs: Array<{ key: string; value: string }> = [
+        { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+      ];
+      if (activeQuoteId) {
+        attrs.push({ key: "uber_quote_id", value: activeQuoteId });
+      }
+      await setCartAttributes(cartId, attrs);
     }
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
@@ -131,12 +148,24 @@ const Carrinho = () => {
   useEffect(() => {
     if (user && pendingCheckout) {
       setPendingCheckout(false);
-      const checkoutUrl = getCheckoutUrl();
-      if (checkoutUrl) {
-        window.open(checkoutUrl, "_blank");
-      }
+      (async () => {
+        const cartId = useCartStore.getState().cartId;
+        if (cartId) {
+          const attrs: Array<{ key: string; value: string }> = [
+            { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+          ];
+          if (activeQuoteId) {
+            attrs.push({ key: "uber_quote_id", value: activeQuoteId });
+          }
+          await setCartAttributes(cartId, attrs);
+        }
+        const checkoutUrl = getCheckoutUrl();
+        if (checkoutUrl) {
+          window.open(checkoutUrl, "_blank");
+        }
+      })();
     }
-  }, [user, pendingCheckout, getCheckoutUrl]);
+  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;
@@ -221,16 +250,6 @@ const Carrinho = () => {
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Left Column — Cart Items */}
           <div className="flex-1">
-            {/* Free Shipping Bar */}
-            <div className="bg-[#1e3a1e]/5 rounded-2xl p-4 mb-6 border border-[#1e3a1e]/10">
-              <div className="flex items-center gap-3">
-                <Truck className="h-5 w-5 text-[#1e3a1e] flex-shrink-0" />
-                <p className="text-sm font-sans">
-                  <span className="font-bold text-[#1e3a1e]">Frete grátis!</span>{" "}Entrega em até 48h — cortesia Jilo
-                </p>
-              </div>
-            </div>
-
             {/* Cart Items Table */}
             <div className="bg-white rounded-2xl border border-[#e8e8e4] overflow-hidden mb-6">
               {/* Table Header */}
@@ -241,7 +260,7 @@ const Carrinho = () => {
               </div>
 
               {/* Items */}
-              {items.map((item) => {
+              {visibleItems.map((item) => {
                 const itemTotal = parseFloat(item.price.amount) * item.quantity;
                 const imageUrl =
                   item.product.node.images?.edges?.[0]?.node?.url;
@@ -412,6 +431,15 @@ const Carrinho = () => {
                 </p>
               )}
 
+              <ShippingMethodSelector
+                totalNonShippingItems={totalNonShippingItems}
+                deliveryCheck={deliveryCheck}
+                onQuoteChange={(quoteId, feeCents) => {
+                  setActiveQuoteId(quoteId);
+                  setActiveShippingFeeCents(feeCents);
+                }}
+              />
+
               {/* Divider */}
               <div className="h-px bg-[#e8e8e4] mb-4" />
 
@@ -442,10 +470,13 @@ const Carrinho = () => {
                 {/* Frete */}
                 <div className="flex justify-between text-sm">
                   <span className="text-[#9b9b9b]">Frete</span>
-                  <div className="text-right">
-                    <span className="text-[#9b9b9b] line-through text-xs mr-1">R$ 12,90</span>
-                    <span className="font-semibold text-[#1e3a1e]">Grátis</span>
-                  </div>
+                  <span className="font-semibold text-[#1a1a1a]">
+                    {isFreeShipping(totalNonShippingItems)
+                      ? <span className="text-[#1e3a1e]">Grátis</span>
+                      : activeShippingFeeCents > 0
+                        ? `R$ ${(activeShippingFeeCents / 100).toFixed(2).replace(".", ",")}`
+                        : <span className="text-[#9b9b9b]">—</span>}
+                  </span>
                 </div>
               </div>
 

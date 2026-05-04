@@ -24,7 +24,7 @@
 - R13. Pedidos são read-only na área do cliente
 - R14. Escrita de pedidos é exclusiva do service_role (webhook Shopify)
 - R15. Timeline de status é populada automaticamente via trigger
-- R16. Frete é sempre grátis (cortesia Jilo — regra R20 do carrinho)
+- R16. ~~Frete sempre grátis~~ Atualizado em 2026-04-29 pela feature Uber Direct: frete varia conforme quantidade. Vide R34.
 
 ### Sincronização Shopify (Sprint 2)
 - R23. Cada profile no Supabase tem exatamente 1 customer correspondente no Shopify, identificado pelo email
@@ -34,7 +34,7 @@
 - R27. Sync é idempotente via argumento `identifier: { emailAddress }` na mutation `customerCreate`
 
 ## Carrinho e checkout (já existia)
-- R17. Frete sempre grátis
+- R17. ~~Frete sempre grátis~~ Atualizado em 2026-04-29 pela feature Uber Direct: frete grátis a partir de 7 marmitas, abaixo disso cliente paga via Uber Direct. Vide R34.
 - R18. Checkout redirect para Shopify
 - R19. Desconto PIX5 via cupom Shopify ao selecionar PIX no PaymentMethodSelector
 
@@ -51,3 +51,17 @@
 - **R31.** O `index.html` é o shell servido a crawlers que não executam JavaScript (Googlebot em primeira passada, Facebookbot, Twitterbot, AI bots). Todas as meta tags críticas de SEO/OG/Twitter Cards DEVEM estar estaticamente no `<head>` — não podem depender de `react-helmet` ou injeção em runtime para o conteúdo global (home/root). Meta tags por rota podem usar helmet, mas as do `index.html` continuam como fallback
 - **R32.** A og:image e o favicon DEVEM ser hospedados no próprio domínio (`public/`). Nunca referenciar assets do CDN `storage.googleapis.com/gpt-engineer-file-uploads` (CDN temporário da Lovable, sujeito a expiração)
 - **R33.** Todo asset binário de SEO visual (favicon.ico, PNGs de ícone, apple-touch-icon, og-image) vive em `public/` e é versionado no Git. Nunca em `src/assets` (seria referenciado via import do bundler e não estaria acessível diretamente por URL para crawlers)
+
+## Frete Uber Direct condicional (Sprint 4.1, Abril 2026)
+
+- **R34.** Threshold de frete grátis = **7 marmitas**. Abaixo disso, cliente paga frete via Uber Direct cotado em real-time. Constante definida em `src/config/shipping.ts` (`SHIPPING_FREE_THRESHOLD`) e replicada em `supabase/functions/_shared/shipping-constants.ts` — manter sincronizado em ambos.
+- **R35.** Cotação Uber válida por 15min. Frontend usa `staleTime` 14min via TanStack Query. queryKey inclui CEP + total de itens.
+- **R36.** Criação efetiva da entrega Uber acontece via edge `uber-create-delivery`, chamada pelo `shopify-webhook-receiver` no evento `orders/paid`. Nunca pelo frontend, nunca antes do pagamento confirmado.
+- **R37.** Para `delivery_method = 'jilo_own'` (≥ 7 itens), nenhuma chamada à Uber. Order fica `delivery_status = 'jilo_pending'` aguardando dispatch manual (sprint futura terá UI admin).
+- **R38.** Toda chamada à API Uber e Admin API Shopify é server-side via Edge Function. Credenciais ficam apenas nos Edge Function Secrets (nunca em código frontend nem em variáveis públicas).
+- **R39.** Produto fantasma "Frete Uber Direct" tem handle `frete-uber-direct`, tag `__internal_shipping`, status `draft` no Shopify. variantId guardado em `VITE_SHOPIFY_SHIPPING_VARIANT_ID` (frontend) e `SHOPIFY_SHIPPING_VARIANT_ID` (Edge Function Secret). Como `status: draft`, NÃO aparece em queries Storefront — só dentro do cart quando adicionado via `cartLinesAdd`.
+- **R40.** UI filtra a variant fantasma das listas visuais em `Carrinho.tsx` e `CartDrawer.tsx` via `useVisibleCartItems`. Selector `useNonShippingTotalItems` aplica essa filtragem para a regra de threshold (R34).
+- **R41.** Variant fantasma só entra no cart se cliente verificou CEP atendido (resultado positivo do `<CepChecker />`). Sem CEP validado, `<ShippingMethodSelector />` não cota nem adiciona variant.
+- **R42.** Quando cliente cruza o threshold de 7 itens (subindo ou descendo), `<ShippingMethodSelector />` remove ou (re)adiciona a variant fantasma com debounce 300ms para evitar race com Shopify Cart API.
+- **R43.** No webhook `orders/paid`, `shipping_fee_cents` é extraído do line_item da variant fantasma (filtrando `variant_id === SHIPPING_VARIANT_ID`), não do `total_shipping_price_set` do payload Shopify (que sempre vem 0 por não termos shipping rate configurado).
+- **R44.** Webhook Uber registrado em `webhook_events` com `source='uber_direct'`. Idempotência por `external_id` que inclui o status do evento (`"${deliveryId}:${uberStatus}"`).

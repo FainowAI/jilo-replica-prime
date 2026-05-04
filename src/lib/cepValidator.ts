@@ -52,7 +52,7 @@ export async function validateCep(cep: string): Promise<CepValidationResult> {
         isValid: true,
         isDeliverable: true,
         cepInfo: data,
-        message: `Entregamos em ${data.localidade}/${data.uf}! Frete grátis, entrega em até 48h.`,
+        message: `Entregamos em ${data.localidade}/${data.uf}!`,
       };
     }
 

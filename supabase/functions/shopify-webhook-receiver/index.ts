@@ -1,6 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+import { SHIPPING_FREE_THRESHOLD } from "../_shared/shipping-constants.ts";
+
+const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") ?? "";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -66,6 +69,47 @@ function extractOrderData(payload: any) {
   };
 }
 
+function getShippingVariantNumericId(): string | null {
+  if (!SHOPIFY_SHIPPING_VARIANT_GID) return null;
+  return SHOPIFY_SHIPPING_VARIANT_GID.split("/").pop() ?? null;
+}
+
+function extractDeliveryAttributes(payload: any): {
+  uber_quote_id: string | null;
+  delivery_method_hint: string | null;
+} {
+  const noteAttributes = payload.note_attributes ?? [];
+  const findAttr = (name: string): string | null => {
+    const attr = noteAttributes.find((a: { name: string; value: string }) => a.name === name);
+    return attr?.value ?? null;
+  };
+  return {
+    uber_quote_id: findAttr("uber_quote_id"),
+    delivery_method_hint: findAttr("delivery_method"),
+  };
+}
+
+function calculateNonShippingItemsTotal(lineItems: any[]): number {
+  const shippingNumericId = getShippingVariantNumericId();
+  return lineItems
+    .filter((item) => {
+      if (!shippingNumericId) return true;
+      return String(item.variant_id) !== shippingNumericId;
+    })
+    .reduce((sum, item) => sum + (item.quantity ?? 0), 0);
+}
+
+function findShippingFeeCents(lineItems: any[]): number {
+  const shippingNumericId = getShippingVariantNumericId();
+  if (!shippingNumericId) return 0;
+  const shippingItem = lineItems.find(
+    (item) => String(item.variant_id) === shippingNumericId
+  );
+  if (!shippingItem) return 0;
+  const unitCents = Math.round(parseFloat(shippingItem.price ?? "0") * 100);
+  return unitCents * (shippingItem.quantity ?? 1);
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -121,10 +165,56 @@ serve(async (req) => {
       });
     } else if (topic === "orders/paid") {
       const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;
-      await supabase
+      const lineItems = payload.line_items ?? [];
+
+      const totalNonShippingItems = calculateNonShippingItemsTotal(lineItems);
+      const deliveryMethod: "uber_direct" | "jilo_own" =
+        totalNonShippingItems >= SHIPPING_FREE_THRESHOLD ? "jilo_own" : "uber_direct";
+      const shippingFeeCents = findShippingFeeCents(lineItems);
+      const { uber_quote_id } = extractDeliveryAttributes(payload);
+      const initialDeliveryStatus =
+        deliveryMethod === "jilo_own" ? "jilo_pending" : "pending_dispatch";
+
+      const { data: updatedOrder, error: updateErr } = await supabase
         .from("orders")
-        .update({ payment_status: "paid", status: "paid" })
-        .eq("shopify_order_id", shopifyOrderId);
+        .update({
+          payment_status: "paid",
+          status: "paid",
+          delivery_method: deliveryMethod,
+          uber_quote_id,
+          shipping_fee_cents: shippingFeeCents,
+          delivery_status: initialDeliveryStatus,
+        })
+        .eq("shopify_order_id", shopifyOrderId)
+        .select("id")
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error("Failed to update order on paid event:", updateErr);
+      }
+
+      // Dispatch Uber se aplicável (fire-and-forget — webhook tem timeout curto)
+      if (
+        updatedOrder?.id &&
+        deliveryMethod === "uber_direct" &&
+        uber_quote_id
+      ) {
+        const dispatchUrl = `${SUPABASE_URL}/functions/v1/uber-create-delivery`;
+        fetch(dispatchUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ order_id: updatedOrder.id }),
+        }).catch((err) =>
+          console.error("uber-create-delivery dispatch failed:", err)
+        );
+      } else if (deliveryMethod === "uber_direct" && !uber_quote_id) {
+        console.warn(
+          `Order ${updatedOrder?.id} é uber_direct mas não tem uber_quote_id — admin precisa intervir manualmente`
+        );
+      }
     } else if (topic === "orders/fulfilled") {
       const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;
       await supabase

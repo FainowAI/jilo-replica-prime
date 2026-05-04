@@ -28,6 +28,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 | `src/components/PixCallout.tsx` | Card ou inline que orienta uso do código PIX5 no checkout. Variantes: `inline` (texto) e `card` (box com valor calculado) |
 | `src/components/PaymentMethodSelector.tsx` | Seletor ativo de método de pagamento (PIX, Crédito, PayPal). Ao selecionar PIX, aplica automaticamente o cupom PIX5 via `applyDiscountCode`. Usado apenas em `/carrinho`. |
 | `src/components/BenefitsSummary.tsx` | Lista de benefícios (desconto de kit, frete grátis, PIX) |
+| `src/components/ShippingMethodSelector.tsx` | UI de seleção de frete no resumo do `/carrinho`. Sincroniza variant fantasma no cart Shopify automaticamente. Vide `.claude/fluxo-uber-direct.md` |
 
 ### Lib
 | Arquivo | Descrição |
@@ -45,6 +46,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 | `PIX5` (cupom Shopify) | 5% off | Shopify Admin, orientação no Carrinho.tsx |
 | Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
 | Frete | Sempre grátis (cortesia Jilo) | Carrinho.tsx, CartDrawer.tsx |
+| `SHIPPING_FREE_THRESHOLD` | 7 marmitas | `src/config/shipping.ts` (Sprint 4.1) |
+| Frete < 7 itens | Cotado real-time via Uber Direct | `<ShippingMethodSelector />` em `/carrinho` |
+| Frete ≥ 7 itens | Grátis (entrega Jilo) | Mesmo componente, mensagem diferente |
 
 ## Regras de negócio
 
@@ -60,7 +64,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 6. **Remoção**: Quantidade → 0 chama removeItem. Último item removido → clearCart.
 
-7. **Frete SEMPRE grátis**: Frete é sempre grátis (cortesia Jilo). Exibido como R$12,90 riscado → Grátis no resumo do pedido.
+7. **Frete condicional via Uber Direct (Sprint 4.1)**: Frete varia conforme quantidade de marmitas. **< 7 marmitas**: cliente paga frete cotado em real-time via Uber Direct (`<ShippingMethodSelector />` no resumo do `/carrinho`). **≥ 7 marmitas**: frete grátis (entrega Jilo). Veja `.claude/fluxo-uber-direct.md` para detalhes técnicos completos.
 
 8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
@@ -137,4 +141,4 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - Métodos de pagamento listados na UI (Alelo, Sodexo, VR, Ticket, Flash, VISA, MASTER, ELO, HIPER, PIX) são puramente visuais — dependem do gateway configurado no Shopify
 - O desconto de kit é um Automatic Discount no Shopify — ele aparece em `cart.discountAllocations`. Se os discounts não estiverem configurados no Shopify Admin, o carrinho funciona mas sem desconto.
 - `cartCost` pode ser null em carts salvos antes da Sprint 3 (localStorage stale) — o frontend faz fallback para cálculo local com `??`
-- `FREE_SHIPPING_THRESHOLD` foi removido — frete é sempre grátis, não há mais barra de progresso
+- `FREE_SHIPPING_THRESHOLD` foi reintroduzido em `src/config/shipping.ts` como `SHIPPING_FREE_THRESHOLD = 7` para a feature Uber Direct (Sprint 4.1). Use o helper `isFreeShipping(totalNonShippingItems)` em vez de comparações ad-hoc.

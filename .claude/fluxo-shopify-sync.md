@@ -18,8 +18,11 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
 | `SHOPIFY_STORE_DOMAIN` | `jnutg9-u2.myshopify.com` | Domínio fixo da loja (sem protocolo) |
 | `SHOPIFY_API_VERSION` | `2025-10` | Versão estável da Admin GraphQL API |
 | `SHOPIFY_WEBHOOK_SECRET` | `whsec_...` | Secret configurado nos webhooks Shopify para validar HMAC |
+| `SHOPIFY_SHIPPING_VARIANT_ID` | `gid://shopify/ProductVariant/...` | Saída de `npm run setup:shipping` |
+| `UBER_CLIENT_ID`, `UBER_CLIENT_SECRET`, `UBER_CUSTOMER_ID`, `UBER_API_BASE` | (vide painel Uber Direct) | Edges Uber |
+| `JILO_PICKUP_*` | (endereço/lat/lng/telefone) | Edges Uber |
 
-**Escopo da Custom App:** `write_customers` (e `read_customers` opcional).
+**Escopo da Custom App:** o token em uso (valor literal NÃO documentado aqui — vive apenas em `.env` local e Edge Function Secrets; rotacionar antes do go-live) é um app "full access" com 178 scopes ativos, incluindo `write_customers`, `read_customers`, `write_products`, `read_products`, `write_orders`, `read_orders`. Validado em 2026-04-29 contra `currentAppInstallation.accessScopes`. Se o token for revogado/rotacionado, o substituto precisa manter pelo menos esses scopes.
 
 ## Regras de negócio
 1. Cada profile no Supabase tem exatamente 1 customer correspondente no Shopify, identificado pelo email
@@ -58,6 +61,7 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
 4. A migration `20260429000000_orders_uber_delivery_fields.sql` adiciona ao espelho do pedido os campos de entrega `delivery_method`, `uber_quote_id`, `uber_delivery_id`, `uber_tracking_url`, `shipping_fee_cents` e `delivery_status`
 5. Pedidos antigos continuam válidos com `delivery_method = NULL`, `shipping_fee_cents = 0` e `delivery_status = 'pending_dispatch'`
 6. `idx_orders_uber_delivery_id` acelera consultas de webhooks/status Uber quando `uber_delivery_id` já foi preenchido
+7. **Sprint 4.1 (frete Uber Direct):** O handler de `orders/paid` foi estendido para popular `delivery_method`, `uber_quote_id`, `shipping_fee_cents` e `delivery_status`. Lê `note_attributes` do payload Shopify (gravados pelo frontend via `cartAttributesUpdate` antes do redirect). Se `delivery_method='uber_direct'` e tem quote, dispara fire-and-forget para edge `uber-create-delivery` que efetivamente cria a delivery na Uber. Vide `.claude/fluxo-uber-direct.md`.
 
 ## Gotchas e armadilhas
 - Token `shpat_...` só aparece uma vez no install da Custom App — se perder, criar nova app
@@ -66,3 +70,5 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
 - Email do user vem do JWT, não do payload do cliente — evita spoofing
 - Nome é dividido por espaço em firstName/lastName — funciona pra nomes simples, casos complexos ficam com lastName composto (não é problema no Shopify)
 - A function usa **dois clients Supabase**: um com JWT do user (só pra `auth.getUser`), outro com service_role (pra ler/escrever `profiles` bypassando RLS)
+- **O mesmo token de Admin Shopify vive em dois nomes de variável diferentes:** `SHOPIFY_ADMIN_TOKEN` no `.env` local (lido pelos scripts Node — `seed-products.ts`, `setup-shipping-variant.ts`, `generate-seo-files.ts`) e `SHOPIFY_ADMIN_ACCESS_TOKEN` nos Edge Function Secrets (lido pelas edges Deno — `shopify-customer-sync`, `update-shipping-variant-price`). NÃO unificar — renomear quebra integrações em produção.
+- **`SHOPIFY_STORE_DOMAIN`** funciona com o domínio técnico (`jnutg9-u2.myshopify.com`) ou com o alias amigável (`jilo-marmitas.myshopify.com`). Manter `jnutg9-u2.myshopify.com` nas Edge Functions por consistência (esse não muda mesmo se a loja trocar de slug).

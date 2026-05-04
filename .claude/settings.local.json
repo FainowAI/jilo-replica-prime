@@ -4,7 +4,21 @@
       "Bash(npm run build:*)",
       "mcp__claude_ai_Figma__get_design_context",
       "mcp__claude_ai_Figma__get_screenshot",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(curl *)",
+      "Bash(supabase projects *)",
+      "Bash(supabase status *)",
+      "PowerShell(winget install *)",
+      "PowerShell(npx supabase@latest --version 2>&1 | Select-Object -Last 5)",
+      "PowerShell(npx supabase@latest secrets list --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx supabase@latest functions deploy update-shipping-variant-price --no-verify-jwt --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx supabase@latest functions deploy uber-quote --no-verify-jwt --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "PowerShell($query = \"SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'webhook_events' ORDER BY ordinal_position;\"; npx supabase@latest db execute --linked --query $query 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx supabase@latest functions deploy uber-webhook-receiver --no-verify-jwt --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx supabase@latest functions deploy shopify-webhook-receiver --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "PowerShell(npx supabase@latest functions deploy uber-create-delivery --no-verify-jwt --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Antônio\\\\Desktop\\\\fainow-projects\\\\jilo-projects\\\\jilo-replica-prime\" -Recurse -File -Filter \"*.ts\" -o Name)",
+      "Bash(Select-Object -First 50)"
     ]
   }
 }

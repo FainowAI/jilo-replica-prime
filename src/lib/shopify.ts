@@ -557,6 +557,31 @@ export const CART_FULL_QUERY = `
   }
 `;
 
+const CART_ATTRIBUTES_UPDATE_MUTATION = `
+  mutation cartAttributesUpdate($cartId: ID!, $attributes: [AttributeInput!]!) {
+    cartAttributesUpdate(cartId: $cartId, attributes: $attributes) {
+      cart { id }
+      userErrors { field message }
+    }
+  }
+`;
+
+export async function setCartAttributes(
+  cartId: string,
+  attributes: Array<{ key: string; value: string }>
+): Promise<{ success: boolean }> {
+  const data = await storefrontApiRequest(CART_ATTRIBUTES_UPDATE_MUTATION, {
+    cartId,
+    attributes,
+  });
+  const userErrors = data?.data?.cartAttributesUpdate?.userErrors || [];
+  if (userErrors.length > 0) {
+    console.error("setCartAttributes errors:", userErrors);
+    return { success: false };
+  }
+  return { success: true };
+}
+
 export async function fetchCartFull(cartId: string) {
   const data = await storefrontApiRequest(CART_FULL_QUERY, { id: cartId });
   return data?.data?.cart;
