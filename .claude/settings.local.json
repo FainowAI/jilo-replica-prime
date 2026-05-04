@@ -18,7 +18,9 @@
       "PowerShell(npx supabase@latest functions deploy shopify-webhook-receiver --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
       "PowerShell(npx supabase@latest functions deploy uber-create-delivery --no-verify-jwt --project-ref hofohxvizlmawgkinwwz 2>&1 | Select-Object -Last 30)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Antônio\\\\Desktop\\\\fainow-projects\\\\jilo-projects\\\\jilo-replica-prime\" -Recurse -File -Filter \"*.ts\" -o Name)",
-      "Bash(Select-Object -First 50)"
+      "Bash(Select-Object -First 50)",
+      "Bash(findstr /I \"\\\\.env\")",
+      "Bash(findstr /C:\"shpat_5\")"
     ]
   }
 }

@@ -44,7 +44,6 @@ export default function ShippingMethodSelector({
 }: ShippingMethodSelectorProps) {
   const isFree = isFreeShipping(totalNonShippingItems);
   const itemsRemaining = SHIPPING_FREE_THRESHOLD - totalNonShippingItems;
-  const items = useCartStore((s) => s.items);
   const addItem = useCartStore((s) => s.addItem);
   const removeItem = useCartStore((s) => s.removeItem);
   const lastSyncedFeeRef = useRef<number | null>(null);
@@ -70,7 +69,11 @@ export default function ShippingMethodSelector({
   // Sincroniza variant fantasma no cart Shopify
   useEffect(() => {
     if (!SHIPPING_VARIANT_ID) return;
-    const shippingItem = items.find((i) => i.variantId === SHIPPING_VARIANT_ID);
+    // Lê snapshot do store de forma imperativa — NÃO depender de `items` no array
+    // de deps, senão o effect roda sempre que qualquer item do cart muda (loop com
+    // addItem/removeItem que ele próprio chama).
+    const currentItems = useCartStore.getState().items;
+    const shippingItem = currentItems.find((i) => i.variantId === SHIPPING_VARIANT_ID);
 
     // Caso 1: frete grátis — remover se existir
     if (isFree) {
@@ -92,8 +95,13 @@ export default function ShippingMethodSelector({
       try {
         await updateShippingVariantPrice(quote.fee_cents);
 
-        if (shippingItem) {
-          // Remove e re-adiciona pra Shopify pegar o preço novo da variant
+        // Re-lê snapshot DENTRO do async — pode ter mudado durante o debounce
+        const latestItems = useCartStore.getState().items;
+        const latestShippingItem = latestItems.find(
+          (i) => i.variantId === SHIPPING_VARIANT_ID
+        );
+
+        if (latestShippingItem) {
           await removeItem(SHIPPING_VARIANT_ID);
         }
 
@@ -115,7 +123,9 @@ export default function ShippingMethodSelector({
     // Debounce 300ms para evitar race com Shopify Cart API quando cliente muda quantidades rápido
     const timer = setTimeout(sync, 300);
     return () => clearTimeout(timer);
-  }, [isFree, quote, cepParams, items, addItem, removeItem]);
+    // PROPOSITAL: `items` NÃO está nas deps — usamos getState() para snapshot fresh
+    // sem encadear loop. O effect re-roda quando isFree, quote ou cepParams mudam.
+  }, [isFree, quote, cepParams, addItem, removeItem]);
 
   // UI: frete grátis
   if (isFree) {
