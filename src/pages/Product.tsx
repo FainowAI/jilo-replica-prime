@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Minus, Plus, ShoppingBag, Zap, Star, ShieldCheck, ThermometerSnowflake, Leaf } from "lucide-react";
-import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY, setCartAttributes, appendReturnToCheckoutUrl } from "@/lib/shopify";
+import { SITE_URL } from "@/config/site";
 import { useCartStore } from "@/stores/cartStore";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -177,9 +178,18 @@ export default function Product() {
       selectedOptions: selectedVariant.selectedOptions,
     });
 
+    // Grava return_url como cart attribute (rastreabilidade no Shopify Admin).
+    // Fail-silent: erro NÃO bloqueia checkout (R26).
+    const cartId = useCartStore.getState().cartId;
+    if (cartId) {
+      await setCartAttributes(cartId, [
+        { key: "return_url", value: SITE_URL },
+      ]);
+    }
+
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
-      window.location.href = checkoutUrl;
+      window.location.href = appendReturnToCheckoutUrl(checkoutUrl);
     } else {
       toast.error("Erro ao redirecionar para checkout");
     }

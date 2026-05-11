@@ -65,3 +65,13 @@
 - **R42.** Quando cliente cruza o threshold de 7 itens (subindo ou descendo), `<ShippingMethodSelector />` remove ou (re)adiciona a variant fantasma com debounce 300ms para evitar race com Shopify Cart API.
 - **R43.** No webhook `orders/paid`, `shipping_fee_cents` é extraído do line_item da variant fantasma (filtrando `variant_id === SHIPPING_VARIANT_ID`), não do `total_shipping_price_set` do payload Shopify (que sempre vem 0 por não termos shipping rate configurado).
 - **R44.** Webhook Uber registrado em `webhook_events` com `source='uber_direct'`. Idempotência por `external_id` que inclui o status do evento (`"${deliveryId}:${uberStatus}"`).
+
+## Domínio do checkout e return URL (Sprint 4.2, Maio 2026)
+
+- **R45.** Em todo redirect pro checkout Shopify (`handleCheckout` em `Carrinho.tsx`, `handleBuyNow` em `Product.tsx`), o frontend DEVE:
+  - (a) Gravar cart attribute `return_url = SITE_URL` via `setCartAttributes` (rastreabilidade no Admin como `note_attribute`).
+  - (b) Enriquecer o `checkoutUrl` com `?return_to=<SITE_URL>` via `appendReturnToCheckoutUrl` (controla destino do botão "Continuar comprando" do checkout).
+  - Fonte única do `SITE_URL`: `src/config/site.ts` (default `https://jilomarmitas.com`, override via `VITE_SITE_URL`).
+  - Fail-silent: erro em `setCartAttributes` é logado no console mas NÃO bloqueia o checkout (R26).
+  - O `CartDrawer` NÃO precisa desse tratamento porque navega para `/carrinho` (não vai direto pro Shopify).
+  - Pré-requisito fora de código: domínio primário `checkout.jilomarmitas.com` configurado no Shopify Admin (Settings → Domains).

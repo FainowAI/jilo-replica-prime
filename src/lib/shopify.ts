@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { SITE_URL } from "@/config/site";
 
 const SHOPIFY_API_VERSION = '2025-07';
 const SHOPIFY_STORE_PERMANENT_DOMAIN = 'jnutg9-u2.myshopify.com';
@@ -376,6 +377,32 @@ function formatCheckoutUrl(checkoutUrl: string): string {
   try {
     const url = new URL(checkoutUrl);
     url.searchParams.set('channel', 'online_store');
+    return url.toString();
+  } catch {
+    return checkoutUrl;
+  }
+}
+
+/**
+ * Enriquece um checkoutUrl da Shopify com `?return_to=<SITE_URL>` para
+ * forçar o botão "Continuar comprando" do checkout/thank-you page a
+ * retornar ao domínio Jilo, e não ao domínio Shopify default.
+ *
+ * Aceita query params já existentes (ex: `?channel=online_store` colocado
+ * por formatCheckoutUrl). Sobrescreve `return_to` se já existir.
+ *
+ * Fail-safe: se a URL for inválida, retorna o input intocado.
+ *
+ * @param checkoutUrl URL bruta do Shopify (cart.checkoutUrl)
+ * @param returnTo URL absoluta de destino (default: SITE_URL)
+ */
+export function appendReturnToCheckoutUrl(
+  checkoutUrl: string,
+  returnTo: string = SITE_URL
+): string {
+  try {
+    const url = new URL(checkoutUrl);
+    url.searchParams.set("return_to", returnTo);
     return url.toString();
   } catch {
     return checkoutUrl;

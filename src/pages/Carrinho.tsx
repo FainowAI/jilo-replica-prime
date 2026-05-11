@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { storefrontApiRequest, PRODUCTS_QUERY, setCartAttributes, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, setCartAttributes, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
+import { SITE_URL } from "@/config/site";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
@@ -132,15 +133,17 @@ const Carrinho = () => {
     if (cartId) {
       const attrs: Array<{ key: string; value: string }> = [
         { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+        { key: "return_url", value: SITE_URL },
       ];
       if (activeQuoteId) {
         attrs.push({ key: "uber_quote_id", value: activeQuoteId });
       }
+      // Fail-silent: se a chamada falhar, segue o checkout (R26)
       await setCartAttributes(cartId, attrs);
     }
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
-      window.open(checkoutUrl, "_blank");
+      window.open(appendReturnToCheckoutUrl(checkoutUrl), "_blank");
     }
   };
 
@@ -153,6 +156,7 @@ const Carrinho = () => {
         if (cartId) {
           const attrs: Array<{ key: string; value: string }> = [
             { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+            { key: "return_url", value: SITE_URL },
           ];
           if (activeQuoteId) {
             attrs.push({ key: "uber_quote_id", value: activeQuoteId });
@@ -161,7 +165,7 @@ const Carrinho = () => {
         }
         const checkoutUrl = getCheckoutUrl();
         if (checkoutUrl) {
-          window.open(checkoutUrl, "_blank");
+          window.open(appendReturnToCheckoutUrl(checkoutUrl), "_blank");
         }
       })();
     }

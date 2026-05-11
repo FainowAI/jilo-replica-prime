@@ -33,7 +33,8 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 ### Lib
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart, applyDiscountCodesToCart, removeDiscountCodesFromCart, fetchCartWithDiscounts |
+| `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart, applyDiscountCodesToCart, removeDiscountCodesFromCart, fetchCartWithDiscounts, setCartAttributes. Helpers: formatCheckoutUrl (interno), appendReturnToCheckoutUrl (exportado, Sprint 4.2). |
+| `src/config/site.ts` | Constantes globais: `SITE_URL` (URL canônica do site, com fallback `https://jilomarmitas.com`) e `SITE_HOSTNAME`. Fonte única para qualquer link absoluto no frontend (return URLs, etc). |
 | `src/lib/cepValidator.ts` | Validação de CEP via ViaCEP. Whitelist de áreas atendidas em `DELIVERY_AREAS`. Funções: `validateCep()`, `formatCep()` |
 
 ## Tabelas do banco
@@ -76,7 +77,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 12. **Sugestões ("Complete sua semana")**: Carrega 20 produtos, filtra os que já estão no carrinho, embaralha e mostra 4 sugestões aleatórias.
 
-13. **Checkout URL**: Vem do `cartCreate`. `formatCheckoutUrl` adiciona `?channel=online_store`. O checkout abre em nova aba (`window.open`).
+13. **Checkout URL**: Vem do `cartCreate`. `formatCheckoutUrl` adiciona `?channel=online_store` no momento da criação. No momento de abrir o checkout (em `Carrinho.tsx` e `Product.tsx`), o helper `appendReturnToCheckoutUrl()` adiciona `?return_to=https://jilomarmitas.com` (Sprint 4.2 — R45). Em `/carrinho` abre em nova aba (`window.open(_, "_blank")`); em `/produto/:handle` abre na mesma aba (`window.location.href`).
 
 14. **CartDrawer → /carrinho**: O botão "Ir para o Carrinho" no CartDrawer navega para `/carrinho` (não redireciona direto para Shopify).
 
@@ -85,6 +86,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 16. **cartCost e cartDiscountAllocations**: O cartStore agora armazena `cartCost` (totalAmount, subtotalAmount) e `cartDiscountAllocations` retornados pelo Shopify via `fetchCartFull`. O Carrinho exibe o desconto automático do Shopify (Automatic Discount por quantidade). `refreshCartDetails()` é chamado após cada mutação do cart e no mount da página `/carrinho`.
 
 17. **Checkout requer login (Sprint 2)**: Na página `/carrinho`, o botão "Ir para o Checkout" verifica `useAuth().user`. Se `null`, abre o `AuthDialog` em modo signup ao invés de redirecionar pro Shopify. O label do botão muda para "Entrar para finalizar". Após login/signup bem-sucedido, o `useEffect` que escuta mudanças em `user` dispara o checkout automaticamente via `getCheckoutUrl() + window.open`. Se o usuário fecha o modal sem logar, o `pendingCheckout` state é resetado. O CartDrawer não precisa de gating porque o botão "Finalizar Compra" apenas navega para `/carrinho` — a verificação acontece lá.
+
+18. **Return URL no checkout Shopify (Sprint 4.2)**: Em todo ponto de entrada do checkout Shopify (`handleCheckout` em `Carrinho.tsx` e `handleBuyNow` em `Product.tsx`), o frontend (a) grava cart attribute `return_url = SITE_URL` via `setCartAttributes`, e (b) enriquece o `checkoutUrl` com `?return_to=<SITE_URL>` via `appendReturnToCheckoutUrl`. O atributo dá rastreabilidade no Shopify Admin (vira `note_attribute` do pedido); o querystring controla o destino do botão "Continuar comprando". Fail-silent: erro em `setCartAttributes` é logado mas não bloqueia o redirect. Pré-requisito complementar fora de código: domínio primário `checkout.jilomarmitas.com` configurado no Shopify Admin.
 
 ## Fluxo do usuário
 
@@ -142,3 +145,6 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O desconto de kit é um Automatic Discount no Shopify — ele aparece em `cart.discountAllocations`. Se os discounts não estiverem configurados no Shopify Admin, o carrinho funciona mas sem desconto.
 - `cartCost` pode ser null em carts salvos antes da Sprint 3 (localStorage stale) — o frontend faz fallback para cálculo local com `??`
 - `FREE_SHIPPING_THRESHOLD` foi reintroduzido em `src/config/shipping.ts` como `SHIPPING_FREE_THRESHOLD = 7` para a feature Uber Direct (Sprint 4.1). Use o helper `isFreeShipping(totalNonShippingItems)` em vez de comparações ad-hoc.
+- O parâmetro `?return_to=` do Shopify funciona em conjunto com o domínio primário configurado na loja. Como `checkout.jilomarmitas.com` é o domínio primário, o Shopify aceita `return_to` apontando pra `jilomarmitas.com` (mesmo apex domain).
+- O cart attribute `return_url` aparece como `note_attribute` no Shopify Admin (no detalhe do pedido) — útil pra debug e potencial uso em automações futuras (n8n, Bling).
+- ⚠️ **Additional Scripts (Shopify) descontinuado:** A Shopify removeu a funcionalidade de Additional Scripts na Order Status Page em 28/08/2025 (Plus) com auto-upgrade dos não-Plus iniciando em jan/2026. Customizações JS na thank-you page agora exigem Checkout UI Extensions (apps Shopify dedicadas). Não tentar usar Additional Scripts como reforço — não é mais editável.
