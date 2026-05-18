@@ -169,6 +169,8 @@ export type Database = {
           customer_email: string
           customer_name: string | null
           customer_phone: string | null
+          delivery_method: string | null
+          delivery_status: string | null
           discount_cents: number | null
           id: string
           line_items: Json
@@ -178,12 +180,16 @@ export type Database = {
           placed_at: string | null
           shipping_address: Json | null
           shipping_cents: number | null
+          shipping_fee_cents: number | null
           shopify_checkout_token: string | null
           shopify_order_id: string
           shopify_order_number: string | null
           status: string
           subtotal_cents: number
           total_cents: number
+          uber_delivery_id: string | null
+          uber_quote_id: string | null
+          uber_tracking_url: string | null
           updated_at: string | null
           user_id: string | null
         }
@@ -196,6 +202,8 @@ export type Database = {
           customer_email: string
           customer_name?: string | null
           customer_phone?: string | null
+          delivery_method?: string | null
+          delivery_status?: string | null
           discount_cents?: number | null
           id?: string
           line_items?: Json
@@ -205,12 +213,16 @@ export type Database = {
           placed_at?: string | null
           shipping_address?: Json | null
           shipping_cents?: number | null
+          shipping_fee_cents?: number | null
           shopify_checkout_token?: string | null
           shopify_order_id: string
           shopify_order_number?: string | null
           status?: string
           subtotal_cents: number
           total_cents: number
+          uber_delivery_id?: string | null
+          uber_quote_id?: string | null
+          uber_tracking_url?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
@@ -223,6 +235,8 @@ export type Database = {
           customer_email?: string
           customer_name?: string | null
           customer_phone?: string | null
+          delivery_method?: string | null
+          delivery_status?: string | null
           discount_cents?: number | null
           id?: string
           line_items?: Json
@@ -232,12 +246,16 @@ export type Database = {
           placed_at?: string | null
           shipping_address?: Json | null
           shipping_cents?: number | null
+          shipping_fee_cents?: number | null
           shopify_checkout_token?: string | null
           shopify_order_id?: string
           shopify_order_number?: string | null
           status?: string
           subtotal_cents?: number
           total_cents?: number
+          uber_delivery_id?: string | null
+          uber_quote_id?: string | null
+          uber_tracking_url?: string | null
           updated_at?: string | null
           user_id?: string | null
         }
