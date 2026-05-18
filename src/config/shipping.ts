@@ -33,10 +33,7 @@ export function isFreeShipping(totalNonShippingItems: number): boolean {
   return totalNonShippingItems >= SHIPPING_FREE_THRESHOLD;
 }
 
-/**
- * True se o variantId é o do produto fantasma de frete.
- * Usado para filtrar a variant da UI e da contagem de threshold.
- */
+
 export function isShippingVariant(variantId: string | null | undefined): boolean {
   if (!variantId || !SHIPPING_VARIANT_ID) return false;
   return variantId === SHIPPING_VARIANT_ID;

@@ -5,8 +5,6 @@ const UBER_CLIENT_SECRET = Deno.env.get("UBER_CLIENT_SECRET")!;
 const UBER_CUSTOMER_ID = Deno.env.get("UBER_CUSTOMER_ID")!;
 const UBER_API_BASE = Deno.env.get("UBER_API_BASE") ?? "https://api.uber.com";
 
-const JILO_PICKUP_NAME = Deno.env.get("JILO_PICKUP_NAME")!;
-const JILO_PICKUP_PHONE = Deno.env.get("JILO_PICKUP_PHONE")!;
 const JILO_PICKUP_ADDRESS_JSON = Deno.env.get("JILO_PICKUP_ADDRESS_JSON")!;
 const JILO_PICKUP_LATITUDE = parseFloat(Deno.env.get("JILO_PICKUP_LATITUDE")!);
 const JILO_PICKUP_LONGITUDE = parseFloat(Deno.env.get("JILO_PICKUP_LONGITUDE")!);
@@ -91,12 +89,15 @@ serve(async (req) => {
 
     const quotePayload = {
       pickup_address: JILO_PICKUP_ADDRESS_JSON,
-      pickup_name: JILO_PICKUP_NAME,
-      pickup_phone_number: JILO_PICKUP_PHONE,
       pickup_latitude: JILO_PICKUP_LATITUDE,
       pickup_longitude: JILO_PICKUP_LONGITUDE,
       dropoff_address: dropoffAddress,
     };
+
+    console.log("uber-quote payload:", JSON.stringify({
+      endpoint: `${UBER_API_BASE}/v1/customers/${UBER_CUSTOMER_ID}/delivery_quotes`,
+      payload: quotePayload,
+    }));
 
     const quoteRes = await fetch(
       `${UBER_API_BASE}/v1/customers/${UBER_CUSTOMER_ID}/delivery_quotes`,
@@ -112,7 +113,11 @@ serve(async (req) => {
 
     if (!quoteRes.ok) {
       const errText = await quoteRes.text();
-      console.error("Uber quote failed:", quoteRes.status, errText);
+      console.error("Uber quote failed:", {
+        status: quoteRes.status,
+        body: errText,
+        sent_payload: quotePayload,
+      });
       return new Response(
         JSON.stringify({ error: "Quote failed", status: quoteRes.status, detail: errText }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
