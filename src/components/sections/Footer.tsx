@@ -13,11 +13,11 @@ const Footer = () => {
               Comida de verdade, congelada com carinho. Para sua semana sem improviso.
             </p>
             <div className="flex gap-3">
-              <a href="#" className="w-9 h-9 rounded-full bg-primary-foreground/10 flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-                <Instagram className="h-4 w-4" />
+              <a href="#" aria-label="Jilo no Instagram" className="w-9 h-9 rounded-full bg-primary-foreground/10 flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+                <Instagram className="h-4 w-4" aria-hidden="true" />
               </a>
-              <a href="#" className="w-9 h-9 rounded-full bg-primary-foreground/10 flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
-                <Facebook className="h-4 w-4" />
+              <a href="#" aria-label="Jilo no Facebook" className="w-9 h-9 rounded-full bg-primary-foreground/10 flex items-center justify-center hover:bg-primary-foreground/20 transition-colors">
+                <Facebook className="h-4 w-4" aria-hidden="true" />
               </a>
             </div>
           </div>
