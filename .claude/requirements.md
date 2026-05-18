@@ -75,3 +75,10 @@
   - Fail-silent: erro em `setCartAttributes` é logado no console mas NÃO bloqueia o checkout (R26).
   - O `CartDrawer` NÃO precisa desse tratamento porque navega para `/carrinho` (não vai direto pro Shopify).
   - Pré-requisito fora de código: domínio primário `checkout.jilomarmitas.com` configurado no Shopify Admin (Settings → Domains).
+
+## Seletor de endereço no carrinho (Sprint 4.3, Maio 2026)
+
+- **R46.** Cotação de frete e checkout em `/carrinho` exigem endereço selecionado da tabela `addresses`. Guest vê CTA de login (segue R25); logado sem endereço vê CTA de cadastro inline; logado com endereços vê lista de cards. Default (`is_default = true`, R12) é pré-selecionado.
+- **R47.** Endereços com CEP fora da whitelist `DELIVERY_AREAS` aparecem na lista com badge "Não entregamos aqui" e radio desabilitado. Sort: entregáveis primeiro. Helper síncrono `isAreaDeliverable(uf, city)` em `src/lib/cepValidator.ts` é fonte única de checagem.
+- **R48.** Cart attribute `selected_address_id` é gravado junto com `delivery_method`, `uber_quote_id` e `return_url` no `handleCheckout` (rastreabilidade no Shopify Admin + Bling ERP). Fail-silent (R26).
+- **R49.** O componente `<CepChecker />` foi removido do `/carrinho` mas preservado no codebase para usos futuros (FAQ de cobertura, página de área atendida).

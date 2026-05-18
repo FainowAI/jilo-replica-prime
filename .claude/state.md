@@ -1,9 +1,27 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-11 (Sprint 4.2 — Return URL no checkout Shopify)
+2026-05-18 (Sprint 4.3 — Seletor de endereço no carrinho)
 
-## O que foi feito na última sessão (Sprint 4.2 — Return URL no checkout Shopify)
+## O que foi feito na última sessão (Sprint 4.3 — Seletor de endereço no carrinho)
+
+- Criado componente `src/components/DeliveryAddressSelector.tsx` (4 estados: guest, loading, vazio, lista)
+- Adicionado helper síncrono `isAreaDeliverable(uf, city)` em `src/lib/cepValidator.ts`
+- Substituído `<CepChecker />` por `<DeliveryAddressSelector />` no `src/pages/Carrinho.tsx`
+- Adicionado cart attribute `selected_address_id` no `handleCheckout` (2 ocorrências — handler direto + useEffect pós-login)
+- Reusados sem mudança: `<AuthDialog />`, `<AddressFormDialog />`, `useAddresses()`, `<ShippingMethodSelector />`
+- 1 componente criado, 2 arquivos editados, 0 migrations
+- Regras adicionadas: R46, R47, R48, R49 em `requirements.md`
+
+### Pendências novas (Sprint 4.3)
+- Débito técnico: migrar dados legados de `profiles.address/cep/...` para a tabela `addresses` via script SQL idempotente (fora do escopo desta sprint)
+
+### Notas para a próxima sessão
+- Se aparecer pedido de "remover CepChecker do codebase", verificar antes onde mais ele é usado — neste momento só `/carrinho` consumia, e a regra R49 explicita que o componente foi preservado.
+- A whitelist `DELIVERY_AREAS` continua em `cepValidator.ts`. Expandir cobertura = editar essa constante (sem touch em DB).
+- O cart attribute `selected_address_id` pode ser consumido pelo `shopify-webhook-receiver` em sprint futura se quisermos cross-check do endereço do pedido contra o cadastrado no Supabase.
+
+## O que foi feito na sessão anterior (Sprint 4.2 — Return URL no checkout Shopify)
 
 - `src/config/site.ts` criado: exporta `SITE_URL` (com fallback `https://jilomarmitas.com` e override via `VITE_SITE_URL`) e `SITE_HOSTNAME`. Fonte única de URL canônica no frontend (equivalente em runtime do `SITE_URL` já usado pelo gerador SEO em build time).
 - `src/lib/shopify.ts` ganhou helper `appendReturnToCheckoutUrl(checkoutUrl, returnTo?)` que adiciona `?return_to=<SITE_URL>` ao checkout antes do redirect (fail-safe via try/catch).

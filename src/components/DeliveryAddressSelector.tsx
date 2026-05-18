@@ -1,19 +1,5 @@
-PROMPT 2 — Criar componente <DeliveryAddressSelector />
-Contexto
-Novo componente que substitui o <CepChecker /> no carrinho. Lida com 4 estados:
-
-Guest (não autenticado) — CTA pra abrir <AuthDialog /> em modo signup
-Logado, lista carregando — skeleton
-Logado, sem endereços — CTA pra abrir <AddressFormDialog />
-Logado, com endereços — lista de cards selecionáveis + botão de novo endereço
-
-Reutiliza componentes já existentes (<AuthDialog />, <AddressFormDialog />) sem modificá-los.
-Output do componente: chama onResult(CepValidationResult) exatamente como o <CepChecker /> antigo fazia, mantendo a interface do <ShippingMethodSelector /> intacta. Também expõe onAddressIdChange(addressId | null) para o Carrinho.tsx gravar como cart attribute.
-Tarefa
-Criar o arquivo src/components/DeliveryAddressSelector.tsx com o conteúdo a seguir.
-Estrutura do arquivo
-tsximport { useState, useEffect, useMemo } from "react";
-import { MapPin, Plus, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { MapPin, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAddresses } from "@/hooks/useAddresses";
 import { isAreaDeliverable, type CepValidationResult } from "@/lib/cepValidator";
@@ -303,20 +289,3 @@ const DeliveryAddressSelector = ({
 };
 
 export default DeliveryAddressSelector;
-Referências
-
-Reusa <AuthDialog /> (src/components/AuthDialog.tsx) com initialMode="signup" — mesmo padrão usado pelo botão "Entrar para finalizar" no Carrinho.tsx.
-Reusa <AddressFormDialog /> (src/components/conta/AddressFormDialog.tsx) inalterado — ele já trata create/edit, validação de CEP/UF e invalida queries.
-Reusa useAddresses() (src/hooks/useAddresses.ts) — TanStack Query com cache automático e ordenação is_default desc, created_at desc.
-Reusa interface CepValidationResult de src/lib/cepValidator.ts para manter compatibilidade com <ShippingMethodSelector />.
-Reusa isAreaDeliverable criado no PROMPT 1.
-Paleta de cores e tipografia seguem padrão do <CepChecker /> atual e do design system Jiló (verde escuro #1e3a1e, cinza #9b9b9b, off-white #f0efeb).
-
-IMPORTANTE — Não quebre o que já funciona
-
-NÃO altere <AuthDialog />, <AddressFormDialog />, useAddresses.ts — todos reutilizados sem mudança.
-NÃO altere <CepChecker /> nem cepValidator.ts além do helper do PROMPT 1.
-NÃO altere <ShippingMethodSelector /> — a interface CepValidationResult é mantida.
-Tipagem strict do TypeScript: cumpra. Use import type para Tables<"addresses"> e CepValidationResult.
-Default export, igual ao padrão de <CepChecker />.
-Acessibilidade: o card é um <button> (não <div> clicável) — leitor de tela detecta como interativo.

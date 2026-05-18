@@ -10,7 +10,7 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import PaymentMethodSelector from "@/components/PaymentMethodSelector";
-import CepChecker from "@/components/CepChecker";
+import DeliveryAddressSelector from "@/components/DeliveryAddressSelector";
 import { type CepValidationResult } from "@/lib/cepValidator";
 import AuthDialog from "@/components/AuthDialog";
 import { useAuth } from "@/contexts/AuthContext";
@@ -47,6 +47,7 @@ const Carrinho = () => {
   const [pendingCheckout, setPendingCheckout] = useState(false);
   const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
   const [activeShippingFeeCents, setActiveShippingFeeCents] = useState(0);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 
   const totalNonShippingItems = useNonShippingTotalItems();
   const visibleItems = useVisibleCartItems();
@@ -138,6 +139,9 @@ const Carrinho = () => {
       if (activeQuoteId) {
         attrs.push({ key: "uber_quote_id", value: activeQuoteId });
       }
+      if (selectedAddressId) {
+        attrs.push({ key: "selected_address_id", value: selectedAddressId });
+      }
       // Fail-silent: se a chamada falhar, segue o checkout (R26)
       await setCartAttributes(cartId, attrs);
     }
@@ -161,6 +165,9 @@ const Carrinho = () => {
           if (activeQuoteId) {
             attrs.push({ key: "uber_quote_id", value: activeQuoteId });
           }
+          if (selectedAddressId) {
+            attrs.push({ key: "selected_address_id", value: selectedAddressId });
+          }
           await setCartAttributes(cartId, attrs);
         }
         const checkoutUrl = getCheckoutUrl();
@@ -169,7 +176,7 @@ const Carrinho = () => {
         }
       })();
     }
-  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems]);
+  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;
@@ -424,16 +431,12 @@ const Carrinho = () => {
 
               <BenefitsSummary className="mb-6" />
 
-              {/* CEP Checker */}
-              <CepChecker
+              {/* Delivery Address Selector */}
+              <DeliveryAddressSelector
                 onResult={(result) => setDeliveryCheck(result)}
+                onAddressIdChange={(id) => setSelectedAddressId(id)}
                 className="mb-4"
               />
-              {!deliveryCheck && (
-                <p className="text-[11px] text-[#9b9b9b] font-sans mt-1 mb-4">
-                  Verifique antes de finalizar para garantir que entregamos na sua região
-                </p>
-              )}
 
               <ShippingMethodSelector
                 totalNonShippingItems={totalNonShippingItems}

@@ -24,7 +24,8 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 | Arquivo | Descrição |
 |---------|-----------|
 | `src/components/CartDrawer.tsx` | Drawer lateral (Sheet) — mini-cart com itens, barra de frete grátis, PixCallout, botão que navega para `/carrinho` |
-| `src/components/CepChecker.tsx` | Input de CEP com validação via ViaCEP. Callback `onResult` informa se região é atendida |
+| `src/components/CepChecker.tsx` | **(Descontinuado no carrinho)** Input de CEP com validação via ViaCEP. Preservado no codebase para usos futuros em FAQ/página de cobertura |
+| `src/components/DeliveryAddressSelector.tsx` | Seletor de endereço no carrinho. Substitui o `<CepChecker />`. 4 estados: guest (CTA login), logado sem endereço (CTA cadastrar), logado com endereços (lista de cards selecionáveis + botão de novo), erro/loading |
 | `src/components/PixCallout.tsx` | Card ou inline que orienta uso do código PIX5 no checkout. Variantes: `inline` (texto) e `card` (box com valor calculado) |
 | `src/components/PaymentMethodSelector.tsx` | Seletor ativo de método de pagamento (PIX, Crédito, PayPal). Ao selecionar PIX, aplica automaticamente o cupom PIX5 via `applyDiscountCode`. Usado apenas em `/carrinho`. |
 | `src/components/BenefitsSummary.tsx` | Lista de benefícios (desconto de kit, frete grátis, PIX) |
@@ -35,7 +36,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 |---------|-----------|
 | `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart, applyDiscountCodesToCart, removeDiscountCodesFromCart, fetchCartWithDiscounts, setCartAttributes. Helpers: formatCheckoutUrl (interno), appendReturnToCheckoutUrl (exportado, Sprint 4.2). |
 | `src/config/site.ts` | Constantes globais: `SITE_URL` (URL canônica do site, com fallback `https://jilomarmitas.com`) e `SITE_HOSTNAME`. Fonte única para qualquer link absoluto no frontend (return URLs, etc). |
-| `src/lib/cepValidator.ts` | Validação de CEP via ViaCEP. Whitelist de áreas atendidas em `DELIVERY_AREAS`. Funções: `validateCep()`, `formatCep()` |
+| `src/lib/cepValidator.ts` | Validação de CEP via ViaCEP. Whitelist de áreas atendidas em `DELIVERY_AREAS`. Funções: `validateCep()`, `formatCep()`, `isAreaDeliverable(uf, city)` (síncrono, sem chamada ViaCEP — usado pelo `<DeliveryAddressSelector />`) |
 
 ## Tabelas do banco
 Nenhuma. O carrinho é Zustand + Shopify Cart API.
@@ -89,6 +90,16 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 18. **Return URL no checkout Shopify (Sprint 4.2)**: Em todo ponto de entrada do checkout Shopify (`handleCheckout` em `Carrinho.tsx` e `handleBuyNow` em `Product.tsx`), o frontend (a) grava cart attribute `return_url = SITE_URL` via `setCartAttributes`, e (b) enriquece o `checkoutUrl` com `?return_to=<SITE_URL>` via `appendReturnToCheckoutUrl`. O atributo dá rastreabilidade no Shopify Admin (vira `note_attribute` do pedido); o querystring controla o destino do botão "Continuar comprando". Fail-silent: erro em `setCartAttributes` é logado mas não bloqueia o redirect. Pré-requisito complementar fora de código: domínio primário `checkout.jilomarmitas.com` configurado no Shopify Admin.
 
+19. **Seleção de endereço no checkout (Sprint 4.3)**: O `<DeliveryAddressSelector />` substitui o `<CepChecker />` no resumo do pedido em `/carrinho`. Em vez de pedir o CEP manualmente, ele lista os endereços cadastrados do usuário na tabela `addresses`. O `CepValidationResult` retornado ao `<ShippingMethodSelector />` é construído de forma síncrona via `isAreaDeliverable(uf, city)` — sem chamada ViaCEP. O `selected_address_id` é gravado como cart attribute junto com `delivery_method`, `uber_quote_id` e `return_url` no momento do checkout.
+
+**R46.** Cotação de frete e checkout exigem endereço selecionado da tabela `addresses`. Guest vê CTA "Faça login para selecionar seu endereço" no resumo do `/carrinho`. Após login, lista de endereços renderiza automaticamente. Padrão pré-selecionado se existir.
+
+**R47.** Endereço com CEP fora da whitelist `DELIVERY_AREAS` aparece na lista com badge "Não entregamos aqui" e radio desabilitado. Não esconder — ajuda usuário a entender por que o checkout não avança. Endereços não-entregáveis ficam por último na lista.
+
+**R48.** Cart attribute `selected_address_id` é gravado junto com `delivery_method`, `uber_quote_id` e `return_url` no `handleCheckout` (rastreabilidade no Shopify Admin + Bling). Fail-silent (R26).
+
+20. **`isAreaDeliverable` — novo fluxo de validação de área (Sprint 4.3)**: O fluxo antigo era: CEP do usuário → ViaCEP → whitelist. O novo fluxo é: endereço cadastrado no banco → `isAreaDeliverable(address.state, address.city)` → whitelist. A interface `CepValidationResult` permanece inalterada — apenas a fonte dos dados mudou.
+
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho
@@ -110,8 +121,30 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 2. Barra de frete grátis com progresso
 3. Tabela de itens: imagem, nome, tipo, descrição, preço unitário, seletor de quantidade, remover, subtotal por item
 4. Campo de cupom (BEMVINDO10 → R$10 off)
-5. Coluna lateral (sticky): CepChecker (validação via ViaCEP), BenefitsSummary, breakdown de preços (subtotal, descontos Shopify, cupom, frete), PixCallout (PIX5), total, métodos de pagamento (cartão, PayPal, PIX), botão "Ir para o Checkout" (desabilitado se CEP não atendido), trust badges
+5. Coluna lateral (sticky): DeliveryAddressSelector (seleção de endereço cadastrado), BenefitsSummary, ShippingMethodSelector (cotação frete), breakdown de preços (subtotal, descontos Shopify, cupom, frete), total, PaymentMethodSelector (cartão, PayPal, PIX), botão "Ir para o Checkout" (desabilitado se área não atendida), trust badges
 6. Seção "Complete sua semana" com 4 sugestões
+
+### Seleção de endereço (`<DeliveryAddressSelector />`)
+
+**Guest:**
+1. Abre `/carrinho` sem login
+2. Vê CTA "Faça login para selecionar seu endereço" no resumo
+3. Clica → abre `<AuthDialog />` em modo signup
+4. Após signup/login, componente re-renderiza com lista de endereços (vazia inicialmente)
+
+**Logado sem endereço:**
+1. Vê CTA "Cadastrar endereço"
+2. Clica → abre `<AddressFormDialog />` inline (mesmo modal usado em `/conta/enderecos`)
+3. Após cadastro, lista atualiza automaticamente via `queryClient.invalidateQueries`
+4. Endereço default é pré-selecionado
+
+**Logado com endereços:**
+1. Vê lista de cards selecionáveis (radio)
+2. Card default tem badge "Padrão" e vem pré-selecionado
+3. Endereços não-entregáveis aparecem por último com badge "Não entregamos aqui" e radio disabled
+4. Pode clicar em "Cadastrar novo endereço" pra abrir o `<AddressFormDialog />`
+5. Mudar seleção dispara re-quote automaticamente via `useShippingQuote` (queryKey muda)
+6. No checkout, `selected_address_id` é gravado como cart attribute
 
 ### Comprar agora (na página de produto)
 1. addItem + pega checkoutUrl + `window.open` para Shopify
@@ -148,3 +181,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O parâmetro `?return_to=` do Shopify funciona em conjunto com o domínio primário configurado na loja. Como `checkout.jilomarmitas.com` é o domínio primário, o Shopify aceita `return_to` apontando pra `jilomarmitas.com` (mesmo apex domain).
 - O cart attribute `return_url` aparece como `note_attribute` no Shopify Admin (no detalhe do pedido) — útil pra debug e potencial uso em automações futuras (n8n, Bling).
 - ⚠️ **Additional Scripts (Shopify) descontinuado:** A Shopify removeu a funcionalidade de Additional Scripts na Order Status Page em 28/08/2025 (Plus) com auto-upgrade dos não-Plus iniciando em jan/2026. Customizações JS na thank-you page agora exigem Checkout UI Extensions (apps Shopify dedicadas). Não tentar usar Additional Scripts como reforço — não é mais editável.
+- O `<DeliveryAddressSelector />` constrói um `CepValidationResult` síncrono a partir do endereço cadastrado — não bate na ViaCEP (todos os campos vêm do banco). O helper `isAreaDeliverable(uf, city)` em `cepValidator.ts` é o ponto único de checagem contra a whitelist `DELIVERY_AREAS`.
+- O `<CepChecker />` antigo NÃO foi deletado — pode ser usado em outras páginas (FAQ, cobertura, landing). Mas não use mais em `/carrinho`.
+- Usuários antigos com endereço em `profiles.address/cep/...` mas sem linha em `addresses` são tratados como "sem endereço". Migração desses dados é débito técnico pra sprint futura.
+- Cart attribute `selected_address_id` é metadado adicional — NÃO substitui o `shipping_address` JSONB de `orders` (que continua vindo do payload do webhook `orders/paid`, regra R43).

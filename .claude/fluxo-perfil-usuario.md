@@ -80,6 +80,7 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 4. `useCreateAddress` insere via Supabase com `user_id` automático
 5. Trigger do DB garante unicidade de default
 6. Lista recarrega via `queryClient.invalidateQueries`
+7. **Cadastro inline no carrinho**: O `<AddressFormDialog />` também é usado pelo `<DeliveryAddressSelector />` no `/carrinho` — usuário sem endereço pode cadastrar sem sair da página de checkout. O modal funciona igual em ambos os contextos. Vide `.claude/fluxo-carrinho-checkout.md`.
 
 ### Visualização de pedidos
 1. Acessa `/conta/pedidos` → lista via `useOrders()` filtrada por `user_id`
