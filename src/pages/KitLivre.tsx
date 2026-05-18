@@ -11,6 +11,7 @@ import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import FreeBadge from "@/components/FreeBadge";
 import PixCallout from "@/components/PixCallout";
+import SEO from "@/components/SEO";
 import { toast } from "sonner";
 
 const CATEGORY_ORDER = ["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"];
@@ -158,6 +159,11 @@ export default function KitLivre() {
 
   return (
     <div className="min-h-screen bg-[#faf7f2]">
+      <SEO
+        title="Kit Livre | Monte seu kit Jilo da semana"
+        description="Monte seu Kit Livre Jilo escolhendo pratos de qualquer categoria. Mínimo 7, máximo 28, sempre múltiplo de 7. Descontos progressivos até 25%."
+        path="/kit-livre"
+      />
       <AnnouncementBar />
       <Header />
 
@@ -233,7 +239,7 @@ export default function KitLivre() {
                     <div key={categoryName}>
                       <div className="flex items-center gap-3 mb-5">
                         <span className="text-xl">{CATEGORY_ICONS[categoryName] || "📦"}</span>
-                        <h3 className="font-['DM_Serif_Display'] text-2xl text-[#1a1a1a]">{categoryName}</h3>
+                        <h2 className="font-['DM_Serif_Display'] text-2xl text-[#1a1a1a]">{categoryName}</h2>
                         <div className="flex-1 h-px bg-[#e8e8e4]" />
                         <span className="text-[13px] text-[#9b9b9b] font-sans">{catProducts.length} pratos</span>
                       </div>
@@ -292,6 +298,7 @@ export default function KitLivre() {
                                     <div className="flex items-center justify-between bg-[#1e3a1e]/5 rounded-xl px-1 py-1">
                                       <button
                                         onClick={() => updateQuantity(variantId, product, -1)}
+                                        aria-label={selectedQty === 1 ? `Remover ${product.node.title}` : `Diminuir quantidade de ${product.node.title}`}
                                         className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white transition-colors"
                                       >
                                         {selectedQty === 1 ? (
@@ -304,6 +311,7 @@ export default function KitLivre() {
                                       <button
                                         onClick={() => updateQuantity(variantId, product, 1)}
                                         disabled={totalSelected >= 28}
+                                        aria-label={`Aumentar quantidade de ${product.node.title}`}
                                         className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white transition-colors disabled:opacity-40"
                                       >
                                         <Plus className="w-3.5 h-3.5 text-[#1e3a1e]" />
@@ -350,6 +358,7 @@ export default function KitLivre() {
         {/* Drag handle */}
         <button
           onClick={() => setShowMobileSummary(!showMobileSummary)}
+          aria-label={showMobileSummary ? "Recolher resumo do kit" : "Expandir resumo do kit"}
           className="flex justify-center w-full py-2"
         >
           <div className="w-10 h-1 bg-[#e8e8e4] rounded-full" />
@@ -512,6 +521,7 @@ function SidebarContent({
               </div>
               <button
                 onClick={() => onRemoveItem(variantId, item.product)}
+                aria-label={`Remover ${item.product.node.title} do kit`}
                 className="w-6 h-6 flex items-center justify-center hover:bg-white rounded transition-colors flex-shrink-0"
               >
                 <Minus className="w-3 h-3 text-[#9b9b9b]" />

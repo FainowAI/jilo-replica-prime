@@ -31,7 +31,7 @@ export const CartDrawer = () => {
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
-        <button className="relative p-2 hover:opacity-70 transition-opacity">
+        <button aria-label={`Abrir carrinho (${totalItems} ${totalItems === 1 ? 'item' : 'itens'})`} className="relative p-2 hover:opacity-70 transition-opacity">
           <ShoppingCart className="h-5 w-5" />
           {totalItems > 0 && (
             <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-accent text-accent-foreground text-[10px] flex items-center justify-center font-bold">
@@ -55,9 +55,10 @@ export const CartDrawer = () => {
             <span className="text-xs text-[#9b9b9b]">{totalItems} {totalItems === 1 ? 'item' : 'itens'}</span>
             <button
               onClick={() => setIsOpen(false)}
+              aria-label="Fechar carrinho"
               className="p-1 hover:bg-[#f0efeb] rounded transition-colors"
             >
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#1a1a1a]">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-[#1a1a1a]" aria-hidden="true">
                 <path d="M15 5L5 15M5 5L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
               </svg>
             </button>
@@ -132,6 +133,7 @@ export const CartDrawer = () => {
                           <button
                             onClick={() => updateQuantity(item.variantId, Math.max(1, item.quantity - 1))}
                             disabled={isLoading || item.quantity <= 1}
+                            aria-label={`Diminuir quantidade de ${item.product.node.title}`}
                             className="h-8 w-8 flex items-center justify-center hover:bg-[#f0efeb] rounded-full transition-colors disabled:opacity-50"
                           >
                             <Minus className="h-3 w-3 text-[#1a1a1a]" />
@@ -142,6 +144,7 @@ export const CartDrawer = () => {
                           <button
                             onClick={() => updateQuantity(item.variantId, item.quantity + 1)}
                             disabled={isLoading}
+                            aria-label={`Aumentar quantidade de ${item.product.node.title}`}
                             className="h-8 w-8 flex items-center justify-center hover:bg-[#f0efeb] rounded-full transition-colors disabled:opacity-50"
                           >
                             <Plus className="h-3 w-3 text-[#1a1a1a]" />
@@ -157,6 +160,7 @@ export const CartDrawer = () => {
                         <button
                           onClick={() => removeItem(item.variantId)}
                           disabled={isLoading}
+                          aria-label={`Remover ${item.product.node.title} do carrinho`}
                           className="h-[19px] w-[19px] flex items-center justify-center hover:bg-[#f0efeb] rounded transition-colors disabled:opacity-50"
                         >
                           <Trash2 className="h-3.5 w-3.5 text-[#9b9b9b]" />

@@ -37,7 +37,7 @@ const Header = () => {
         <div className="lg:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <button className="p-2"><Menu className="h-5 w-5" /></button>
+              <button aria-label="Abrir menu" className="p-2"><Menu className="h-5 w-5" /></button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72">
               <SheetTitle className="font-serif text-2xl text-primary mb-8">Jilo</SheetTitle>
@@ -104,6 +104,7 @@ const Header = () => {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsSearchOpen(!isSearchOpen)}
+            aria-label={isSearchOpen ? "Fechar busca" : "Abrir busca"}
             className="p-2 hover:opacity-70 transition-opacity hidden sm:block"
           >
             {isSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
@@ -111,7 +112,7 @@ const Header = () => {
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+                <button aria-label="Minha conta" className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
                   <UserCircle2 className="h-5 w-5" />
                 </button>
               </DropdownMenuTrigger>
@@ -141,7 +142,7 @@ const Header = () => {
             </DropdownMenu>
           ) : (
             <>
-              <button onClick={() => setAuthDialogOpen(true)} className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+              <button onClick={() => setAuthDialogOpen(true)} aria-label="Entrar ou cadastrar" className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
                 <User className="h-5 w-5" />
               </button>
               <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />
@@ -169,7 +170,7 @@ const Header = () => {
             />
           </form>
           {searchQuery && (
-            <button onClick={() => setSearchQuery("")} className="p-1 hover:bg-black/5 rounded-full text-black/50 transition-colors">
+            <button onClick={() => setSearchQuery("")} aria-label="Limpar busca" className="p-1 hover:bg-black/5 rounded-full text-black/50 transition-colors">
               <X className="h-4 w-4" />
             </button>
           )}

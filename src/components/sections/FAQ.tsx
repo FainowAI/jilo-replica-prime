@@ -16,6 +16,16 @@ const faqs = [
   { q: "Posso cancelar minha assinatura?", a: "Sim, você pode cancelar ou pausar sua assinatura a qualquer momento, sem multa. Basta entrar em contato pelo WhatsApp ou e-mail." },
 ];
 
+export const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: faqs.map((f) => ({
+    "@type": "Question",
+    name: f.q,
+    acceptedAnswer: { "@type": "Answer", text: f.a },
+  })),
+};
+
 const FAQ = () => {
   return (
     <section id="faq" className="py-16 lg:py-20">

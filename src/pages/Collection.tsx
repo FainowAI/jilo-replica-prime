@@ -6,6 +6,7 @@ import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
+import SEO from "@/components/SEO";
 
 const CATEGORIES = [
   { slug: "aves-suinos", productType: "Aves e Suinos", emoji: "🍗", label: "Aves & Suínos", price: "18,94" },
@@ -70,7 +71,7 @@ const ProductCard = ({ product }: { product: ShopifyProduct }) => {
         </div>
       </div>
       <div className="p-4 flex-1 flex flex-col">
-        <h3 className="font-sans font-semibold text-foreground text-sm mb-1 line-clamp-2">{product.node.title}</h3>
+        <h2 className="font-sans font-semibold text-foreground text-sm mb-1 line-clamp-2">{product.node.title}</h2>
         <p className="text-accent font-bold font-sans mt-auto">
           R$ {formatPrice(variant?.price.amount || "0")}
         </p>
@@ -126,6 +127,11 @@ const Collection = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEO
+        title={`${current.label} | Cardápio Jilo`}
+        description={`Pratos da categoria ${current.label} — marmitas artesanais Jilo, congeladas sem conservantes e prontas em 5 minutos. A partir de R$ ${current.price}/un.`}
+        path={`/colecao/${current.slug}`}
+      />
       <Header />
 
       {/* Hero header */}

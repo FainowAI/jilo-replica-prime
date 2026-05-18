@@ -19,6 +19,7 @@ import Footer from "@/components/sections/Footer";
 import ProductComposition from "@/components/sections/ProductComposition";
 import FreeBadge from "@/components/FreeBadge";
 import PixCallout from "@/components/PixCallout";
+import SEO from "@/components/SEO";
 import { toast } from "sonner";
 
 const formatPrice = (amount: string) => {
@@ -195,8 +196,36 @@ export default function Product() {
     }
   };
 
+  const mainImage = images[0]?.url;
+  const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: productData.title,
+    description: productData.description || `${productData.title} — marmita artesanal Jilo congelada, pronta em 5 minutos.`,
+    image: mainImage,
+    sku: productData.variants.edges[0]?.node.sku || undefined,
+    brand: { "@type": "Brand", name: "Jilo" },
+    offers: {
+      "@type": "Offer",
+      url: `${SITE_URL}/produto/${handle}`,
+      priceCurrency: "BRL",
+      price: parseFloat(price).toFixed(2),
+      availability: selectedVariant?.availableForSale
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock",
+    },
+  };
+
   return (
     <div className="min-h-screen bg-[#FAF7F2]">
+      <SEO
+        title={`${productData.title} | Jilo`}
+        description={(productData.description || `Marmita artesanal Jilo — ${productData.title}. Pronta em 5 minutos.`).slice(0, 158)}
+        path={`/produto/${handle}`}
+        ogType="product"
+        image={mainImage}
+        jsonLd={productSchema}
+      />
       <Header />
 
       <div className="container mx-auto px-4 py-8 lg:px-[40px] max-w-[1200px]">
@@ -305,6 +334,7 @@ export default function Product() {
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
                   disabled={quantity <= 1}
+                  aria-label="Diminuir quantidade"
                   className="w-[36px] h-[36px] flex items-center justify-center text-[#1a1a1a] hover:bg-[#f0efeb] rounded-[10px] transition-colors disabled:opacity-50"
                 >
                   <Minus className="w-[18px] h-[18px]" />
@@ -312,6 +342,7 @@ export default function Product() {
                 <span className="text-[16px] font-bold text-[#1a1a1a] font-sans select-none">{quantity}</span>
                 <button
                   onClick={() => setQuantity(quantity + 1)}
+                  aria-label="Aumentar quantidade"
                   className="w-[36px] h-[36px] flex items-center justify-center text-[#1a1a1a] hover:bg-[#f0efeb] rounded-[10px] transition-colors"
                 >
                   <Plus className="w-[18px] h-[18px]" />
@@ -330,9 +361,9 @@ export default function Product() {
 
             {/* Calcule o Frete */}
             <div className="bg-white border-[1.5px] border-[#e8e8e4] rounded-[20px] p-[24px] mb-[40px] shadow-[0px_2px_12px_0px_rgba(0,0,0,0.02)]">
-              <h3 className="text-[15px] font-bold text-[#1a1a1a] font-sans mb-[16px] flex items-center gap-[8px]">
+              <h2 className="text-[15px] font-bold text-[#1a1a1a] font-sans mb-[16px] flex items-center gap-[8px]">
                 🚚 Calcule o frete e prazo de entrega
-              </h3>
+              </h2>
               <div className="flex flex-col sm:flex-row gap-[12px] mb-[12px]">
                 <input
                   type="text"
