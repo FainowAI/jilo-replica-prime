@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ShippingMethodSelector from "@/components/ShippingMethodSelector";
 import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
+import SEO from "@/components/SEO";
 
 const Carrinho = () => {
   const {
@@ -239,6 +240,11 @@ const Carrinho = () => {
 
   return (
     <div className="min-h-screen bg-[#faf7f2]">
+      <SEO
+        title="Meu Carrinho | Jilo"
+        description="Revise seus pratos, aplique cupom e calcule o frete antes de finalizar seu pedido Jilo."
+        path="/carrinho"
+      />
       <AnnouncementBar />
       <Header />
 
