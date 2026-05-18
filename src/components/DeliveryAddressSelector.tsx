@@ -71,16 +71,18 @@ const DeliveryAddressSelector = ({
     });
   }, [addresses]);
 
-  // Pré-seleciona o default (primeiro entregável da lista)
+  // Pré-seleciona: preferência por entregável; fallback para o primeiro da lista
+  // (default, conforme ordenação do useAddresses). Garante que sempre há uma
+  // seleção quando há endereços cadastrados — o feedback de cobertura aparece
+  // no <ShippingMethodSelector /> abaixo.
   useEffect(() => {
     if (selectedId) return; // já tem seleção, não sobrescrever
     if (!sortedAddresses.length) return;
     const firstDeliverable = sortedAddresses.find((a) =>
       isAreaDeliverable(a.state, a.city)
     );
-    if (firstDeliverable) {
-      setSelectedId(firstDeliverable.id);
-    }
+    const toSelect = firstDeliverable ?? sortedAddresses[0];
+    setSelectedId(toSelect.id);
   }, [sortedAddresses, selectedId]);
 
   // Reporta resultado e id pra cima quando muda seleção
@@ -219,25 +221,30 @@ const DeliveryAddressSelector = ({
             <button
               key={address.id}
               type="button"
-              onClick={() => deliverable && setSelectedId(address.id)}
-              disabled={!deliverable}
+              onClick={() => setSelectedId(address.id)}
               className={`w-full text-left rounded-xl border p-3 transition-colors font-sans ${
-                !deliverable
-                  ? "opacity-60 cursor-not-allowed bg-[#f0efeb] border-[#e8e8e4]"
-                  : isSelected
+                isSelected
+                  ? deliverable
                     ? "bg-[#1e3a1e]/5 border-[#1e3a1e]"
-                    : "bg-white border-[#e8e8e4] hover:border-[#1e3a1e]/40"
+                    : "bg-amber-50 border-amber-300"
+                  : deliverable
+                    ? "bg-white border-[#e8e8e4] hover:border-[#1e3a1e]/40"
+                    : "bg-white border-amber-200 hover:border-amber-400"
               }`}
             >
               <div className="flex items-start gap-3">
-                {/* Radio visual */}
+                {/* Radio visual: respeita estado selecionado + aviso para não-entregável */}
                 <div className="mt-0.5">
-                  {!deliverable ? (
-                    <AlertCircle className="h-5 w-5 text-[#9b9b9b]" />
-                  ) : isSelected ? (
-                    <CheckCircle2 className="h-5 w-5 text-[#1e3a1e]" />
+                  {isSelected ? (
+                    <CheckCircle2
+                      className={`h-5 w-5 ${deliverable ? "text-[#1e3a1e]" : "text-amber-600"}`}
+                    />
                   ) : (
-                    <div className="h-5 w-5 rounded-full border-2 border-[#e8e8e4]" />
+                    <div
+                      className={`h-5 w-5 rounded-full border-2 ${
+                        deliverable ? "border-[#e8e8e4]" : "border-amber-300"
+                      }`}
+                    />
                   )}
                 </div>
 

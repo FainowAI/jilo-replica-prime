@@ -61,7 +61,13 @@ const Carrinho = () => {
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
-  const canCheckout = !deliveryCheck || deliveryCheck.isDeliverable;
+  // canCheckout cobre 3 condições:
+  // 1. Endereço selecionado e em SJC (whitelist DELIVERY_AREAS)
+  // 2. Frete resolvido — ou é grátis (cart ≥ 7) ou tem quote Uber ativa
+  // 3. Cart não-vazio (verificado depois no disabled do botão)
+  const canCheckout =
+    deliveryCheck?.isDeliverable === true &&
+    (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null);
 
   useEffect(() => {
     syncCart();
@@ -514,10 +520,14 @@ const Carrinho = () => {
                 disabled={items.length === 0 || isLoading || isSyncing || !canCheckout}
                 className="w-full h-14 bg-[#1e3a1e] text-white rounded-2xl font-bold text-base font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                {!canCheckout ? (
-                  "Região não atendida"
-                ) : isLoading || isSyncing ? (
+                {isLoading || isSyncing ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
+                ) : !deliveryCheck ? (
+                  "Selecione um endereço"
+                ) : !deliveryCheck.isDeliverable ? (
+                  "Endereço fora da cobertura"
+                ) : !isFreeShipping(totalNonShippingItems) && !activeQuoteId ? (
+                  "Calculando frete..."
                 ) : !user ? (
                   <>
                     Entrar para finalizar

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Truck, Loader2, Info } from "lucide-react";
 import { SHIPPING_FREE_THRESHOLD, SHIPPING_VARIANT_ID, isFreeShipping } from "@/config/shipping";
 import { useShippingQuote } from "@/hooks/useShippingQuote";
-import { updateShippingVariantPrice } from "@/lib/uberDirect";
+import { updateShippingVariantPrice, UberQuoteError } from "@/lib/uberDirect";
 import { useCartStore } from "@/stores/cartStore";
 import type { CepValidationResult } from "@/lib/cepValidator";
 import type { ShopifyProduct } from "@/lib/shopify";
@@ -59,12 +59,28 @@ export default function ShippingMethodSelector({
 
   const { quote, loading, error } = useShippingQuote(totalNonShippingItems, cepParams);
 
-  // Reporta o quote ativo para o Carrinho (que vai usar nos cart attributes)
+  // Reporta o quote ativo para o Carrinho (usa nos cart attributes e no canCheckout).
+  // Quando endereço não é entregável ou sem cotação, reporta (null, 0) para garantir
+  // que o canCheckout do Carrinho rejeite o avanço.
   useEffect(() => {
     if (!onQuoteChange) return;
-    if (isFree) onQuoteChange(null, 0);
-    else if (quote) onQuoteChange(quote.quote_id, quote.fee_cents);
-  }, [isFree, quote, onQuoteChange]);
+    const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
+
+    if (addressNotDeliverable) {
+      onQuoteChange(null, 0);
+      return;
+    }
+    if (isFree) {
+      onQuoteChange(null, 0);
+      return;
+    }
+    if (quote) {
+      onQuoteChange(quote.quote_id, quote.fee_cents);
+      return;
+    }
+    // sem cotação ainda (loading/error) — zera para evitar checkout antes da cotação chegar
+    onQuoteChange(null, 0);
+  }, [isFree, quote, deliveryCheck, onQuoteChange]);
 
   // Sincroniza variant fantasma no cart Shopify
   useEffect(() => {
@@ -75,8 +91,10 @@ export default function ShippingMethodSelector({
     const currentItems = useCartStore.getState().items;
     const shippingItem = currentItems.find((i) => i.variantId === SHIPPING_VARIANT_ID);
 
-    // Caso 1: frete grátis — remover se existir
-    if (isFree) {
+    // Caso 1: frete grátis OU endereço não-entregável OU sem CEP — remover se existir.
+    // R41: variant fantasma só entra no cart se área é entregável e cotação válida.
+    const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
+    if (isFree || addressNotDeliverable || !cepParams) {
       if (shippingItem) {
         removeItem(SHIPPING_VARIANT_ID);
         lastSyncedFeeRef.current = null;
@@ -84,8 +102,8 @@ export default function ShippingMethodSelector({
       return;
     }
 
-    // Caso 2: cotação ainda não chegou ou CEP não validado — não fazer nada
-    if (!quote || !cepParams) return;
+    // Caso 2: cotação ainda não chegou — não fazer nada
+    if (!quote) return;
 
     // Caso 3: cotação igual à última sincronizada — nada a fazer
     if (lastSyncedFeeRef.current === quote.fee_cents && shippingItem) return;
@@ -125,7 +143,27 @@ export default function ShippingMethodSelector({
     return () => clearTimeout(timer);
     // PROPOSITAL: `items` NÃO está nas deps — usamos getState() para snapshot fresh
     // sem encadear loop. O effect re-roda quando isFree, quote ou cepParams mudam.
-  }, [isFree, quote, cepParams, addItem, removeItem]);
+  }, [isFree, quote, cepParams, deliveryCheck, addItem, removeItem]);
+
+  // UI: endereço selecionado mas fora da cobertura (não está em SJC)
+  if (deliveryCheck != null && !deliveryCheck.isDeliverable) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <div className="flex items-start gap-3">
+          <Info className="h-5 w-5 text-amber-700 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-bold text-amber-900 font-sans">
+              Não entregamos para este endereço
+            </p>
+            <p className="text-xs text-amber-800 font-sans mt-1">
+              No momento atendemos apenas <strong>São José dos Campos</strong>.
+              Escolha um endereço em SJC ou cadastre um novo.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // UI: frete grátis
   if (isFree) {
@@ -168,9 +206,33 @@ export default function ShippingMethodSelector({
           )}
 
           {cepParams && error && (
-            <p className="text-xs text-red-600 font-sans mt-1">
-              Não foi possível calcular o frete. Tente novamente em instantes.
-            </p>
+            error instanceof UberQuoteError && error.code === "address_undeliverable" ? (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3 font-sans">
+                <p className="text-xs font-bold text-amber-900 mb-1">
+                  Endereço fora do nosso raio Uber Direct
+                </p>
+                <p className="text-xs text-amber-800 mb-2">
+                  Esse endereço está a mais de ~5km do nosso ponto de partida em São José
+                  dos Campos. A Uber Direct não consegue entregar aqui.
+                </p>
+                {itemsRemaining > 0 && (
+                  <div className="mt-2 pt-2 border-t border-amber-200">
+                    <p className="text-xs text-[#1e3a1e] font-semibold mb-1">
+                      Sugestão: adicione mais {itemsRemaining} marmita{itemsRemaining === 1 ? "" : "s"} ao pedido.
+                    </p>
+                    <p className="text-[11px] text-amber-800">
+                      Com {SHIPPING_FREE_THRESHOLD}+ marmitas, a entrega é feita pela nossa frota.
+                      <strong> Atenção:</strong> como este endereço fica fora do nosso raio padrão,
+                      o frete será calculado à parte e confirmado via WhatsApp.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-red-600 font-sans mt-1">
+                Não foi possível calcular o frete. Tente novamente em instantes.
+              </p>
+            )
           )}
 
           {cepParams && quote && !loading && (

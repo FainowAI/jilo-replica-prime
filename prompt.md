@@ -1,322 +1,181 @@
-PROMPT 2 — Criar componente <DeliveryAddressSelector />
+PROMPT 4 — Refatorar <ShippingMethodSelector /> com 3 estados novos
 Contexto
-Novo componente que substitui o <CepChecker /> no carrinho. Lida com 4 estados:
+O componente atual tem 3 estados visuais: isFree, loading, error, quote. Faltam tratar:
 
-Guest (não autenticado) — CTA pra abrir <AuthDialog /> em modo signup
-Logado, lista carregando — skeleton
-Logado, sem endereços — CTA pra abrir <AddressFormDialog />
-Logado, com endereços — lista de cards selecionáveis + botão de novo endereço
+Endereço selecionado mas fora de SJC (isDeliverable === false): mostra mensagem clara, sem chamar Uber.
+Erro address_undeliverable da Uber (endereço em SJC mas fora do raio): mostra upsell pra 7+ marmitas + aviso de frete diferenciado via WhatsApp.
+Outros erros da Uber: mantém mensagem genérica atual.
 
-Reutiliza componentes já existentes (<AuthDialog />, <AddressFormDialog />) sem modificá-los.
-Output do componente: chama onResult(CepValidationResult) exatamente como o <CepChecker /> antigo fazia, mantendo a interface do <ShippingMethodSelector /> intacta. Também expõe onAddressIdChange(addressId | null) para o Carrinho.tsx gravar como cart attribute.
+A regra adicional: quando o endereço não está em SJC, o componente NÃO deve sincronizar a variant fantasma no cart (limpa se houver) e NÃO deve chamar a Uber.
 Tarefa
-Criar o arquivo src/components/DeliveryAddressSelector.tsx com o conteúdo a seguir.
-Estrutura do arquivo
-tsximport { useState, useEffect, useMemo } from "react";
-import { MapPin, Plus, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext";
-import { useAddresses } from "@/hooks/useAddresses";
-import { isAreaDeliverable, type CepValidationResult } from "@/lib/cepValidator";
-import AuthDialog from "@/components/AuthDialog";
-import AddressFormDialog from "@/components/conta/AddressFormDialog";
-import type { Tables } from "@/integrations/supabase/types";
-
-type Address = Tables<"addresses">;
-
-interface DeliveryAddressSelectorProps {
-  /** Chamado quando o endereço selecionado muda (ou é desselecionado). */
-  onResult: (result: CepValidationResult | null) => void;
-  /** Chamado quando o id do endereço selecionado muda. Usado pelo Carrinho pra cart attribute. */
-  onAddressIdChange?: (addressId: string | null) => void;
-  className?: string;
-}
-
-/**
- * Constrói um CepValidationResult a partir de um endereço cadastrado.
- * Não bate na ViaCEP — todos os campos vêm do banco.
- */
-function buildResultFromAddress(address: Address): CepValidationResult {
-  const deliverable = isAreaDeliverable(address.state, address.city);
-  const logradouro = [
-    address.street,
-    address.number,
-    address.complement,
-  ].filter(Boolean).join(", ");
-
-  return {
-    isValid: true,
-    isDeliverable: deliverable,
-    cepInfo: {
-      cep: address.cep,
-      logradouro,
-      bairro: address.neighborhood,
-      localidade: address.city,
-      uf: address.state,
-    },
-    message: deliverable
-      ? `Entregando em ${address.city}/${address.state}`
-      : `Ainda não entregamos em ${address.city}/${address.state}`,
-  };
-}
-
-const DeliveryAddressSelector = ({
-  onResult,
-  onAddressIdChange,
-  className = "",
-}: DeliveryAddressSelectorProps) => {
-  const { user } = useAuth();
-  const { data: addresses, isLoading, isError, refetch } = useAddresses();
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [authDialogOpen, setAuthDialogOpen] = useState(false);
-  const [addressFormOpen, setAddressFormOpen] = useState(false);
-
-  // Ordena: entregáveis primeiro, depois default, depois created_at desc.
-  // useAddresses já ordena por is_default + created_at, só precisamos garantir
-  // que os não-entregáveis fiquem por último.
-  const sortedAddresses = useMemo(() => {
-    if (!addresses) return [];
-    return [...addresses].sort((a, b) => {
-      const aDeliverable = isAreaDeliverable(a.state, a.city);
-      const bDeliverable = isAreaDeliverable(b.state, b.city);
-      if (aDeliverable !== bDeliverable) return aDeliverable ? -1 : 1;
-      // mantém ordem original (default first, created_at desc)
-      return 0;
-    });
-  }, [addresses]);
-
-  // Pré-seleciona o default (primeiro entregável da lista)
-  useEffect(() => {
-    if (selectedId) return; // já tem seleção, não sobrescrever
-    if (!sortedAddresses.length) return;
-    const firstDeliverable = sortedAddresses.find((a) =>
-      isAreaDeliverable(a.state, a.city)
-    );
-    if (firstDeliverable) {
-      setSelectedId(firstDeliverable.id);
+Edite src/components/ShippingMethodSelector.tsx aplicando as mudanças abaixo.
+Mudança 1 — Atualizar imports no topo
+Substituir o import:
+tsimport { useShippingQuote } from "@/hooks/useShippingQuote";
+import { updateShippingVariantPrice } from "@/lib/uberDirect";
+Por:
+tsimport { useShippingQuote } from "@/hooks/useShippingQuote";
+import { updateShippingVariantPrice, UberQuoteError } from "@/lib/uberDirect";
+Mudança 2 — Bloquear cotação quando endereço não-entregável
+Localizar o cálculo de cepParams:
+tsconst cepParams = deliveryCheck?.isDeliverable && deliveryCheck.cepInfo
+  ? {
+      dropoff_cep: deliveryCheck.cepInfo.cep,
+      dropoff_address: deliveryCheck.cepInfo.logradouro || "Endereço",
+      dropoff_city: deliveryCheck.cepInfo.localidade,
+      dropoff_state: deliveryCheck.cepInfo.uf,
     }
-  }, [sortedAddresses, selectedId]);
+  : null;
+Isto NÃO precisa mudar — cepParams já vira null se !isDeliverable, então o useShippingQuote não dispara. Apenas confirme que está intacto.
+Mudança 3 — Garantir limpeza da variant fantasma quando endereço fica não-entregável
+Localizar o useEffect de sincronização:
+ts// Sincroniza variant fantasma no cart Shopify
+useEffect(() => {
+  if (!SHIPPING_VARIANT_ID) return;
+  // Lê snapshot do store de forma imperativa — NÃO depender de `items` no array
+  // de deps, senão o effect roda sempre que qualquer item do cart muda (loop com
+  // addItem/removeItem que ele próprio chama).
+  const currentItems = useCartStore.getState().items;
+  const shippingItem = currentItems.find((i) => i.variantId === SHIPPING_VARIANT_ID);
 
-  // Reporta resultado e id pra cima quando muda seleção
-  useEffect(() => {
-    if (!selectedId) {
-      onResult(null);
-      onAddressIdChange?.(null);
-      return;
+  // Caso 1: frete grátis — remover se existir
+  if (isFree) {
+    if (shippingItem) {
+      removeItem(SHIPPING_VARIANT_ID);
+      lastSyncedFeeRef.current = null;
     }
-    const selected = sortedAddresses.find((a) => a.id === selectedId);
-    if (!selected) {
-      onResult(null);
-      onAddressIdChange?.(null);
-      return;
+    return;
+  }
+  ...
+Substituir o bloco // Caso 1: frete grátis — remover se existir por:
+ts  // Caso 1: frete grátis OU endereço não-entregável OU sem CEP — remover se existir.
+  // R41: variant fantasma só entra no cart se área é entregável e cotação válida.
+  const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
+  if (isFree || addressNotDeliverable || !cepParams) {
+    if (shippingItem) {
+      removeItem(SHIPPING_VARIANT_ID);
+      lastSyncedFeeRef.current = null;
     }
-    onResult(buildResultFromAddress(selected));
-    onAddressIdChange?.(selected.id);
-  }, [selectedId, sortedAddresses, onResult, onAddressIdChange]);
-
-  // ESTADO 1 — Guest
-  if (!user) {
-    return (
-      <div className={className}>
-        <p className="text-sm text-[#9b9b9b] font-sans mb-2">Endereço de entrega</p>
-        <div className="bg-[#1e3a1e]/5 border border-[#1e3a1e]/20 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <MapPin className="h-5 w-5 text-[#1e3a1e] mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-[#1a1a1a] font-sans mb-1">
-                Faça login para selecionar seu endereço
-              </p>
-              <p className="text-xs text-[#9b9b9b] font-sans mb-3">
-                Suas marmitas vão pra um endereço cadastrado. Seguro e rápido.
-              </p>
-              <button
-                onClick={() => setAuthDialogOpen(true)}
-                className="px-4 py-2 bg-[#1e3a1e] text-white rounded-lg text-sm font-bold font-sans hover:bg-[#1e3a1e]/90 transition-colors"
-              >
-                Entrar ou cadastrar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <AuthDialog
-          open={authDialogOpen}
-          onOpenChange={setAuthDialogOpen}
-          initialMode="signup"
-        />
-      </div>
-    );
+    return;
   }
+E remover o bloco redundante que vinha depois:
+ts  // Caso 2: cotação ainda não chegou ou CEP não validado — não fazer nada
+  if (!quote || !cepParams) return;
+Substituir por:
+ts  // Caso 2: cotação ainda não chegou — não fazer nada
+  if (!quote) return;
+Atualizar as dependências do useEffect para incluir deliveryCheck:
+ts}, [isFree, quote, cepParams, addItem, removeItem]);
+Substituir por:
+ts}, [isFree, quote, cepParams, deliveryCheck, addItem, removeItem]);
+Mudança 4 — Reportar onQuoteChange(null, 0) quando não-entregável
+Localizar o useEffect de reporte para o Carrinho:
+ts// Reporta o quote ativo para o Carrinho (que vai usar nos cart attributes)
+useEffect(() => {
+  if (!onQuoteChange) return;
+  if (isFree) onQuoteChange(null, 0);
+  else if (quote) onQuoteChange(quote.quote_id, quote.fee_cents);
+}, [isFree, quote, onQuoteChange]);
+Substituir por:
+ts// Reporta o quote ativo para o Carrinho (usa nos cart attributes e no canCheckout).
+// Quando endereço não é entregável ou sem cotação, reporta (null, 0) para garantir
+// que o canCheckout do Carrinho rejeite o avanço.
+useEffect(() => {
+  if (!onQuoteChange) return;
+  const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
 
-  // ESTADO 2 — Logado, carregando
-  if (isLoading) {
-    return (
-      <div className={className}>
-        <p className="text-sm text-[#9b9b9b] font-sans mb-2">Endereço de entrega</p>
-        <div className="space-y-2">
-          <div className="h-20 bg-[#f0efeb] rounded-xl animate-pulse" />
-          <div className="h-20 bg-[#f0efeb] rounded-xl animate-pulse" />
-        </div>
-      </div>
-    );
+  if (addressNotDeliverable) {
+    onQuoteChange(null, 0);
+    return;
   }
-
-  // ESTADO 3 — Logado, erro ao carregar
-  if (isError) {
-    return (
-      <div className={className}>
-        <p className="text-sm text-[#9b9b9b] font-sans mb-2">Endereço de entrega</p>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-red-800 font-sans mb-1">
-                Erro ao carregar seus endereços
-              </p>
-              <button
-                onClick={() => refetch()}
-                className="text-xs text-red-700 underline font-sans"
-              >
-                Tentar novamente
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  if (isFree) {
+    onQuoteChange(null, 0);
+    return;
   }
-
-  // ESTADO 4 — Logado, sem endereços cadastrados
-  if (!sortedAddresses.length) {
-    return (
-      <div className={className}>
-        <p className="text-sm text-[#9b9b9b] font-sans mb-2">Endereço de entrega</p>
-        <div className="bg-white border border-dashed border-[#e8e8e4] rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <MapPin className="h-5 w-5 text-[#9b9b9b] mt-0.5 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-[#1a1a1a] font-sans mb-1">
-                Você ainda não tem endereço cadastrado
-              </p>
-              <p className="text-xs text-[#9b9b9b] font-sans mb-3">
-                Cadastre um endereço para receber suas marmitas.
-              </p>
-              <button
-                onClick={() => setAddressFormOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1e3a1e] text-white rounded-lg text-sm font-bold font-sans hover:bg-[#1e3a1e]/90 transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Cadastrar endereço
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <AddressFormDialog
-          open={addressFormOpen}
-          onOpenChange={setAddressFormOpen}
-        />
-      </div>
-    );
+  if (quote) {
+    onQuoteChange(quote.quote_id, quote.fee_cents);
+    return;
   }
-
-  // ESTADO 5 — Logado, com endereços
+  // sem cotação ainda (loading/error) — zera para evitar checkout antes da cotação chegar
+  onQuoteChange(null, 0);
+}, [isFree, quote, deliveryCheck, onQuoteChange]);
+Mudança 5 — Adicionar UI específica para endereço não-entregável
+Localizar o bloco de UI "frete grátis":
+tsx// UI: frete grátis
+if (isFree) {
   return (
-    <div className={className}>
-      <p className="text-sm text-[#9b9b9b] font-sans mb-2">Escolha o endereço de entrega</p>
-      <div className="space-y-2">
-        {sortedAddresses.map((address) => {
-          const deliverable = isAreaDeliverable(address.state, address.city);
-          const isSelected = selectedId === address.id;
-
-          return (
-            <button
-              key={address.id}
-              type="button"
-              onClick={() => deliverable && setSelectedId(address.id)}
-              disabled={!deliverable}
-              className={`w-full text-left rounded-xl border p-3 transition-colors font-sans ${
-                !deliverable
-                  ? "opacity-60 cursor-not-allowed bg-[#f0efeb] border-[#e8e8e4]"
-                  : isSelected
-                    ? "bg-[#1e3a1e]/5 border-[#1e3a1e]"
-                    : "bg-white border-[#e8e8e4] hover:border-[#1e3a1e]/40"
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                {/* Radio visual */}
-                <div className="mt-0.5">
-                  {!deliverable ? (
-                    <AlertCircle className="h-5 w-5 text-[#9b9b9b]" />
-                  ) : isSelected ? (
-                    <CheckCircle2 className="h-5 w-5 text-[#1e3a1e]" />
-                  ) : (
-                    <div className="h-5 w-5 rounded-full border-2 border-[#e8e8e4]" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <p className="text-sm font-semibold text-[#1a1a1a] truncate">
-                      {address.label}
-                    </p>
-                    {address.is_default && (
-                      <span className="text-[10px] bg-[#1e3a1e] text-white px-1.5 py-0.5 rounded font-bold">
-                        Padrão
-                      </span>
-                    )}
-                    {!deliverable && (
-                      <span className="text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-bold">
-                        Não entregamos aqui
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-[#6b6b6b] truncate">
-                    {address.street}, {address.number}
-                    {address.complement ? `, ${address.complement}` : ""}
-                  </p>
-                  <p className="text-xs text-[#9b9b9b] truncate">
-                    {address.neighborhood} — {address.city}/{address.state} • CEP {address.cep}
-                  </p>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setAddressFormOpen(true)}
-        className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 border border-dashed border-[#e8e8e4] text-[#1a1a1a] rounded-xl text-sm font-semibold font-sans hover:border-[#1e3a1e] hover:text-[#1e3a1e] transition-colors"
-      >
-        <Plus className="h-4 w-4" />
-        Cadastrar novo endereço
-      </button>
-
-      <AddressFormDialog
-        open={addressFormOpen}
-        onOpenChange={setAddressFormOpen}
-      />
+    <div className="bg-[#1e3a1e]/5 border border-[#1e3a1e]/20 rounded-xl p-4">
+      ...
     </div>
   );
-};
-
-export default DeliveryAddressSelector;
+}
+Adicionar, logo antes desse bloco if (isFree), um novo bloco:
+tsx// UI: endereço selecionado mas fora da cobertura (não está em SJC)
+if (deliveryCheck != null && !deliveryCheck.isDeliverable) {
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+      <div className="flex items-start gap-3">
+        <Info className="h-5 w-5 text-amber-700 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-bold text-amber-900 font-sans">
+            Não entregamos para este endereço
+          </p>
+          <p className="text-xs text-amber-800 font-sans mt-1">
+            No momento atendemos apenas <strong>São José dos Campos</strong>.
+            Escolha um endereço em SJC ou cadastre um novo.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+Mudança 6 — Atualizar tratamento de erro para detectar address_undeliverable
+Localizar o bloco de erro genérico dentro do JSX final:
+tsx{cepParams && error && (
+  <p className="text-xs text-red-600 font-sans mt-1">
+    Não foi possível calcular o frete. Tente novamente em instantes.
+  </p>
+)}
+Substituir por:
+tsx{cepParams && error && (
+  error instanceof UberQuoteError && error.code === "address_undeliverable" ? (
+    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3 font-sans">
+      <p className="text-xs font-bold text-amber-900 mb-1">
+        Endereço fora do nosso raio Uber Direct
+      </p>
+      <p className="text-xs text-amber-800 mb-2">
+        Esse endereço está a mais de ~5km do nosso ponto de partida em São José
+        dos Campos. A Uber Direct não consegue entregar aqui.
+      </p>
+      {itemsRemaining > 0 && (
+        <div className="mt-2 pt-2 border-t border-amber-200">
+          <p className="text-xs text-[#1e3a1e] font-semibold mb-1">
+            Sugestão: adicione mais {itemsRemaining} marmita{itemsRemaining === 1 ? "" : "s"} ao pedido.
+          </p>
+          <p className="text-[11px] text-amber-800">
+            Com {SHIPPING_FREE_THRESHOLD}+ marmitas, a entrega é feita pela nossa frota.
+            <strong> Atenção:</strong> como este endereço fica fora do nosso raio padrão,
+            o frete será calculado à parte e confirmado via WhatsApp.
+          </p>
+        </div>
+      )}
+    </div>
+  ) : (
+    <p className="text-xs text-red-600 font-sans mt-1">
+      Não foi possível calcular o frete. Tente novamente em instantes.
+    </p>
+  )
+)}
 Referências
 
-Reusa <AuthDialog /> (src/components/AuthDialog.tsx) com initialMode="signup" — mesmo padrão usado pelo botão "Entrar para finalizar" no Carrinho.tsx.
-Reusa <AddressFormDialog /> (src/components/conta/AddressFormDialog.tsx) inalterado — ele já trata create/edit, validação de CEP/UF e invalida queries.
-Reusa useAddresses() (src/hooks/useAddresses.ts) — TanStack Query com cache automático e ordenação is_default desc, created_at desc.
-Reusa interface CepValidationResult de src/lib/cepValidator.ts para manter compatibilidade com <ShippingMethodSelector />.
-Reusa isAreaDeliverable criado no PROMPT 1.
-Paleta de cores e tipografia seguem padrão do <CepChecker /> atual e do design system Jiló (verde escuro #1e3a1e, cinza #9b9b9b, off-white #f0efeb).
+A regra de bloquear cart ≥ 7 fora de SJC já é garantida pelo Mudança 5 acima — quando deliveryCheck.isDeliverable === false, retorna UI específica antes mesmo de checar isFree. Logo, mesmo cart ≥ 7 fora de SJC mostra "Não entregamos para este endereço".
+A constante itemsRemaining já existe no componente: const itemsRemaining = SHIPPING_FREE_THRESHOLD - totalNonShippingItems;.
+A constante SHIPPING_FREE_THRESHOLD já está importada de @/config/shipping.
 
 IMPORTANTE — Não quebre o que já funciona
 
-NÃO altere <AuthDialog />, <AddressFormDialog />, useAddresses.ts — todos reutilizados sem mudança.
-NÃO altere <CepChecker /> nem cepValidator.ts além do helper do PROMPT 1.
-NÃO altere <ShippingMethodSelector /> — a interface CepValidationResult é mantida.
-Tipagem strict do TypeScript: cumpra. Use import type para Tables<"addresses"> e CepValidationResult.
-Default export, igual ao padrão de <CepChecker />.
-Acessibilidade: o card é um <button> (não <div> clicável) — leitor de tela detecta como interativo.
+NÃO altere a função buildShippingVariantProduct — formato da variant fantasma intacto.
+NÃO altere a interface ShippingMethodSelectorProps — Carrinho.tsx depende.
+NÃO altere o debounce de 300ms na sincronização da variant — race condition já mitigada (gotcha conhecido).
+NÃO altere o bloco UI de isFree — segue intacto, agora só renderiza quando endereço é entregável.
+NÃO altere o bloco UI de quote quando cotação chegou com sucesso — segue intacto.

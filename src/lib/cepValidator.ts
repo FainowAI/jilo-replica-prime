@@ -14,11 +14,16 @@ export interface CepValidationResult {
   message: string;
 }
 
-// Whitelist de áreas atendidas — expandir conforme operação
+// Whitelist de cidades atendidas pela operação Jiló (frota própria E Uber Direct).
 // Formato: { uf: string, cidades?: string[] }
-// Se cidades estiver vazio, atende o estado inteiro
+// Se cidades estiver vazio, atende o estado inteiro.
+//
+// IMPORTANTE: esta whitelist define cobertura JILÓ FROTA PRÓPRIA (cart ≥ 7 marmitas).
+// Para Uber Direct (cart < 7), o raio operacional (~5km do pickup) é definido
+// dinamicamente pela API Uber em runtime — endereços em SJC fora do raio Uber
+// recebem erro `address_undeliverable` tratado no <ShippingMethodSelector />.
 const DELIVERY_AREAS = [
-  { uf: 'SP', cidades: ['São Paulo', 'Guarulhos', 'Osasco', 'Santo André', 'São Bernardo do Campo', 'São Caetano do Sul', 'Diadema', 'Mauá', 'Barueri', 'Cotia', 'Taboão da Serra', 'Itapevi', 'Carapicuíba', 'Embu das Artes', 'Itaquaquecetuba', 'Ferraz de Vasconcelos', 'Poá', 'Suzano', 'Mogi das Cruzes', 'Arujá'] },
+  { uf: 'SP', cidades: ['São José dos Campos'] },
 ];
 
 /**
