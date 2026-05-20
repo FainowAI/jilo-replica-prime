@@ -517,7 +517,7 @@ const Carrinho = () => {
 
               {/* Payment Method Selector */}
               <div className="mb-5">
-                <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} />
+                <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} totalNonShippingItems={totalNonShippingItems} />
               </div>
 
               {/* Checkout Button */}
