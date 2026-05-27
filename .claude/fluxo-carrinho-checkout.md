@@ -108,6 +108,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 20. **`isAreaDeliverable` — novo fluxo de validação de área (Sprint 4.3)**: O fluxo antigo era: CEP do usuário → ViaCEP → whitelist. O novo fluxo é: endereço cadastrado no banco → `isAreaDeliverable(address.state, address.city)` → whitelist. A interface `CepValidationResult` permanece inalterada — apenas a fonte dos dados mudou.
 
+**Hard-block do checkout (Sprint 4.7, R52):** o botão "Ir para o Checkout" só é habilitado quando o `cartCost.totalAmount` retornado pelo Shopify bate matematicamente com `subtotal + activeShippingFeeCents` (tolerância R$ 0,01). Se há discrepância (ex: variant fantasma não entrou no Shopify Cart por falha de sincronização), o botão fica disabled exibindo "Sincronizando frete..." e `console.warn` alerta o time. Em frete grátis (≥ 7 marmitas), `activeShippingFeeCents = 0` e `expectedTotal = subtotal`, então a validação passa naturalmente.
+
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho
