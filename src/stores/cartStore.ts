@@ -11,6 +11,7 @@ import {
   removeDiscountCodesFromCart,
   fetchCartFull,
 } from '@/lib/shopify';
+import { isShippingVariant } from '@/config/shipping';
 
 export interface CartItem {
   lineId: string | null;
@@ -64,6 +65,62 @@ export const useCartStore = create<CartStore>()(
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
         const existingItem = items.find(i => i.variantId === item.variantId);
+
+        // ─── REGRA R50: variant fantasma de frete é singleton ────────────────
+        // Se a variant fantasma já existe no cart, NÃO somamos quantity (que é
+        // o comportamento de itens normais). Removemos a linha existente do
+        // Shopify e recriamos com a quantity=1 e o preço atualizado da variant.
+        // O preço é atualizado server-side via edge `update-shipping-variant-price`
+        // pelo `ShippingMethodSelector` ANTES desta chamada.
+        if (isShippingVariant(item.variantId) && existingItem && cartId && existingItem.lineId) {
+          set({ isLoading: true });
+          try {
+            // 1. Remove linha antiga do Shopify
+            const removeResult = await removeLineFromShopifyCart(cartId, existingItem.lineId);
+            if (removeResult.cartNotFound) {
+              clearCart();
+              return;
+            }
+            if (!removeResult.success) {
+              console.error('[cartStore] Failed to remove stale shipping variant line');
+              return;
+            }
+
+            // 2. Adiciona linha nova com preço atualizado
+            const addResult = await addLineToShopifyCart(cartId, {
+              variantId: item.variantId,
+              quantity: 1, // SEMPRE 1 para variant fantasma
+            });
+            if (addResult.cartNotFound) {
+              clearCart();
+              return;
+            }
+            if (!addResult.success) {
+              console.error('[cartStore] Failed to re-add shipping variant after removal');
+              // Estado inconsistente: linha antiga removida, nova falhou.
+              // Limpa local pra forçar re-sincronização no próximo render.
+              set({ items: get().items.filter(i => i.variantId !== item.variantId) });
+              return;
+            }
+
+            // 3. Atualiza store local: substitui (não soma)
+            set({
+              items: get().items.map(i =>
+                i.variantId === item.variantId
+                  ? { ...item, lineId: addResult.lineId ?? null, quantity: 1 }
+                  : i
+              ),
+            });
+            await get().refreshCartDetails();
+          } catch (error) {
+            console.error('[cartStore] Shipping variant REPLACE failed:', error);
+          } finally {
+            set({ isLoading: false });
+          }
+          return;
+        }
+
+        // ─── FLUXO NORMAL (marmitas + primeira inserção de variant fantasma) ─
         set({ isLoading: true });
         try {
           if (!cartId) {

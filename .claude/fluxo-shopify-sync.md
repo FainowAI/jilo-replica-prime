@@ -3,6 +3,12 @@
 ## Visão geral
 Todo perfil no Supabase tem um customer correspondente no Shopify, identificado pelo email. O sync é disparado automaticamente após o primeiro update de perfil do usuário. A integração usa GraphQL Admin API via edge function Deno.
 
+**Autenticação (Sprint 4.7):** A Sprint 4.7 substituiu o token estático `SHOPIFY_ADMIN_ACCESS_TOKEN` por OAuth 2.0 Client Credentials Grant. Todas as Edge Functions que chamam Admin API agora importam `getShopifyAdminToken()` de `supabase/functions/_shared/shopify-admin-auth.ts`. Os secrets necessários no Supabase são `SHOPIFY_CLIENT_ID` e `SHOPIFY_CLIENT_SECRET` (não mais `SHOPIFY_ADMIN_ACCESS_TOKEN`). Ver R51 em `requirements.md`.
+
+**Tabela de cache:** `public.shopify_admin_tokens` (1 row sempre), RLS bloqueada, service_role-only. Token expira em 24h, helper faz refresh quando `expires_at - now() < 1h`.
+
+**Edges afetadas:** `update-shipping-variant-price` e `shopify-customer-sync`. A `shopify-webhook-receiver` NÃO foi tocada — ela só valida HMAC com `SHOPIFY_WEBHOOK_SECRET` (que é o client secret usado para signature, separado do access token).
+
 ## Arquivos envolvidos
 
 | Arquivo | Descrição |

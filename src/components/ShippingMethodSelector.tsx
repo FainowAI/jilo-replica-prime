@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Truck, Loader2, Info } from "lucide-react";
 import { SHIPPING_FREE_THRESHOLD, SHIPPING_VARIANT_ID, isFreeShipping } from "@/config/shipping";
 import { useShippingQuote } from "@/hooks/useShippingQuote";
@@ -47,15 +47,34 @@ export default function ShippingMethodSelector({
   const addItem = useCartStore((s) => s.addItem);
   const removeItem = useCartStore((s) => s.removeItem);
   const lastSyncedFeeRef = useRef<number | null>(null);
+  const [didCleanupOnMount, setDidCleanupOnMount] = useState(false);
+  const cancelCountRef = useRef(0);
+  const lastDepsSnapshotRef = useRef<{
+    isFree: boolean | null;
+    quoteFeeCents: number | null;
+    cepHash: string | null;
+  }>({ isFree: null, quoteFeeCents: null, cepHash: null });
 
-  const cepParams = deliveryCheck?.isDeliverable && deliveryCheck.cepInfo
-    ? {
-        dropoff_cep: deliveryCheck.cepInfo.cep,
-        dropoff_address: deliveryCheck.cepInfo.logradouro || "Endereço",
-        dropoff_city: deliveryCheck.cepInfo.localidade,
-        dropoff_state: deliveryCheck.cepInfo.uf,
-      }
-    : null;
+  // Memoiza cepParams com base em chaves primitivas do deliveryCheck. Sem isso,
+  // um novo objeto seria criado a cada render do componente, vazando para a
+  // dep array do useEffect de sincronização e cancelando o setTimeout(sync, 300)
+  // antes do sync() completar. Isso é o que causou a regressão da Sprint 4.5
+  // onde a variant fantasma nunca entrava no cart (TOTAL = subtotal sem frete).
+  const cepParams = useMemo(() => {
+    if (!deliveryCheck?.isDeliverable || !deliveryCheck.cepInfo) return null;
+    return {
+      dropoff_cep: deliveryCheck.cepInfo.cep,
+      dropoff_address: deliveryCheck.cepInfo.logradouro || "Endereço",
+      dropoff_city: deliveryCheck.cepInfo.localidade,
+      dropoff_state: deliveryCheck.cepInfo.uf,
+    };
+  }, [
+    deliveryCheck?.isDeliverable,
+    deliveryCheck?.cepInfo?.cep,
+    deliveryCheck?.cepInfo?.logradouro,
+    deliveryCheck?.cepInfo?.localidade,
+    deliveryCheck?.cepInfo?.uf,
+  ]);
 
   const { quote, loading, error } = useShippingQuote(totalNonShippingItems, cepParams);
 
@@ -82,9 +101,64 @@ export default function ShippingMethodSelector({
     onQuoteChange(null, 0);
   }, [isFree, quote, deliveryCheck, onQuoteChange]);
 
+  // Cleanup defensivo no mount: se o cart hidratado do localStorage contém
+  // variant fantasma com quantity > 1 (estado bugado de sessão anterior, R50),
+  // remove ela aqui antes do effect de sincronização rodar. Isso protege
+  // clientes que estavam em produção quando o bug existia.
+  useEffect(() => {
+    if (didCleanupOnMount) return;
+    if (!SHIPPING_VARIANT_ID) {
+      setDidCleanupOnMount(true);
+      return;
+    }
+
+    const items = useCartStore.getState().items;
+    const shippingItems = items.filter((i) => i.variantId === SHIPPING_VARIANT_ID);
+    const hasStaleShipping = shippingItems.some((i) => i.quantity > 1);
+
+    if (hasStaleShipping) {
+      console.warn(
+        "[ShippingMethodSelector] Detectada variant fantasma stale no localStorage " +
+        "(quantity > 1). Removendo antes de re-sincronizar."
+      );
+      // Fire-and-forget — o effect de sync abaixo vai re-adicionar se necessário
+      removeItem(SHIPPING_VARIANT_ID).catch((err) => {
+        console.error("[ShippingMethodSelector] Cleanup defensivo falhou:", err);
+      });
+      lastSyncedFeeRef.current = null;
+    }
+    setDidCleanupOnMount(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [didCleanupOnMount]);
+
   // Sincroniza variant fantasma no cart Shopify
   useEffect(() => {
     if (!SHIPPING_VARIANT_ID) return;
+
+    // ── Diagnóstico defensivo: detecta regressão de memoização ─────────────
+    // Snapshot das deps no formato comparável (cepHash pra não vazar objeto).
+    const cepHash = cepParams
+      ? `${cepParams.dropoff_cep}|${cepParams.dropoff_city}|${cepParams.dropoff_state}`
+      : null;
+    const prev = lastDepsSnapshotRef.current;
+    const depsChanged =
+      prev.isFree !== isFree ||
+      prev.quoteFeeCents !== (quote?.fee_cents ?? null) ||
+      prev.cepHash !== cepHash;
+    if (!depsChanged && import.meta.env.DEV) {
+      console.warn(
+        "[ShippingMethodSelector] useEffect re-rodou sem mudança de deps primitivas. " +
+        "Provável regressão de memoização (objeto literal nas deps). Investigar.",
+        { isFree, quoteFeeCents: quote?.fee_cents, cepHash }
+      );
+    }
+    lastDepsSnapshotRef.current = {
+      isFree,
+      quoteFeeCents: quote?.fee_cents ?? null,
+      cepHash,
+    };
+    // ────────────────────────────────────────────────────────────────────────
+
     // Lê snapshot do store de forma imperativa — NÃO depender de `items` no array
     // de deps, senão o effect roda sempre que qualquer item do cart muda (loop com
     // addItem/removeItem que ele próprio chama).
@@ -105,24 +179,26 @@ export default function ShippingMethodSelector({
     // Caso 2: cotação ainda não chegou — não fazer nada
     if (!quote) return;
 
-    // Caso 3: cotação igual à última sincronizada — nada a fazer
-    if (lastSyncedFeeRef.current === quote.fee_cents && shippingItem) return;
+    // Caso 3: cotação igual à última sincronizada E variant fantasma única e correta — nada a fazer
+    if (
+      lastSyncedFeeRef.current === quote.fee_cents &&
+      shippingItem &&
+      shippingItem.quantity === 1
+    ) {
+      return;
+    }
 
-    // Caso 4: precisa sincronizar — atualiza preço, depois (re)adiciona ao cart
+    // Caso 4: precisa sincronizar — atualiza preço, depois REPLACE atômico via addItem (R50)
+    let syncStarted = false;
     const sync = async () => {
+      syncStarted = true;
       try {
         await updateShippingVariantPrice(quote.fee_cents);
 
-        // Re-lê snapshot DENTRO do async — pode ter mudado durante o debounce
-        const latestItems = useCartStore.getState().items;
-        const latestShippingItem = latestItems.find(
-          (i) => i.variantId === SHIPPING_VARIANT_ID
-        );
-
-        if (latestShippingItem) {
-          await removeItem(SHIPPING_VARIANT_ID);
-        }
-
+        // addItem detecta isShippingVariant(variantId) e decide:
+        // - primeira inserção → cria linha nova
+        // - re-inserção → REPLACE atômico (remove + add quantity=1)
+        // Garantia singleton vive no store (R50).
         await addItem({
           product: buildShippingVariantProduct(quote.fee_cents),
           variantId: SHIPPING_VARIANT_ID,
@@ -133,6 +209,8 @@ export default function ShippingMethodSelector({
         });
 
         lastSyncedFeeRef.current = quote.fee_cents;
+        // Sync completou — zera contador de cancellations
+        cancelCountRef.current = 0;
       } catch (err) {
         console.error("[ShippingMethodSelector] failed to sync shipping variant:", err);
       }
@@ -140,7 +218,24 @@ export default function ShippingMethodSelector({
 
     // Debounce 300ms para evitar race com Shopify Cart API quando cliente muda quantidades rápido
     const timer = setTimeout(sync, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // ── Diagnóstico defensivo: timer cancelado antes do sync iniciar ─────
+      // Se o sync já tinha iniciado, não conta como cancellation. Se foi cancelado
+      // antes mesmo de o setTimeout disparar, conta.
+      if (!syncStarted) {
+        cancelCountRef.current += 1;
+        if (cancelCountRef.current >= 5) {
+          console.warn(
+            "[ShippingMethodSelector] Effect re-render loop detectado: " +
+            `${cancelCountRef.current} cancellations consecutivas sem sync completar. ` +
+            "Variant fantasma pode não estar entrando no cart. " +
+            "Possível regressão de memoização — investigar deps do useEffect."
+          );
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+    };
     // PROPOSITAL: `items` NÃO está nas deps — usamos getState() para snapshot fresh
     // sem encadear loop. O effect re-roda quando isFree, quote ou cepParams mudam.
   }, [isFree, quote, cepParams, deliveryCheck, addItem, removeItem]);

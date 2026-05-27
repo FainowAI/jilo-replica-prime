@@ -1,15 +1,14 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-const SHOPIFY_ADMIN_ACCESS_TOKEN = Deno.env.get("SHOPIFY_ADMIN_ACCESS_TOKEN")!;
 const SHOPIFY_STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN")!; // ex: jnutg9-u2.myshopify.com
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 
-// Headers CORS — necessários pq a function é chamada do browser
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -53,6 +52,35 @@ function splitName(fullName: string | null | undefined): { firstName: string | n
     firstName: parts[0],
     lastName: parts.slice(1).join(" "),
   };
+}
+
+/**
+ * Faz POST GraphQL para Shopify Admin API com retry automático em 401.
+ * Token revogado server-side dispara force refresh + retry uma vez.
+ */
+async function callShopifyAdmin(payload: object, isRetry = false): Promise<Response> {
+  const token = isRetry
+    ? await forceRefreshShopifyAdminToken()
+    : await getShopifyAdminToken();
+
+  const res = await fetch(
+    `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (res.status === 401 && !isRetry) {
+    console.warn("[shopify-customer-sync] Got 401, forcing token refresh and retrying");
+    return callShopifyAdmin(payload, true);
+  }
+
+  return res;
 }
 
 serve(async (req) => {
@@ -139,17 +167,7 @@ serve(async (req) => {
       },
     };
 
-    const shopifyRes = await fetch(
-      `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Shopify-Access-Token": SHOPIFY_ADMIN_ACCESS_TOKEN,
-        },
-        body: JSON.stringify(shopifyPayload),
-      }
-    );
+    const shopifyRes = await callShopifyAdmin(shopifyPayload);
 
     if (!shopifyRes.ok) {
       const errorBody = await shopifyRes.text();

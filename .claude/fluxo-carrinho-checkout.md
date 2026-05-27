@@ -63,7 +63,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 4. **Cart not found handler**: Se Shopify retorna "cart not found" ou "does not exist", o store local é limpo (`clearCart()`).
 
-5. **Deduplição de itens**: Se o item já existe no carrinho, a quantidade é somada (update, não add).
+5. **Deduplição de itens (marmitas)**: Se o item já existe no carrinho, a quantidade é somada (update, não add). **Exceção: variant fantasma de frete `__internal_shipping`** — esta é singleton (R50). `cartStore.addItem` detecta via `isShippingVariant(variantId)` e faz REPLACE atômico (remove + add com `quantity = 1` e preço atualizado), nunca somando quantity. Veja `.claude/fluxo-uber-direct.md` para detalhes.
 
 6. **Remoção**: Quantidade → 0 chama removeItem. Último item removido → clearCart.
 
@@ -107,6 +107,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 **R48.** Cart attribute `selected_address_id` é gravado junto com `delivery_method`, `uber_quote_id` e `return_url` no `handleCheckout` (rastreabilidade no Shopify Admin + Bling). Fail-silent (R26).
 
 20. **`isAreaDeliverable` — novo fluxo de validação de área (Sprint 4.3)**: O fluxo antigo era: CEP do usuário → ViaCEP → whitelist. O novo fluxo é: endereço cadastrado no banco → `isAreaDeliverable(address.state, address.city)` → whitelist. A interface `CepValidationResult` permanece inalterada — apenas a fonte dos dados mudou.
+
+**Hard-block do checkout (Sprint 4.7, R52):** o botão "Ir para o Checkout" só é habilitado quando o `cartCost.totalAmount` retornado pelo Shopify bate matematicamente com `subtotal + activeShippingFeeCents` (tolerância R$ 0,01). Se há discrepância (ex: variant fantasma não entrou no Shopify Cart por falha de sincronização), o botão fica disabled exibindo "Sincronizando frete..." e `console.warn` alerta o time. Em frete grátis (≥ 7 marmitas), `activeShippingFeeCents = 0` e `expectedTotal = subtotal`, então a validação passa naturalmente.
 
 ## Fluxo do usuário
 
@@ -193,6 +195,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O `<CepChecker />` antigo NÃO foi deletado — pode ser usado em outras páginas (FAQ, cobertura, landing). Mas não use mais em `/carrinho`.
 - Usuários antigos com endereço em `profiles.address/cep/...` mas sem linha em `addresses` são tratados como "sem endereço". Migração desses dados é débito técnico pra sprint futura.
 - Cart attribute `selected_address_id` é metadado adicional — NÃO substitui o `shipping_address` JSONB de `orders` (que continua vindo do payload do webhook `orders/paid`, regra R43).
+- **`cartStore.addItem` tem dois caminhos:** (1) marmitas + primeira inserção de variant fantasma → fluxo normal (soma quantity se existir). (2) re-inserção de variant fantasma quando ela já existe → REPLACE atômico (remove no Shopify + add quantity=1 + atualiza array local via `.map` em vez de spread). Se mexer no `addItem`, lembre que o early return após o bloco de REPLACE é o que impede o fluxo normal de executar em sequência e voltar o bug.
 - O cupom PIX é **condicional à quantidade** (R19): `PIX5` se cart <7 marmitas, `PIX3` se ≥7. Ambos vivem no Shopify Admin. PIX5 é não-combinável (não aceita com automatic discounts); PIX3 foi criado especificamente para combinar com os Kits. Não trocar a configuração de combinabilidade sem alinhar com regras de margem do Jilo.
 - O `PixCallout` (em Product, CartDrawer, Kit, KitLivre) ainda exibe "5% off" estático e NÃO reflete a regra condicional. Cliente que pretende fechar ≥7 marmitas vê "5%" na vitrine mas paga 3% no carrinho. É inconsistência educativa conhecida — débito técnico documentado em `state.md`.
 - O threshold de troca de cupom (`SHIPPING_FREE_THRESHOLD = 7`) é o MESMO usado pelo Uber Direct. Se o threshold mudar, isso afeta TRÊS lugares: frete, kits do Shopify Admin (que assumem 7) e a regra PIX.
+- **Cadeia de identidade referencial `DeliveryAddressSelector` → `Carrinho.tsx` → `ShippingMethodSelector`:** O `<DeliveryAddressSelector />` produz um `CepValidationResult` via `buildResultFromAddress(selected)`. Esse resultado é passado pro `Carrinho.tsx` via `onResult(...)` callback, que faz `setDeliveryCheck(result)`. O `deliveryCheck` é então prop do `<ShippingMethodSelector />`. Cada link dessa cadeia DEVE preservar identidade referencial quando os valores não mudam — senão o `useEffect` de sincronização da variant fantasma no `<ShippingMethodSelector />` entra em loop de cancellation. Memoização em duas camadas (Sprint 4.6): (a) `DeliveryAddressSelector` memoiza `CepValidationResult` com chaves primitivas do endereço; (b) `ShippingMethodSelector` memoiza `cepParams` interno com chaves primitivas do `deliveryCheck.cepInfo`. Se um novo consumer de `deliveryCheck` aparecer no futuro, seguir o mesmo padrão.
+- **Hard-block do `canCheckout` é defesa em profundidade (R52):** ele NÃO é o que sincroniza a variant fantasma — isso continua sendo trabalho do `<ShippingMethodSelector />`. O hard-block é o catch-net: se a sincronização falhar por qualquer motivo (token expirado, network error, race condition), o cliente é protegido de avançar pro checkout com cart bugado. Se aparecer "Sincronizando frete..." de forma persistente em ambiente normal (não simulado), investigar: provável que a edge `update-shipping-variant-price` esteja retornando erro — ver Console pro warning `[Carrinho] Discrepância detectada...` com o payload pra diagnóstico.

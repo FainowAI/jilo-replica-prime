@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
 
-const SHOPIFY_ADMIN_ACCESS_TOKEN = Deno.env.get("SHOPIFY_ADMIN_ACCESS_TOKEN")!;
 const SHOPIFY_STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN")!;
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 const SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID")!;
@@ -17,7 +17,7 @@ interface UpdatePriceRequest {
   fee_cents: number;
 }
 
-// Cache do productId no isolate (não muda entre invocations)
+// Cache do productId no isolate (não muda entre invocations dentro do mesmo isolate)
 let cachedProductGid: string | null = null;
 
 const VARIANT_PRODUCT_QUERY = `
@@ -41,15 +41,35 @@ const VARIANT_BULK_UPDATE_MUTATION = `
   }
 `;
 
-async function shopifyGraphQL<T>(query: string, variables: Record<string, unknown>): Promise<T> {
+/**
+ * Chamada GraphQL para Shopify Admin API.
+ * Faz retry automático em caso de 401 — o token cached pode ter sido revogado
+ * server-side (raro mas possível, ex: secret rotacionado manualmente). Nesse
+ * caso, força refresh e tenta uma vez mais.
+ */
+async function shopifyGraphQL<T>(
+  query: string,
+  variables: Record<string, unknown>,
+  isRetry = false
+): Promise<T> {
+  const token = isRetry
+    ? await forceRefreshShopifyAdminToken()
+    : await getShopifyAdminToken();
+
   const res = await fetch(SHOPIFY_GRAPHQL_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": SHOPIFY_ADMIN_ACCESS_TOKEN,
+      "X-Shopify-Access-Token": token,
     },
     body: JSON.stringify({ query, variables }),
   });
+
+  // Token revogado server-side — força refresh uma vez
+  if (res.status === 401 && !isRetry) {
+    console.warn("[update-shipping-variant-price] Got 401, forcing token refresh and retrying");
+    return shopifyGraphQL<T>(query, variables, true);
+  }
 
   if (!res.ok) {
     throw new Error(`Shopify HTTP ${res.status}: ${await res.text()}`);

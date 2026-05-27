@@ -8,6 +8,8 @@ A loja Jilo está em plano Shopify que não suporta Shipping Rates condicionais 
 
 ## Arquivos envolvidos
 
+**Auth Shopify Admin (Sprint 4.7):** Todas as chamadas à Admin API GraphQL passam pelo helper `supabase/functions/_shared/shopify-admin-auth.ts` (`getShopifyAdminToken()`). Não usar mais `SHOPIFY_ADMIN_ACCESS_TOKEN` direto do env — esse secret foi removido. O helper resolve o token via cache (tabela `shopify_admin_tokens`) ou refresh via Client Credentials Grant. Ver R51.
+
 ### Config
 | Arquivo | Descrição |
 |---------|-----------|
@@ -115,6 +117,8 @@ Migration: `20260429000000_orders_uber_delivery_fields.sql` (já aplicada).
 
 Vide `.claude/requirements.md` regras R34 a R44.
 
+**Nova em Sprint 4.5:** R50 — variant fantasma é singleton (REPLACE atômico em re-sincronização). Vide `requirements.md`.
+
 ## Fluxo do usuário
 
 ### Cliente com cart < 7 marmitas
@@ -192,3 +196,19 @@ Vide `.claude/requirements.md` regras R34 a R44.
 - Trigger `orders_log_status_change` dispara em UPDATE de `orders.status` — quando `orders/paid` muda status para `paid`, alimenta timeline. `delivery_status` é independente e não dispara trigger nenhum.
 - O CHECK em `orders.delivery_method` aceita NULL — orders antigas (pré-feature) ficam com NULL.
 - Custom App Shopify tem token único compartilhado entre `shopify-customer-sync` e `update-shipping-variant-price`. Reinstalar invalida ambos — cuidado em rotação.
+- **Variant fantasma é singleton (R50):** Sempre `quantity = 1` no cart. Re-adicioná-la quando já existe NÃO soma quantity — `cartStore.addItem` detecta `isShippingVariant(variantId)` e faz REPLACE atômico (remove linha antiga + cria nova com preço atualizado). Se aparecer no Shopify Admin → Active carts qualquer carrinho com 2+ linhas da variant fantasma, é regressão do bug corrigido em Sprint 4.5 — checar `cartStore.ts` e `ShippingMethodSelector.tsx`.
+- **Cleanup defensivo no mount do `<ShippingMethodSelector />`:** O componente roda uma checagem one-shot no primeiro render que detecta variant fantasma local com `quantity > 1` e a remove antes de sincronizar. Protege clientes que estavam em produção durante o bug de Sprint 4.5. Reset via `lastSyncedFeeRef.current = null` força re-sincronização limpa.
+- **NÃO usar `updateQuantity` para mudar preço da variant fantasma:** Shopify identifica a linha por `lineId` mas o preço vem da variant. Mudar preço exige `update-shipping-variant-price` (server-side, via GraphQL Admin) + remove+add no cart (client-side). `updateShopifyCartLine` só ajusta quantity, não recarrega preço.
+- **Identidade referencial em props de `<ShippingMethodSelector />` (R50.1):** O componente faz sincronização via `useEffect` com debounce 300ms. Se o `deliveryCheck` recebido como prop for um objeto novo a cada render do pai (`Carrinho.tsx`), o effect entra em loop de cancellation e o `setTimeout(sync, 300)` nunca completa — variant fantasma nunca entra no cart Shopify. O `cepParams` derivado internamente é memoizado via `useMemo` com chaves primitivas do `deliveryCheck.cepInfo` (cep, logradouro, localidade, uf). O `<DeliveryAddressSelector />` (fonte do `deliveryCheck`) também memoiza seu `CepValidationResult` derivado. Defesa em duas camadas. Sprint 4.6 (Maio 2026) introduziu essa correção após regressão da Sprint 4.5.
+- **Diagnóstico defensivo no `<ShippingMethodSelector />`:** O effect de sync mantém `cancelCountRef` que conta cancellations consecutivas SEM sync completar. Se cruzar 5, dispara `console.warn` em qualquer ambiente (PROD ou DEV) avisando "Effect re-render loop detectado". Em DEV, há também warning adicional quando o effect re-roda sem nenhuma dep primitiva ter mudado (sinal de regressão de memoização). Esse logging é o canário pra detectar futuras regressões dessa natureza antes de afetar a experiência do cliente em produção. Se aparecer no console em ambiente real, investigar deps do useEffect imediatamente.
+- **REPLACE atômico (R50) é mais lento que update simples:** O `cartStore.addItem` para variant fantasma faz 2 chamadas Shopify em série (remove + add). Isso tornou o `sync()` mais sensível a cancellations do `setTimeout` — qualquer re-render do `<ShippingMethodSelector />` que reset o effect durante esses ~400-800ms (latência Shopify) impede a variant de entrar. Por isso a memoização das deps é crítica. Não trocar o REPLACE por updateQuantity (que seria mais rápido) — a regra R50 do singleton exige REPLACE pra atualizar o preço da variant.
+
+- **NUNCA voltar a usar `SHOPIFY_ADMIN_ACCESS_TOKEN` como secret estático.** A Shopify migrou pro Dev Dashboard novo e deprecou a entrega direta de `shpat_` permanente. Toda chamada à Admin API agora precisa passar pelo helper `_shared/shopify-admin-auth.ts` que faz Client Credentials Grant. Se aparecer alguém querendo "simplificar" voltando ao token estático, recusar — o secret antigo expirou silenciosamente em produção e travou a feature de frete (Sprint 4.7).
+
+- **Token `atkn_` do Dev Dashboard NÃO é admin token.** O `atkn_` que aparece em "Token de automação de app" no Settings do Dev Dashboard é um **App Automation Token** — serve APENAS pra autenticar o Shopify CLI em pipelines CI/CD (`SHOPIFY_APP_AUTOMATION_TOKEN` env var pra `shopify app deploy`). Ele NÃO funciona como `X-Shopify-Access-Token` em chamadas pra GraphQL Admin API. Se Claude Code ou outra IA confundir, refresh sua memória sobre as duas categorias.
+
+- **Cache do `shpat_` está na tabela `shopify_admin_tokens` (1 row sempre).** Não fazer SELECT direto pra debugar — usar SQL Editor com service_role. Coluna `access_token` é sensível (token raw). Se precisar invalidar manualmente (ex: comprometimento de credenciais), DELETAR a row — o próximo `getShopifyAdminToken()` faz refresh automaticamente. Não fazer UPDATE manual no token.
+
+- **Edges com retry em 401:** as edges `update-shipping-variant-price` e `shopify-customer-sync` têm retry automático quando Shopify retorna 401 (chama `forceRefreshShopifyAdminToken()` e tenta 1 vez mais). Cenário coberto: token cached foi revogado server-side (raro, mas acontece em rotação manual de client_secret). Se aparecer log `[xxx] Got 401, forcing token refresh and retrying` em produção, é normal — investigar só se for recorrente (sinal de outro problema).
+
+- **Hard-block do checkout (R52, Sprint 4.7):** Mesmo com a variant fantasma sincronizando perfeitamente, o `Carrinho.tsx` valida defesa em profundidade: `Math.abs(shopifyTotal - (subtotal + activeShippingFeeCents/100)) < 0.01`. Se em algum momento o frontend acha que o cart tem frete (`activeQuoteId !== null`) mas o Shopify não tem (variant fantasma não entrou), o botão de checkout fica disabled exibindo "Sincronizando frete...". Console emite warning. Esse é o catch-net pra quando o `update-shipping-variant-price` falha (token issue, network, etc).
