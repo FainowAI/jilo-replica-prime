@@ -1,9 +1,36 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-18 (Sprint 4.3 — Seletor de endereço no carrinho)
+2026-05-20 (Sprint 4.4 — Cupom PIX condicional por quantidade)
 
-## O que foi feito na última sessão (Sprint 4.3 — Seletor de endereço no carrinho)
+## O que foi feito na última sessão (Sprint 4.4 — Cupom PIX condicional)
+
+- **Bug corrigido:** cupom PIX falhava silenciosamente em carrinhos ≥7 marmitas porque `PIX5` está configurado como NÃO combinável no Shopify Admin e conflitava com os Automatic Discounts dos Kits (7/14/21/28).
+- **Solução:** introduzir cupom novo `PIX3` (3% off, combinável com descontos de produto), aplicado quando carrinho ≥7. PIX5 mantido inalterado para <7.
+- Cupom `PIX3` criado manualmente no Shopify Admin (paridade de 26 produtos elegíveis com PIX5).
+- `src/components/PaymentMethodSelector.tsx` refatorado:
+  - Helper `getPixCouponForCart(totalNonShippingItems)` retorna `{ code, percent }` condicional ao threshold (`SHIPPING_FREE_THRESHOLD`)
+  - Nova prop `totalNonShippingItems` (passada pelo Carrinho.tsx)
+  - Badge dinâmico ("PIX 3% off" ou "PIX 5% off")
+  - `useEffect` de reatividade: troca cupom automaticamente quando cliente cruza threshold com PIX selecionado
+  - `console.error` com payload do cart sempre que Shopify retorna `applicable=false` inesperado
+- `src/pages/Carrinho.tsx`: passa `totalNonShippingItems={totalNonShippingItems}` ao `<PaymentMethodSelector />` (1 linha)
+- R19 reescrita em `requirements.md` documentando a regra condicional + diagnóstico
+- `fluxo-carrinho-checkout.md` regra 9 substituída + 3 gotchas adicionados
+- 1 componente editado, 1 página editada (1 linha), 0 migrations, 0 edge functions
+
+### Pendências novas (Sprint 4.4)
+
+- **Débito técnico (UX):** `PixCallout.tsx` ainda diz estaticamente "PIX 5% off" em Product/CartDrawer/Kit/KitLivre. Para clientes que pretendem fechar ≥7 marmitas, isso é uma inconsistência educativa (vitrine promete 5%, carrinho aplica 3%). Sprint futura: tornar o callout sensível à quantidade do carrinho ou exibir "PIX 5% ou 3% off conforme quantidade".
+- **Validação de produção:** após deploy, testar fluxo end-to-end real em todas as faixas de quantidade (1, 6, 7, 13, 14, 20, 21, 27, 28+) e confirmar que o Shopify Admin Orders mostra cada cupom corretamente aplicado.
+
+### Notas para a próxima sessão
+
+- Se `PIX5` ou `PIX3` forem desativados ou tiverem combinabilidade alterada no Shopify Admin, o frontend precisa ser ajustado em paralelo. O par é coreografado.
+- O threshold de troca de cupom (`SHIPPING_FREE_THRESHOLD = 7`) é COMPARTILHADO com: regra de frete Uber Direct (R34), Kits do Shopify (Kit 7/14/21/28). Qualquer mudança no número 7 impacta esses TRÊS sistemas + a regra PIX.
+- O diagnóstico `console.error` com payload do cart vai ajudar a detectar futuros desalinhamentos entre Shopify Admin e código (ex: alguém renomear o cupom, mexer em combinabilidade, expirar a data).
+
+## O que foi feito na sessão anterior (Sprint 4.3 — Seletor de endereço no carrinho)
 
 - Criado componente `src/components/DeliveryAddressSelector.tsx` (4 estados: guest, loading, vazio, lista)
 - Adicionado helper síncrono `isAreaDeliverable(uf, city)` em `src/lib/cepValidator.ts`
@@ -61,6 +88,8 @@
 - **Sprint 3.5 (2026-04-22)** — Correção do shell HTML: meta tags estáticas completas, favicon válido, og-image própria, robots.txt regenerado
 - **Sprint 4.1 (2026-04-29)** — Frete Uber Direct condicional
 - **Sprint 4.2 (2026-05-11)** — Return URL no checkout Shopify (`return_to` querystring + cart attribute `return_url`) e centralização da constante `SITE_URL` em `src/config/site.ts`
+- **Sprint 4.3 (2026-05-18)** — Seletor de endereço no carrinho (`<DeliveryAddressSelector />` substituindo `<CepChecker />`, cart attribute `selected_address_id`)
+- **Sprint 4.4 (2026-05-20)** — Cupom PIX condicional por quantidade (PIX5 < 7 marmitas, PIX3 ≥ 7)
 
 ## Pendências
 

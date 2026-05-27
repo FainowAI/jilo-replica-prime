@@ -36,7 +36,12 @@
 ## Carrinho e checkout (já existia)
 - R17. ~~Frete sempre grátis~~ Atualizado em 2026-04-29 pela feature Uber Direct: frete grátis a partir de 7 marmitas, abaixo disso cliente paga via Uber Direct. Vide R34.
 - R18. Checkout redirect para Shopify
-- R19. Desconto PIX5 via cupom Shopify ao selecionar PIX no PaymentMethodSelector
+- **R19.** Desconto PIX é condicional à quantidade de marmitas no carrinho (regra de combinabilidade com Automatic Discounts):
+  - **<7 marmitas:** aplica cupom `PIX5` (5% off). Cupom marcado como NÃO combinável no Shopify Admin.
+  - **≥7 marmitas:** aplica cupom `PIX3` (3% off). Cupom marcado como combinável com "Descontos de produto", permitindo acumular com o Kit 7/14/21/28 (10%/15%/20%/25%) ativo. A taxa menor (3% vs 5%) preserva margem do Jilo nos pedidos maiores.
+  - **Troca automática ao cruzar threshold:** se cliente está com PIX selecionado e cruza ≥7 (subindo) ou <7 (descendo), o `<PaymentMethodSelector />` troca o cupom no Shopify Cart API automaticamente, mantendo a seleção PIX do usuário. Threshold = `SHIPPING_FREE_THRESHOLD` (mesma constante do Uber Direct — R34).
+  - **Diagnóstico de erro:** quando `applicable=false` retorna do Shopify Cart API em qualquer cenário, o componente loga `console.error` com payload completo do cart (cupom tentado, totalNonShippingItems, discountCodes atuais, resultado).
+  - **Pré-requisito Shopify Admin:** ambos os cupons devem existir e estar ativos. `PIX3` foi criado no Sprint 4.4 com as mesmas 26 marmitas elegíveis que o PIX5.
 
 ## Infraestrutura
 - R20. Todas as tabelas com escopo de usuário têm RLS ativo filtrado por `auth.uid()`

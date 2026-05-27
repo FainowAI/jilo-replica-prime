@@ -45,8 +45,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 | Constante | Valor | Onde é usada |
 |-----------|-------|-------------|
-| `PIX5` (cupom Shopify) | 5% off | Shopify Admin, orientação no Carrinho.tsx |
-| Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
+| `PIX5` (cupom Shopify) | 5% off | Shopify Admin (NÃO combinável). Aplicado quando `<7` marmitas. |
+| `PIX3` (cupom Shopify) | 3% off | Shopify Admin (combinável com produto). Aplicado quando `≥7` marmitas, acumula com Kit X%. |
+| Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, PIX3, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
 | Frete | Sempre grátis (cortesia Jilo) | Carrinho.tsx, CartDrawer.tsx |
 | `SHIPPING_FREE_THRESHOLD` | 7 marmitas | `src/config/shipping.ts` (Sprint 4.1) |
 | Frete < 7 itens | Cotado real-time via Uber Direct | `<ShippingMethodSelector />` em `/carrinho` |
@@ -70,7 +71,14 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
-9. **Desconto PIX (5%) ativo via seletor**: Na página `/carrinho`, o componente `PaymentMethodSelector` oferece 3 opções (PIX, Cartão de Crédito, PayPal). Ao selecionar PIX, o cupom `PIX5` é aplicado automaticamente via `applyDiscountCode()` no Shopify Cart API. Ao selecionar outro método, se o PIX estava ativo, o cupom é removido via `removeDiscountCode()`. Se houver um cupom manual ativo (ex: `BEMVINDO10`), o seletor mostra `window.confirm` antes de substituir. No `CartDrawer`, o `PixCallout` continua sendo exibido em modo passivo (educativo) — o seletor ativo só existe no `/carrinho`.
+9. **Desconto PIX condicional via seletor (Sprint 4.4)**: Na página `/carrinho`, o componente `PaymentMethodSelector` oferece 3 opções (PIX, Cartão de Crédito, PayPal). Ao selecionar PIX, o cupom aplicado depende da quantidade de marmitas no cart (excluindo variant fantasma de frete):
+   - `<7 marmitas` → cupom `PIX5` (5%). É NÃO combinável no Shopify — não acumula com nada.
+   - `≥7 marmitas` → cupom `PIX3` (3%). É combinável com "Descontos de produto" → acumula com Kit 7/14/21/28.
+   - Quando o cliente cruza o threshold com PIX selecionado, um `useEffect` interno detecta a mudança e troca o cupom no Shopify Cart API automaticamente, sem perder a seleção PIX do usuário. Toast de atualização: "Desconto PIX atualizado: X% off".
+   - Se houver cupom manual ativo (BEMVINDO10, JILOVIP15, etc), o seletor mostra `window.confirm` antes de substituir.
+   - Quando o cliente seleciona outro método com PIX antes ativo, o cupom (PIX5 ou PIX3) é removido via `removeDiscountCode()`.
+   - Em qualquer cenário de `applicable=false`, o componente loga `console.error` com payload do cart para diagnóstico.
+   - No `CartDrawer`, o `PixCallout` continua passivo/educativo com 5% — **débito técnico**: em sprint futura, considerar tornar o callout sensível à quantidade.
 
 10. **Validação de CEP via ViaCEP (Sprint 2)**: `CepChecker` no resumo do pedido consulta a API ViaCEP e verifica contra a whitelist `DELIVERY_AREAS` em `src/lib/cepValidator.ts`. Se a região NÃO é atendida, o botão de checkout é desabilitado com "Região não atendida". Se o CEP não foi verificado, o checkout funciona normalmente — a verificação é recomendada, não obrigatória.
 
@@ -185,3 +193,6 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O `<CepChecker />` antigo NÃO foi deletado — pode ser usado em outras páginas (FAQ, cobertura, landing). Mas não use mais em `/carrinho`.
 - Usuários antigos com endereço em `profiles.address/cep/...` mas sem linha em `addresses` são tratados como "sem endereço". Migração desses dados é débito técnico pra sprint futura.
 - Cart attribute `selected_address_id` é metadado adicional — NÃO substitui o `shipping_address` JSONB de `orders` (que continua vindo do payload do webhook `orders/paid`, regra R43).
+- O cupom PIX é **condicional à quantidade** (R19): `PIX5` se cart <7 marmitas, `PIX3` se ≥7. Ambos vivem no Shopify Admin. PIX5 é não-combinável (não aceita com automatic discounts); PIX3 foi criado especificamente para combinar com os Kits. Não trocar a configuração de combinabilidade sem alinhar com regras de margem do Jilo.
+- O `PixCallout` (em Product, CartDrawer, Kit, KitLivre) ainda exibe "5% off" estático e NÃO reflete a regra condicional. Cliente que pretende fechar ≥7 marmitas vê "5%" na vitrine mas paga 3% no carrinho. É inconsistência educativa conhecida — débito técnico documentado em `state.md`.
+- O threshold de troca de cupom (`SHIPPING_FREE_THRESHOLD = 7`) é o MESMO usado pelo Uber Direct. Se o threshold mudar, isso afeta TRÊS lugares: frete, kits do Shopify Admin (que assumem 7) e a regra PIX.
