@@ -115,6 +115,8 @@ Migration: `20260429000000_orders_uber_delivery_fields.sql` (já aplicada).
 
 Vide `.claude/requirements.md` regras R34 a R44.
 
+**Nova em Sprint 4.5:** R50 — variant fantasma é singleton (REPLACE atômico em re-sincronização). Vide `requirements.md`.
+
 ## Fluxo do usuário
 
 ### Cliente com cart < 7 marmitas
@@ -192,3 +194,6 @@ Vide `.claude/requirements.md` regras R34 a R44.
 - Trigger `orders_log_status_change` dispara em UPDATE de `orders.status` — quando `orders/paid` muda status para `paid`, alimenta timeline. `delivery_status` é independente e não dispara trigger nenhum.
 - O CHECK em `orders.delivery_method` aceita NULL — orders antigas (pré-feature) ficam com NULL.
 - Custom App Shopify tem token único compartilhado entre `shopify-customer-sync` e `update-shipping-variant-price`. Reinstalar invalida ambos — cuidado em rotação.
+- **Variant fantasma é singleton (R50):** Sempre `quantity = 1` no cart. Re-adicioná-la quando já existe NÃO soma quantity — `cartStore.addItem` detecta `isShippingVariant(variantId)` e faz REPLACE atômico (remove linha antiga + cria nova com preço atualizado). Se aparecer no Shopify Admin → Active carts qualquer carrinho com 2+ linhas da variant fantasma, é regressão do bug corrigido em Sprint 4.5 — checar `cartStore.ts` e `ShippingMethodSelector.tsx`.
+- **Cleanup defensivo no mount do `<ShippingMethodSelector />`:** O componente roda uma checagem one-shot no primeiro render que detecta variant fantasma local com `quantity > 1` e a remove antes de sincronizar. Protege clientes que estavam em produção durante o bug de Sprint 4.5. Reset via `lastSyncedFeeRef.current = null` força re-sincronização limpa.
+- **NÃO usar `updateQuantity` para mudar preço da variant fantasma:** Shopify identifica a linha por `lineId` mas o preço vem da variant. Mudar preço exige `update-shipping-variant-price` (server-side, via GraphQL Admin) + remove+add no cart (client-side). `updateShopifyCartLine` só ajusta quantity, não recarrega preço.

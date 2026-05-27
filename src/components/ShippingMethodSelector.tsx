@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Truck, Loader2, Info } from "lucide-react";
 import { SHIPPING_FREE_THRESHOLD, SHIPPING_VARIANT_ID, isFreeShipping } from "@/config/shipping";
 import { useShippingQuote } from "@/hooks/useShippingQuote";
@@ -47,6 +47,7 @@ export default function ShippingMethodSelector({
   const addItem = useCartStore((s) => s.addItem);
   const removeItem = useCartStore((s) => s.removeItem);
   const lastSyncedFeeRef = useRef<number | null>(null);
+  const [didCleanupOnMount, setDidCleanupOnMount] = useState(false);
 
   const cepParams = deliveryCheck?.isDeliverable && deliveryCheck.cepInfo
     ? {
@@ -82,6 +83,36 @@ export default function ShippingMethodSelector({
     onQuoteChange(null, 0);
   }, [isFree, quote, deliveryCheck, onQuoteChange]);
 
+  // Cleanup defensivo no mount: se o cart hidratado do localStorage contém
+  // variant fantasma com quantity > 1 (estado bugado de sessão anterior, R50),
+  // remove ela aqui antes do effect de sincronização rodar. Isso protege
+  // clientes que estavam em produção quando o bug existia.
+  useEffect(() => {
+    if (didCleanupOnMount) return;
+    if (!SHIPPING_VARIANT_ID) {
+      setDidCleanupOnMount(true);
+      return;
+    }
+
+    const items = useCartStore.getState().items;
+    const shippingItems = items.filter((i) => i.variantId === SHIPPING_VARIANT_ID);
+    const hasStaleShipping = shippingItems.some((i) => i.quantity > 1);
+
+    if (hasStaleShipping) {
+      console.warn(
+        "[ShippingMethodSelector] Detectada variant fantasma stale no localStorage " +
+        "(quantity > 1). Removendo antes de re-sincronizar."
+      );
+      // Fire-and-forget — o effect de sync abaixo vai re-adicionar se necessário
+      removeItem(SHIPPING_VARIANT_ID).catch((err) => {
+        console.error("[ShippingMethodSelector] Cleanup defensivo falhou:", err);
+      });
+      lastSyncedFeeRef.current = null;
+    }
+    setDidCleanupOnMount(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [didCleanupOnMount]);
+
   // Sincroniza variant fantasma no cart Shopify
   useEffect(() => {
     if (!SHIPPING_VARIANT_ID) return;
@@ -105,24 +136,24 @@ export default function ShippingMethodSelector({
     // Caso 2: cotação ainda não chegou — não fazer nada
     if (!quote) return;
 
-    // Caso 3: cotação igual à última sincronizada — nada a fazer
-    if (lastSyncedFeeRef.current === quote.fee_cents && shippingItem) return;
+    // Caso 3: cotação igual à última sincronizada E variant fantasma única e correta — nada a fazer
+    if (
+      lastSyncedFeeRef.current === quote.fee_cents &&
+      shippingItem &&
+      shippingItem.quantity === 1
+    ) {
+      return;
+    }
 
-    // Caso 4: precisa sincronizar — atualiza preço, depois (re)adiciona ao cart
+    // Caso 4: precisa sincronizar — atualiza preço, depois REPLACE atômico via addItem (R50)
     const sync = async () => {
       try {
         await updateShippingVariantPrice(quote.fee_cents);
 
-        // Re-lê snapshot DENTRO do async — pode ter mudado durante o debounce
-        const latestItems = useCartStore.getState().items;
-        const latestShippingItem = latestItems.find(
-          (i) => i.variantId === SHIPPING_VARIANT_ID
-        );
-
-        if (latestShippingItem) {
-          await removeItem(SHIPPING_VARIANT_ID);
-        }
-
+        // addItem detecta isShippingVariant(variantId) e decide:
+        // - primeira inserção → cria linha nova
+        // - re-inserção → REPLACE atômico (remove + add quantity=1)
+        // Garantia singleton vive no store (R50).
         await addItem({
           product: buildShippingVariantProduct(quote.fee_cents),
           variantId: SHIPPING_VARIANT_ID,
