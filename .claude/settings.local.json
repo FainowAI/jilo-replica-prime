@@ -24,7 +24,11 @@
       "mcp__supabase-jilo__list_edge_functions",
       "PowerShell($key = \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvZm9oeHZpemxtYXdna2lud3d6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMzYzODIsImV4cCI6MjA4NzYxMjM4Mn0.iV5DnhrqSmVdgNep1yFy0WR7t2uDylKQJoGjFGrjAKI\"; $body = '{\"dropoff_cep\":\"01310-100\",\"dropoff_address\":\"Avenida Paulista 1578\",\"dropoff_city\":\"São Paulo\",\"dropoff_state\":\"SP\"}'; try { $r = Invoke-WebRequest -Uri 'https://hofohxvizlmawgkinwwz.supabase.co/functions/v1/uber-quote' -Method POST -Headers @{ \"Content-Type\"=\"application/json\"; \"Authorization\"=\"Bearer $key\" } -Body $body -UseBasicParsing; Write-Output \"STATUS: $\\($r.StatusCode\\)\"; Write-Output \"BODY: $\\($r.Content\\)\" } catch { Write-Output \"STATUS: $\\($_.Exception.Response.StatusCode.value__\\)\"; $stream = $_.Exception.Response.GetResponseStream\\(\\); $reader = New-Object System.IO.StreamReader\\($stream\\); Write-Output \"BODY: $\\($reader.ReadToEnd\\(\\)\\)\" })",
       "mcp__supabase-jilo__get_edge_function",
-      "mcp__supabase-jilo__get_logs"
+      "mcp__supabase-jilo__get_logs",
+      "mcp__supabase-jilo__apply_migration",
+      "mcp__supabase-jilo__execute_sql",
+      "Bash(npx supabase@2.101.0 projects list)",
+      "mcp__supabase-jilo__deploy_edge_function"
     ]
   },
   "enableAllProjectMcpServers": true,

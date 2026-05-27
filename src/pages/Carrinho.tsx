@@ -62,13 +62,25 @@ const Carrinho = () => {
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
-  // canCheckout cobre 3 condições:
+  // canCheckout cobre 4 condições:
   // 1. Endereço selecionado e em SJC (whitelist DELIVERY_AREAS)
   // 2. Frete resolvido — ou é grátis (cart ≥ 7) ou tem quote Uber ativa
   // 3. Cart não-vazio (verificado depois no disabled do botão)
+  // 4. **NOVO (Sprint 4.7):** o cartCost.totalAmount do Shopify reflete o estado
+  //    real esperado (subtotal + frete). Sem isso, falha silenciosa na sincronização
+  //    da variant fantasma (ex: edge `update-shipping-variant-price` retornando 401)
+  //    permitiria avançar pro checkout com frete não cobrado — perda direta de receita.
+  const expectedTotal = subtotal + activeShippingFeeCents / 100;
+  const totalMatchesShopify =
+    shopifyTotal !== null && Math.abs(shopifyTotal - expectedTotal) < 0.01;
+
   const canCheckout =
     deliveryCheck?.isDeliverable === true &&
-    (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null);
+    (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null) &&
+    // Em frete grátis: expectedTotal = subtotal, validado normalmente.
+    // Em frete pago: expectedTotal inclui frete; se a variant fantasma não entrou
+    // no Shopify Cart, shopifyTotal == subtotal != expectedTotal → bloqueia.
+    totalMatchesShopify;
 
   useEffect(() => {
     syncCart();
@@ -78,6 +90,40 @@ const Carrinho = () => {
   useEffect(() => {
     refreshCartDetails();
   }, [discountCodes, refreshCartDetails]);
+
+  // Diagnóstico defensivo (Sprint 4.7): se quote Uber está ativa mas o Shopify Cart
+  // não inclui o frete esperado, logar warning. Isso indica falha na sincronização
+  // da variant fantasma (provavelmente edge update-shipping-variant-price com erro).
+  // Cliente legítimo é protegido pelo hard-block do canCheckout, mas o time precisa
+  // saber pra investigar.
+  useEffect(() => {
+    if (
+      !isFreeShipping(totalNonShippingItems) &&
+      activeQuoteId !== null &&
+      shopifyTotal !== null &&
+      !totalMatchesShopify
+    ) {
+      console.warn(
+        "[Carrinho] Discrepância detectada: quote Uber ativa mas Shopify Cart sem frete. " +
+        "Variant fantasma pode não ter entrado. Checkout bloqueado por segurança.",
+        {
+          subtotal,
+          activeShippingFeeCents,
+          expectedTotal,
+          shopifyTotal,
+          diff: shopifyTotal !== null ? shopifyTotal - expectedTotal : null,
+        }
+      );
+    }
+  }, [
+    totalMatchesShopify,
+    activeQuoteId,
+    shopifyTotal,
+    subtotal,
+    activeShippingFeeCents,
+    expectedTotal,
+    totalNonShippingItems,
+  ]);
 
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
@@ -534,6 +580,11 @@ const Carrinho = () => {
                   "Endereço fora da cobertura"
                 ) : !isFreeShipping(totalNonShippingItems) && !activeQuoteId ? (
                   "Calculando frete..."
+                ) : !isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify ? (
+                  // Quote Uber existe mas variant fantasma não está no Shopify Cart.
+                  // Falha de sincronização (ex: edge update-shipping-variant-price com erro).
+                  // Bloqueia avanço pra não cobrar frete zero do cliente.
+                  "Sincronizando frete..."
                 ) : !user ? (
                   <>
                     Entrar para finalizar
