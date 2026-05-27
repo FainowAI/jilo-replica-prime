@@ -1,9 +1,49 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-27 (Sprint 4.5 — Fix variant fantasma duplicada no cart)
+2026-05-27 (Sprint 4.6 — Fix regressão Sprint 4.5: variant fantasma não entrava no cart)
 
-## O que foi feito na última sessão (Sprint 4.5 — Fix bug do frete duplicado)
+## O que foi feito na última sessão (Sprint 4.6 — Fix regressão de re-render)
+
+- **Bug corrigido:** após Sprint 4.5, o TOTAL exibido no `/carrinho` deixou de somar o frete. Sintoma: subtotal R$ 18,94 + frete R$ 10,50 mostrava TOTAL = R$ 18,94 (sem somar). A linha "Frete R$ 10,50" aparecia na UI, mas não refletia no total nem no Shopify Cart.
+- **Causa raiz:** ciclo de re-render no `Carrinho.tsx` fazia o `useEffect` de sincronização da variant fantasma no `<ShippingMethodSelector />` cancelar seu próprio `setTimeout(sync, 300)` repetidamente. A variant fantasma nunca era adicionada ao Shopify Cart. Como `displayTotal = cartCost.totalAmount` (Shopify), o valor refletia só os itens normais.
+- **Por que a Sprint 4.5 piorou:** o REPLACE atômico introduzido em 4.5 faz 2 chamadas Shopify em série (`removeLineFromShopifyCart` + `addLineToShopifyCart`), aumentando a janela de execução do `sync()`. Antes, o `sync()` era mais rápido (1 chamada) e às vezes conseguia completar entre cancellations. Após 4.5, sempre era cancelado antes de completar.
+- **Cadeia exata do bug:**
+  1. `DeliveryAddressSelector.useEffect` chamava `onResult(buildResultFromAddress(selected))` — objeto novo a cada render.
+  2. `Carrinho.tsx` fazia `setDeliveryCheck(novoObjeto)` → re-render.
+  3. `<ShippingMethodSelector deliveryCheck={novoObjeto}>` re-renderizava.
+  4. Dentro do componente, `cepParams` era objeto literal novo a cada render.
+  5. O `useEffect` de sync tinha `cepParams` E `deliveryCheck` nas deps → identidade muda → re-roda.
+  6. Cleanup `clearTimeout(timer)` cancelava antes dos 300ms → `sync()` nunca executava.
+- **Solução (defesa em profundidade, 2 camadas):**
+  - **Camada 1 — produtor (`DeliveryAddressSelector.tsx`):** memoizar `CepValidationResult` derivado do endereço selecionado via `useMemo` com chaves primitivas (id, cep, city, state, street, number, complement, neighborhood). Substituído também o useEffect que reporta pro pai pra consumir o memo em vez de chamar `buildResultFromAddress` inline.
+  - **Camada 2 — consumidor (`ShippingMethodSelector.tsx`):** memoizar `cepParams` interno via `useMemo` com chaves primitivas do `deliveryCheck.cepInfo`. Adicionado logging defensivo: contador `cancelCountRef` dispara `console.warn` se ≥ 5 cancellations consecutivas sem sync completar. Em DEV, warning adicional quando effect re-roda sem mudança de deps primitivas.
+- **Arquivos editados:** `src/components/DeliveryAddressSelector.tsx`, `src/components/ShippingMethodSelector.tsx`. 0 migrations, 0 edge functions, 0 mudanças em `Carrinho.tsx`, 0 mudanças no `cartStore`.
+- **Regras novas:** Nenhuma em `requirements.md`. Fix arquitetural sem alteração de regra de negócio.
+- **Documentação atualizada:** `fluxo-uber-direct.md` (3 gotchas novos), `fluxo-carrinho-checkout.md` (1 gotcha novo).
+
+### Pendências novas (Sprint 4.6)
+
+- **Validação manual obrigatória pós-deploy:**
+  - Abrir `/carrinho` com 1 marmita + endereço SJC válido. Confirmar que TOTAL = subtotal + frete (ex: R$ 18,94 + R$ 10,50 = R$ 29,44 exato).
+  - Conferir no Shopify Admin → Active carts que existe exatamente 1 linha de "Frete Uber Direct" com o preço correto.
+  - Abrir Console do navegador e confirmar ausência de warning "Effect re-render loop detectado".
+- **Cenários de regressão a testar manualmente:**
+  - Subir cart pra 7+ marmitas → variant fantasma sai do cart, TOTAL = subtotal sem frete (correto, frete grátis).
+  - Voltar pra 6 marmitas → variant fantasma volta, TOTAL = subtotal + frete novo.
+  - Trocar endereço (SJC → outro SJC) → variant fantasma re-cotada, TOTAL atualiza com o novo frete.
+  - Trocar endereço (SJC → fora SJC) → variant fantasma sai do cart, mensagem "Não entregamos" no `<ShippingMethodSelector />`.
+  - Reload da página com cart de 6 marmitas + endereço SJC → variant fantasma é re-adicionada automaticamente pelo effect de sync no mount.
+
+### Notas para a próxima sessão
+
+- **Lição aprendida (importante):** quando um `useEffect` tem objeto literal nas deps, esse objeto precisa ser memoizado UPSTREAM (no produtor) E DOWNSTREAM (no consumidor onde está sendo derivado novamente). Se memoizar só num lado, vaza pelo outro. Sprint 4.5 + 4.6 ilustram essa lição: 4.5 introduziu o REPLACE atômico assumindo identidade referencial estável (que não existia), 4.6 corrigiu fechando a cadeia.
+- **Padrão a seguir em features futuras envolvendo `deliveryCheck`:** se aparecer um terceiro consumer do `CepValidationResult` (ex: componente de cálculo de prazo de entrega, badge de cobertura no Header, etc), ele DEVE memoizar internamente quaisquer derivações antes de usar em deps de useEffect. O padrão está documentado em `fluxo-carrinho-checkout.md` gotcha novo.
+- **Logging defensivo é canário em produção:** o warning "Effect re-render loop detectado" foi projetado pra disparar APENAS em regressões reais (5 cancellations consecutivas sem sync completar é cenário anormal). Se aparecer em logs de produção, investigar imediatamente — provável regressão de memoização similar.
+- **Débitos de segurança da Sprint 4.1 ainda abertos:** HMAC no `uber-webhook-receiver`, validação server-side de `shipping_fee_cents`. Fix de 4.6 não mitiga (apenas garante que cliente legítimo seja cobrado corretamente).
+- **Próxima ação no `state.md`:** se as 5 sessões de fix (4.1, 4.2, 4.3, 4.4, 4.5, 4.6) estiverem completas e o cart estiver estável em produção, considerar fechar Sprint 4 e abrir Sprint 5 com foco nos débitos de segurança + integração Bling ERP.
+
+## O que foi feito na sessão anterior (Sprint 4.5 — Fix bug do frete duplicado)
 
 - **Bug corrigido:** o total exibido no `/carrinho` somava o frete múltiplas vezes (sintoma reportado: subtotal R$ 18,94 + frete R$ 10,50 deveria dar R$ 29,44, mas mostrava R$ 36,76 — diferença de R$ 7,32, indicando 2 linhas da variant fantasma no Shopify Cart com cotações diferentes).
 - **Causa raiz:** `cartStore.addItem` tratava a variant fantasma como item normal e somava `quantity` no branch `existingItem`. Combinado com cart hidratado do `localStorage` em estado bugado de sessão anterior, gerava múltiplas linhas no Shopify Cart com preços de cotações distintas. O `displayTotal` exibido vem do `cartCost.totalAmount` do Shopify (fonte da verdade), por isso o número errado refletia direto na UI.
@@ -118,6 +158,7 @@
 - **Sprint 4.3 (2026-05-18)** — Seletor de endereço no carrinho (`<DeliveryAddressSelector />` substituindo `<CepChecker />`, cart attribute `selected_address_id`)
 - **Sprint 4.4 (2026-05-20)** — Cupom PIX condicional por quantidade (PIX5 < 7 marmitas, PIX3 ≥ 7)
 - **Sprint 4.5 (2026-05-27)** — Fix variant fantasma duplicada no cart (REPLACE atômico no `cartStore` + cleanup defensivo no `<ShippingMethodSelector />`)
+- **Sprint 4.6 (2026-05-27)** — Fix regressão Sprint 4.5: variant fantasma não entrava no cart (memoização de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
 
 ## Pendências
 

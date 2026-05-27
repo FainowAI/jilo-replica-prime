@@ -85,22 +85,38 @@ const DeliveryAddressSelector = ({
     setSelectedId(toSelect.id);
   }, [sortedAddresses, selectedId]);
 
-  // Reporta resultado e id pra cima quando muda seleção
+  const selectedAddress = useMemo(
+    () => sortedAddresses.find((a) => a.id === selectedId) ?? null,
+    [sortedAddresses, selectedId]
+  );
+
+  // Memoiza o CepValidationResult com base em chaves primitivas do endereço
+  // selecionado. Sem isso, um novo objeto seria criado a cada render, vazando
+  // para o <ShippingMethodSelector /> e quebrando a memoização downstream do
+  // useEffect de sincronização da variant fantasma (regressão Sprint 4.5).
+  const memoizedResult = useMemo<CepValidationResult | null>(() => {
+    if (!selectedAddress) return null;
+    return buildResultFromAddress(selectedAddress);
+    // PROPOSITAL: deps são chaves primitivas. O objeto `selectedAddress` em si
+    // é instável (vem de useMemo acima que depende de sortedAddresses), mas
+    // suas chaves primitivas são estáveis quando o endereço não muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedAddress?.id,
+    selectedAddress?.cep,
+    selectedAddress?.city,
+    selectedAddress?.state,
+    selectedAddress?.street,
+    selectedAddress?.number,
+    selectedAddress?.complement,
+    selectedAddress?.neighborhood,
+  ]);
+
+  // Reporta resultado e id pra cima quando o memoized muda
   useEffect(() => {
-    if (!selectedId) {
-      onResult(null);
-      onAddressIdChange?.(null);
-      return;
-    }
-    const selected = sortedAddresses.find((a) => a.id === selectedId);
-    if (!selected) {
-      onResult(null);
-      onAddressIdChange?.(null);
-      return;
-    }
-    onResult(buildResultFromAddress(selected));
-    onAddressIdChange?.(selected.id);
-  }, [selectedId, sortedAddresses, onResult, onAddressIdChange]);
+    onResult(memoizedResult);
+    onAddressIdChange?.(selectedAddress?.id ?? null);
+  }, [memoizedResult, selectedAddress?.id, onResult, onAddressIdChange]);
 
   // ESTADO 1 — Guest
   if (!user) {

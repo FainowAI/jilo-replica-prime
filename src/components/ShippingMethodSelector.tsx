@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Truck, Loader2, Info } from "lucide-react";
 import { SHIPPING_FREE_THRESHOLD, SHIPPING_VARIANT_ID, isFreeShipping } from "@/config/shipping";
 import { useShippingQuote } from "@/hooks/useShippingQuote";
@@ -48,15 +48,33 @@ export default function ShippingMethodSelector({
   const removeItem = useCartStore((s) => s.removeItem);
   const lastSyncedFeeRef = useRef<number | null>(null);
   const [didCleanupOnMount, setDidCleanupOnMount] = useState(false);
+  const cancelCountRef = useRef(0);
+  const lastDepsSnapshotRef = useRef<{
+    isFree: boolean | null;
+    quoteFeeCents: number | null;
+    cepHash: string | null;
+  }>({ isFree: null, quoteFeeCents: null, cepHash: null });
 
-  const cepParams = deliveryCheck?.isDeliverable && deliveryCheck.cepInfo
-    ? {
-        dropoff_cep: deliveryCheck.cepInfo.cep,
-        dropoff_address: deliveryCheck.cepInfo.logradouro || "Endereço",
-        dropoff_city: deliveryCheck.cepInfo.localidade,
-        dropoff_state: deliveryCheck.cepInfo.uf,
-      }
-    : null;
+  // Memoiza cepParams com base em chaves primitivas do deliveryCheck. Sem isso,
+  // um novo objeto seria criado a cada render do componente, vazando para a
+  // dep array do useEffect de sincronização e cancelando o setTimeout(sync, 300)
+  // antes do sync() completar. Isso é o que causou a regressão da Sprint 4.5
+  // onde a variant fantasma nunca entrava no cart (TOTAL = subtotal sem frete).
+  const cepParams = useMemo(() => {
+    if (!deliveryCheck?.isDeliverable || !deliveryCheck.cepInfo) return null;
+    return {
+      dropoff_cep: deliveryCheck.cepInfo.cep,
+      dropoff_address: deliveryCheck.cepInfo.logradouro || "Endereço",
+      dropoff_city: deliveryCheck.cepInfo.localidade,
+      dropoff_state: deliveryCheck.cepInfo.uf,
+    };
+  }, [
+    deliveryCheck?.isDeliverable,
+    deliveryCheck?.cepInfo?.cep,
+    deliveryCheck?.cepInfo?.logradouro,
+    deliveryCheck?.cepInfo?.localidade,
+    deliveryCheck?.cepInfo?.uf,
+  ]);
 
   const { quote, loading, error } = useShippingQuote(totalNonShippingItems, cepParams);
 
@@ -116,6 +134,31 @@ export default function ShippingMethodSelector({
   // Sincroniza variant fantasma no cart Shopify
   useEffect(() => {
     if (!SHIPPING_VARIANT_ID) return;
+
+    // ── Diagnóstico defensivo: detecta regressão de memoização ─────────────
+    // Snapshot das deps no formato comparável (cepHash pra não vazar objeto).
+    const cepHash = cepParams
+      ? `${cepParams.dropoff_cep}|${cepParams.dropoff_city}|${cepParams.dropoff_state}`
+      : null;
+    const prev = lastDepsSnapshotRef.current;
+    const depsChanged =
+      prev.isFree !== isFree ||
+      prev.quoteFeeCents !== (quote?.fee_cents ?? null) ||
+      prev.cepHash !== cepHash;
+    if (!depsChanged && import.meta.env.DEV) {
+      console.warn(
+        "[ShippingMethodSelector] useEffect re-rodou sem mudança de deps primitivas. " +
+        "Provável regressão de memoização (objeto literal nas deps). Investigar.",
+        { isFree, quoteFeeCents: quote?.fee_cents, cepHash }
+      );
+    }
+    lastDepsSnapshotRef.current = {
+      isFree,
+      quoteFeeCents: quote?.fee_cents ?? null,
+      cepHash,
+    };
+    // ────────────────────────────────────────────────────────────────────────
+
     // Lê snapshot do store de forma imperativa — NÃO depender de `items` no array
     // de deps, senão o effect roda sempre que qualquer item do cart muda (loop com
     // addItem/removeItem que ele próprio chama).
@@ -146,7 +189,9 @@ export default function ShippingMethodSelector({
     }
 
     // Caso 4: precisa sincronizar — atualiza preço, depois REPLACE atômico via addItem (R50)
+    let syncStarted = false;
     const sync = async () => {
+      syncStarted = true;
       try {
         await updateShippingVariantPrice(quote.fee_cents);
 
@@ -164,6 +209,8 @@ export default function ShippingMethodSelector({
         });
 
         lastSyncedFeeRef.current = quote.fee_cents;
+        // Sync completou — zera contador de cancellations
+        cancelCountRef.current = 0;
       } catch (err) {
         console.error("[ShippingMethodSelector] failed to sync shipping variant:", err);
       }
@@ -171,7 +218,24 @@ export default function ShippingMethodSelector({
 
     // Debounce 300ms para evitar race com Shopify Cart API quando cliente muda quantidades rápido
     const timer = setTimeout(sync, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // ── Diagnóstico defensivo: timer cancelado antes do sync iniciar ─────
+      // Se o sync já tinha iniciado, não conta como cancellation. Se foi cancelado
+      // antes mesmo de o setTimeout disparar, conta.
+      if (!syncStarted) {
+        cancelCountRef.current += 1;
+        if (cancelCountRef.current >= 5) {
+          console.warn(
+            "[ShippingMethodSelector] Effect re-render loop detectado: " +
+            `${cancelCountRef.current} cancellations consecutivas sem sync completar. ` +
+            "Variant fantasma pode não estar entrando no cart. " +
+            "Possível regressão de memoização — investigar deps do useEffect."
+          );
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────────
+    };
     // PROPOSITAL: `items` NÃO está nas deps — usamos getState() para snapshot fresh
     // sem encadear loop. O effect re-roda quando isFree, quote ou cepParams mudam.
   }, [isFree, quote, cepParams, deliveryCheck, addItem, removeItem]);
