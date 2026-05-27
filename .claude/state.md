@@ -1,9 +1,56 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-27 (Sprint 4.6 — Fix regressão Sprint 4.5: variant fantasma não entrava no cart)
+2026-05-27 (Sprint 4.7 — Refatoração OAuth Client Credentials + hard-block canCheckout)
 
-## O que foi feito na última sessão (Sprint 4.6 — Fix regressão de re-render)
+## O que foi feito na última sessão (Sprint 4.7 — OAuth Client Credentials)
+
+- **Bug raiz corrigido:** o `SHOPIFY_ADMIN_ACCESS_TOKEN` estático estava expirado/inválido em produção (HTTP 401 "Invalid API key or access token"). A Shopify migrou pro Dev Dashboard novo (Dec 2025) e deprecou a entrega direta de `shpat_` permanente. Agora, o `shpat_` é gerado dinamicamente via OAuth 2.0 Client Credentials Grant, e expira em 24h.
+- **Sintoma na produção:** edge `update-shipping-variant-price` retornava 502 em 100% das chamadas. Variant fantasma de frete nunca entrava no Shopify Cart. TOTAL no `/carrinho` exibia só subtotal (sem somar frete). Em paralelo, `shopify-customer-sync` também falhava silenciosamente — clientes novos não sincronizavam no Shopify.
+- **Solução (3 tracks paralelas + docs):**
+  - **Track A — Backend OAuth (4 prompts sequenciais):**
+    - Migration nova: `shopify_admin_tokens` (cache de `shpat_` com TTL, RLS bloqueada, service_role-only)
+    - Helper compartilhado: `supabase/functions/_shared/shopify-admin-auth.ts` (Client Credentials Grant + read/write cache + force refresh em 401)
+    - Refatorada `update-shipping-variant-price` para usar o helper (com retry automático em 401)
+    - Refatorada `shopify-customer-sync` para usar o helper (mesmo padrão)
+  - **Track B — Frontend hard-block (1 prompt):**
+    - `canCheckout` em `src/pages/Carrinho.tsx` agora valida `Math.abs(shopifyTotal - (subtotal + activeShippingFeeCents/100)) < 0.01`
+    - Botão exibe "Sincronizando frete..." e fica disabled em discrepância
+    - `console.warn` defensivo com payload pra diagnóstico
+  - **Track C — Operacional (manual):**
+    - Rotacionado client_secret no Dev Dashboard
+    - Cadastrados `SHOPIFY_CLIENT_ID` e `SHOPIFY_CLIENT_SECRET` nos Edge Function Secrets
+    - Removido secret antigo `SHOPIFY_ADMIN_ACCESS_TOKEN` após validação em produção
+- **Arquivos editados:**
+  - Migration: `supabase/migrations/<timestamp>_shopify_admin_tokens.sql` (criado)
+  - `supabase/functions/_shared/shopify-admin-auth.ts` (criado)
+  - `supabase/functions/update-shipping-variant-price/index.ts` (refatorado)
+  - `supabase/functions/shopify-customer-sync/index.ts` (refatorado)
+  - `src/pages/Carrinho.tsx` (canCheckout + diagnóstico defensivo)
+- **NÃO foi tocada:** `shopify-webhook-receiver` (só usa HMAC, não chama Admin API), as 3 edges Uber (não chamam Admin API).
+- **Regras adicionadas:** R51 (OAuth Client Credentials para Admin API), R52 (hard-block canCheckout) em `requirements.md`.
+- **Documentação atualizada:** `fluxo-uber-direct.md` (5 gotchas novos sobre auth + cache + retry), `fluxo-shopify-sync.md` (nota sobre nova autenticação), `fluxo-carrinho-checkout.md` (regra + gotcha sobre hard-block).
+
+### Pendências novas (Sprint 4.7)
+
+- **Validação manual obrigatória pós-deploy:**
+  - Confirmar no SQL Editor que `shopify_admin_tokens` tem 1 row com `expires_at ~24h no futuro` após primeira chamada.
+  - Conferir no Shopify Admin que cart ativo tem 1 linha "Frete Uber Direct" com preço atualizado.
+  - Confirmar que `/carrinho` exibe TOTAL = subtotal + frete (R$ 29,44 no cenário de teste).
+  - Console sem warnings `[Carrinho] Discrepância detectada` em fluxo normal.
+- **Limpeza pós-validação:** após confirmar Track A funcionando em produção (24h+), DELETAR o secret `SHOPIFY_ADMIN_ACCESS_TOKEN` dos Edge Function Secrets (Track C, Passo 5). Redeploy todas as edges.
+- **Débito de operação:** documentar em runbook (Notion ou similar) o procedimento de rotação periódica do `client_secret` (recomendado a cada 6 meses). A rotação invalida o token cached imediatamente — próximo `getShopifyAdminToken()` faz refresh automático.
+
+### Notas para a próxima sessão
+
+- **Lição arquitetural:** secrets de longo prazo são frágeis. Sprint 4.7 substituiu um secret estático que silenciosamente expirou e travou 2 features em produção. Sempre que possível, usar OAuth ou outro flow com refresh automático.
+- **Padrão a seguir em features futuras envolvendo Shopify Admin:** sempre importar `getShopifyAdminToken()` do helper compartilhado. NUNCA ler `SHOPIFY_ADMIN_ACCESS_TOKEN` direto do env (esse secret nem existe mais). Se aparecer code review com `Deno.env.get("SHOPIFY_ADMIN_ACCESS_TOKEN")` em qualquer edge nova, rejeitar.
+- **Token `atkn_` é separado:** o "Token de automação de app" do Dev Dashboard (`atkn_xxx`) é exclusivo pra CI/CD via `shopify app deploy`. NÃO é Admin API token. Se aparecer tentativa de usar em chamadas REST/GraphQL, vai falhar 401.
+- **Webhook receiver continua usando `SHOPIFY_WEBHOOK_SECRET`** (que é o mesmo `client_secret` usado pra HMAC). Esse secret NÃO mudou — continua sendo lido direto do env porque é usado pra signature, não auth. Se rotacionar o client_secret no Dev Dashboard, atualizar `SHOPIFY_WEBHOOK_SECRET` no Supabase em PARALELO com `SHOPIFY_CLIENT_SECRET`.
+- **Débitos de segurança Sprint 4.1 ainda abertos:** HMAC no `uber-webhook-receiver`, validação server-side de `shipping_fee_cents`. Sprint 4.7 não mitiga esses débitos — mas com Sprint 4.7 mergeada, o `shipping_fee_cents` no webhook `orders/paid` agora reflete o valor REAL cobrado (porque a variant fantasma entra no cart de verdade). Antes, esse campo vinha frequentemente como 0 pelo bug raiz.
+- **Próxima ação no `state.md`:** considerar abrir Sprint 5 com foco nos débitos de segurança restantes (HMAC Uber webhook + server-side validation `shipping_fee_cents`) + integração Bling ERP.
+
+## O que foi feito na sessão anterior (Sprint 4.6 — Fix regressão de re-render)
 
 - **Bug corrigido:** após Sprint 4.5, o TOTAL exibido no `/carrinho` deixou de somar o frete. Sintoma: subtotal R$ 18,94 + frete R$ 10,50 mostrava TOTAL = R$ 18,94 (sem somar). A linha "Frete R$ 10,50" aparecia na UI, mas não refletia no total nem no Shopify Cart.
 - **Causa raiz:** ciclo de re-render no `Carrinho.tsx` fazia o `useEffect` de sincronização da variant fantasma no `<ShippingMethodSelector />` cancelar seu próprio `setTimeout(sync, 300)` repetidamente. A variant fantasma nunca era adicionada ao Shopify Cart. Como `displayTotal = cartCost.totalAmount` (Shopify), o valor refletia só os itens normais.
@@ -159,6 +206,7 @@
 - **Sprint 4.4 (2026-05-20)** — Cupom PIX condicional por quantidade (PIX5 < 7 marmitas, PIX3 ≥ 7)
 - **Sprint 4.5 (2026-05-27)** — Fix variant fantasma duplicada no cart (REPLACE atômico no `cartStore` + cleanup defensivo no `<ShippingMethodSelector />`)
 - **Sprint 4.6 (2026-05-27)** — Fix regressão Sprint 4.5: variant fantasma não entrava no cart (memoização de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
+- **Sprint 4.7 (2026-05-27)** — Refatoração OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
 
 ## Pendências
 
@@ -203,6 +251,7 @@ Sprint 4 (resto):
 4. Integração Bling ERP
 
 ## Notas para a próxima sessão
+- **IMPORTANTE — auth Shopify Admin mudou (Sprint 4.7):** o secret `SHOPIFY_ADMIN_ACCESS_TOKEN` não existe mais. Toda chamada à Admin API passa por `getShopifyAdminToken()` em `_shared/shopify-admin-auth.ts`. Secrets que vivem nas Edge Functions: `SHOPIFY_CLIENT_ID` e `SHOPIFY_CLIENT_SECRET`. Ver R51 em `requirements.md`.
 - Domínio canônico do site é `https://jilomarmitas.com` — usar sempre essa URL em qualquer referência a links absolutos
 - Ao adicionar novo prato ao cardápio: rodar `npm run seed` depois `npm run seo` e comitar os arquivos gerados
 - Ao trocar logo ou og-image: substituir arquivos em `public/`, commitar, publicar, e forçar Request Indexing no GSC
