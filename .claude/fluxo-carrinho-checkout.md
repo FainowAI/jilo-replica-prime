@@ -110,6 +110,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 **Hard-block do checkout (Sprint 4.7, R52):** o botão "Ir para o Checkout" só é habilitado quando o `cartCost.totalAmount` retornado pelo Shopify bate matematicamente com `subtotal + activeShippingFeeCents` (tolerância R$ 0,01). Se há discrepância (ex: variant fantasma não entrou no Shopify Cart por falha de sincronização), o botão fica disabled exibindo "Sincronizando frete..." e `console.warn` alerta o time. Em frete grátis (≥ 7 marmitas), `activeShippingFeeCents = 0` e `expectedTotal = subtotal`, então a validação passa naturalmente.
 
+**TOTAL da página é local (Sprint 4.8, R53):** o `displayTotal` exibido no resumo do `/carrinho` é `subtotal + activeShippingFeeCents/100` — somatória local pura. NÃO usa `cartCost.totalAmount` do Shopify (que não tem o frete e já tem o desconto aplicado). O desconto do cupom aparece apenas no checkout Shopify, como a UI comunica. Isso desacopla DISPLAY (local) de COBRANÇA (Shopify Cart + variant fantasma). O `shopifyTotal` continua existindo só para o hard-block do `canCheckout` (R52).
+
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho
@@ -177,6 +179,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O `lineId` do Shopify é obrigatório para update/remove — se null, operação falha silenciosamente
 - O localStorage key é `shopify-cart` — mudar interface do `CartItem` pode corromper carts salvos
 - O checkout é 100% Shopify — cupom e desconto PIX do frontend NÃO são aplicados lá. Isso é uma lacuna conhecida (custom checkout com Getnet está planejado).
+- **DISPLAY vs COBRANÇA são camadas separadas (R53):** o TOTAL que o cliente vê na página `/carrinho` é somatória local (`subtotal + frete`), via `displayTotal = subtotal + activeShippingFeeCents/100`. Isso NÃO reflete o desconto do cupom (que é aplicado só no checkout Shopify) nem depende da variant fantasma estar sincronizada. JÁ a COBRANÇA real (quando o cliente vai pro checkout nativo Shopify) depende da variant fantasma estar no Shopify Cart e do desconto configurado no Shopify Admin. Não confundir as duas: se mexer no `displayTotal` achando que ele controla a cobrança, vai quebrar. O `displayTotal` é puramente visual. A cobrança é garantida pela sincronização da variant fantasma (`<ShippingMethodSelector />`) + hard-block do `canCheckout` (R52).
 - Se a store Shopify não tiver plano ativo → 402 → toast mas UX quebra
 - `isSyncing` previne sync concorrente, mas `isLoading` não previne clicks rápidos — possível race condition
 - O cupom BEMVINDO10 é hardcoded — qualquer outro cupom é silenciosamente ignorado

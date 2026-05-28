@@ -58,7 +58,16 @@ const Carrinho = () => {
     0
   );
   const shopifyTotal = cartCost ? parseFloat(cartCost.totalAmount) : null;
-  const displayTotal = shopifyTotal ?? subtotal;
+
+  // R53: o TOTAL exibido na página é somatória LOCAL — subtotal + frete.
+  // NÃO usa cartCost.totalAmount do Shopify porque (a) ele pode não incluir o
+  // frete (variant fantasma pode não estar sincronizada no momento do fetch) e
+  // (b) ele já vem com o desconto do cupom aplicado (ex: PIX5), e o desconto só
+  // deve aparecer no checkout Shopify — a própria UI comunica isso logo abaixo
+  // do total ("Descontos aplicados no checkout Shopify").
+  // O `shopifyTotal` continua existindo APENAS para o hard-block do canCheckout
+  // (R52), que valida a COBRANÇA real antes de liberar o checkout.
+  const displayTotal = subtotal + activeShippingFeeCents / 100;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;

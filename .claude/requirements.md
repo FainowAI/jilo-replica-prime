@@ -76,6 +76,8 @@
 
 - **R52.** O botão "Ir para o Checkout" em `/carrinho` valida hard-block que o `cartCost.totalAmount` retornado pelo Shopify bate matematicamente com `subtotal + activeShippingFeeCents` (tolerância de R$ 0,01). Sem essa validação, falha silenciosa na sincronização da variant fantasma (ex: edge `update-shipping-variant-price` retornando erro) permitiria avançar pro checkout com frete não cobrado — perda direta de receita. Quando `totalMatchesShopify === false`, o botão exibe "Sincronizando frete..." e fica disabled. `console.warn` é emitido pra alerta do time. Em frete grátis (≥ 7 marmitas), `activeShippingFeeCents = 0`, `expectedTotal = subtotal`, validação passa naturalmente.
 
+- **R53.** O TOTAL exibido na página `/carrinho` é somatória LOCAL: `subtotal + (activeShippingFeeCents / 100)`. NÃO usa `cartCost.totalAmount` do Shopify. Razão: o `cartCost.totalAmount` (a) pode não incluir o frete quando a variant fantasma ainda não sincronizou no Shopify Cart, e (b) já vem com o desconto do cupom aplicado (ex: PIX5 = subtotal − 5%), e o desconto só deve aparecer no checkout Shopify — a UI comunica isso explicitamente ("Descontos aplicados no checkout Shopify"). Separação display vs cobrança: o display é somatória local; a COBRANÇA continua dependendo da variant fantasma estar no Shopify Cart (checkout nativo Shopify), e o `shopifyTotal` continua sendo usado pelo hard-block do `canCheckout` (R52) para validar a cobrança antes de liberar o checkout. Sprint 4.8 (Maio 2026).
+
 ## Domínio do checkout e return URL (Sprint 4.2, Maio 2026)
 
 - **R45.** Em todo redirect pro checkout Shopify (`handleCheckout` em `Carrinho.tsx`, `handleBuyNow` em `Product.tsx`), o frontend DEVE:
