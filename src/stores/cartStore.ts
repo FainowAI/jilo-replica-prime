@@ -103,7 +103,41 @@ export const useCartStore = create<CartStore>()(
               return;
             }
 
-            // 3. Atualiza store local: substitui (não soma)
+            // 3. Verificação pós-add (R55): confirma que a Storefront REALMENTE adicionou
+            // a linha. A API pode retornar sucesso aparente (sem userErrors) mas não criar
+            // a linha — cenário documentado quando o produto pai está draft. Após Sprint 5.0,
+            // o produto fantasma é unlisted (resolve o caso conhecido), mas mantemos a
+            // verificação como defesa em profundidade contra regressões futuras.
+            const verifyCart = await fetchCartFull(cartId);
+            const variantInCart = verifyCart?.lines.edges.some(
+              (edge) => edge.node.merchandise.id === item.variantId
+            );
+
+            if (!variantInCart) {
+              console.error(
+                '[cartStore] CRITICAL: Storefront returned success for cartLinesAdd of shipping variant, ' +
+                'but the line is NOT in the cart after re-fetch. Possible silent rejection.',
+                {
+                  cartId,
+                  variantId: item.variantId,
+                  cartLineCount: verifyCart?.lines.edges.length ?? 0,
+                  cartLines: verifyCart?.lines.edges.map(e => ({
+                    id: e.node.id,
+                    merchandiseId: e.node.merchandise.id,
+                    title: e.node.merchandise.product?.title,
+                  })),
+                }
+              );
+              // Reverte items[] local: remove a variant fantasma que NÃO entrou.
+              // ShippingMethodSelector vai re-tentar no próximo render via lastSyncedFeeRef = null.
+              set({
+                items: get().items.filter(i => i.variantId !== item.variantId),
+              });
+              await get().refreshCartDetails();
+              return;
+            }
+
+            // 4. Atualiza store local: substitui (não soma)
             set({
               items: get().items.map(i =>
                 i.variantId === item.variantId
@@ -138,6 +172,32 @@ export const useCartStore = create<CartStore>()(
           } else {
             const result = await addLineToShopifyCart(cartId, { variantId: item.variantId, quantity: item.quantity });
             if (result.success) {
+              // R55: validação pós-add APENAS para variant fantasma de frete.
+              // Itens normais (marmitas) são produtos active e a Storefront é confiável.
+              // A variant fantasma é unlisted (após Sprint 5.0) e a Storefront aceita,
+              // mas mantemos a verificação como defesa contra regressões futuras.
+              if (isShippingVariant(item.variantId)) {
+                const verifyCart = await fetchCartFull(cartId);
+                const variantInCart = verifyCart?.lines.edges.some(
+                  (edge) => edge.node.merchandise.id === item.variantId
+                );
+
+                if (!variantInCart) {
+                  console.error(
+                    '[cartStore] CRITICAL: Storefront returned success for cartLinesAdd of shipping variant ' +
+                    '(first insertion), but the line is NOT in the cart after re-fetch.',
+                    {
+                      cartId,
+                      variantId: item.variantId,
+                      cartLineCount: verifyCart?.lines.edges.length ?? 0,
+                    }
+                  );
+                  // NÃO atualiza items[] local — variant fantasma não entrou.
+                  await get().refreshCartDetails();
+                  return;
+                }
+              }
+
               set({ items: [...get().items, { ...item, lineId: result.lineId ?? null }] });
             } else if (result.cartNotFound) clearCart();
           }

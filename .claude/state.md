@@ -1,9 +1,42 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-28 (Sprint 4.8 — TOTAL do carrinho via somatória local)
+2026-05-29 (Sprint 5.0 — Causa raiz resolvida: produto fantasma muda pra UNLISTED, fim do bug que travou 5 sprints)
 
-## O que foi feito na última sessão (Sprint 4.8 — TOTAL local no carrinho)
+## O que foi feito na última sessão (Sprint 5.0 — Status UNLISTED + validação pós-add)
+
+- **Bug raiz finalmente identificado:** o produto fantasma "Frete Uber Direct" tinha status `DRAFT` no Shopify Admin. Documentação oficial Shopify é explícita: "draft products are unavailable to customers on sales channels and apps" — incluindo Storefront API. Por isso o `cartLinesAdd` retornava sucesso aparente mas a linha nunca entrava no Cart. As Sprints 4.1-4.9 todas trataram sintomas (duplicação, re-render, OAuth, display, hard-block) mas nenhuma tocou na causa raiz. Diagnóstico final só foi possível depois do teste de console que confirmou "Cart real tem 1 linha apenas".
+- **Solução encontrada na documentação:** Shopify 2025-10 introduziu status `UNLISTED` especificamente pra esse cenário — produto vendável via Storefront API quando referenciado por ID direto, mas invisível em buscas/coleções/recomendações. Caso de uso oficial: "Custom pricing items that are added to the cart through code adjustments" (literal — é o nosso caso).
+- **Implementação (2 prompts):**
+  - **PROMPT 1 — Edge `set-product-unlisted`:** Função one-shot que muda status do produto fantasma de DRAFT pra UNLISTED via Shopify Admin GraphQL `productUpdate`. Idempotente. Reusa o helper `_shared/shopify-admin-auth.ts` da Sprint 4.7. Executada manualmente via cURL uma vez. `verify_jwt = false` no config.toml.
+  - **PROMPT 2 — Validação pós-add no `cartStore.ts`:** Após `addLineToShopifyCart` retornar sucesso para variant fantasma, faz `fetchCartFull` e confirma que a linha de fato entrou. Se NÃO entrou, loga erro `[cartStore] CRITICAL` com payload de diagnóstico, reverte o `items[]` local. Itens normais (marmitas) NÃO têm essa verificação (overhead desnecessário, produtos ACTIVE são confiáveis).
+- **O que NÃO mudou (confirmação importante):**
+  - Hard-block do `canCheckout` (R52 revisado, Sprint 4.9) continua intacto e funciona corretamente após Sprint 5.0
+  - Display local (R53, Sprint 4.8) continua intacto
+  - OAuth Client Credentials (R51, Sprint 4.7) continua intacto — e a edge nova usa o mesmo helper
+  - REPLACE atômico no cartStore (R50, Sprint 4.5) continua intacto
+  - Memoização (Sprint 4.6) continua intacto
+- **Regras adicionadas:** R54 (status UNLISTED obrigatório), R55 (validação pós-add para variant fantasma) em `requirements.md`.
+- **Documentação atualizada:** `fluxo-uber-direct.md` (3 gotchas novos), `fluxo-carrinho-checkout.md` (1 gotcha sobre falha silenciosa da Storefront).
+- **Arquivos editados:**
+  - `supabase/functions/set-product-unlisted/index.ts` (criado)
+  - `supabase/config.toml` (adicionada entrada `[functions.set-product-unlisted]`)
+  - `src/stores/cartStore.ts` (verificação pós-add em 2 branches)
+
+### Pendências / Notas para a próxima sessão
+
+- **Validação manual obrigatória pós-deploy:**
+  1. Executar a edge `set-product-unlisted` com o `product_id` correto. Esperar resposta `{"status":"updated","previous_status":"DRAFT","new_status":"UNLISTED"}`.
+  2. Confirmar no Shopify Admin que o produto agora aparece como "Unlisted".
+  3. Validar via Storefront API que `availableForSale: true` (Console snippet em `fluxo-uber-direct.md`).
+  4. Abrir `/carrinho` com 1 marmita + endereço SJC. TOTAL = R$ 29,44. Botão libera. NÃO deve aparecer log `[cartStore] CRITICAL`.
+  5. Selecionar PIX (aplica cupom). TOTAL continua R$ 29,44 (display local, R53). Botão continua liberado (validação contra subtotalAmount, R52 revisado).
+  6. Clicar no checkout. Shopify cobra produtos + frete, aplica desconto na tela dela, processa via Getnet.
+- **Teste de regressão (importante):** se uma sprint futura mexer no produto fantasma ou na lógica de variant draft/active, a verificação pós-add é o catch-net. Se o log `[cartStore] CRITICAL` aparecer em produção, é regressão real — investigar imediatamente no Shopify Admin.
+- **Custom checkout Getnet (mencionado em sessão anterior):** vocês já têm integração Shopify + Getnet (Getnet como gateway de pagamento da Shopify, não checkout separado). A arquitetura atual continua válida nesse cenário — variant fantasma + Shopify checkout + Getnet processa pagamento. Quando/se sair pra custom checkout próprio, toda a engenharia de variant fantasma pode ser aposentada.
+- **Débitos de segurança ainda abertos:** HMAC no `uber-webhook-receiver`, validação server-side de `shipping_fee_cents`. Sprint 5.0 não mitiga, mas com Sprint 5.0 mergeada o webhook `orders/paid` agora recebe pedidos com a variant fantasma de fato presente (antes vinha vazio porque a linha nunca entrava). O `shipping_fee_cents` extraído do webhook agora reflete o valor real.
+
+## O que foi feito na sessão anterior (Sprint 4.8 — TOTAL local no carrinho)
 
 - **Bug corrigido:** o TOTAL na página `/carrinho` exibia valor errado (ex: R$ 18,00 quando subtotal R$ 18,94 + frete R$ 10,50 deveria dar R$ 29,44). Causa: `displayTotal` lia `cartCost.totalAmount` do Shopify, que não inclui o frete (variant fantasma não garantida no Cart) E já vem com o desconto do cupom aplicado (R$ 18,94 − 5% PIX5 = R$ 18,00).
 - **Causa raiz conceitual:** o display estava acoplado ao Shopify Cart, quando deveria ser somatória local. O frontend já tem `subtotal` e `activeShippingFeeCents` no estado — não precisa do Shopify pra calcular o que exibe.
@@ -224,6 +257,7 @@
 - **Sprint 4.6 (2026-05-27)** — Fix regressão Sprint 4.5: variant fantasma não entrava no cart (memoização de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
 - **Sprint 4.7 (2026-05-27)** — Refatoração OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
 - **Sprint 4.8 (2026-05-28)** — TOTAL da página de carrinho via somatória local (`subtotal + frete`), desacoplando display da cobrança Shopify
+- **Sprint 5.0 (2026-05-29)** — Causa raiz resolvida: produto fantasma muda de DRAFT pra UNLISTED via edge one-shot `set-product-unlisted` + validação pós-add no `cartStore.addItem` confirma que a Storefront REALMENTE adicionou a linha
 
 ## Pendências
 

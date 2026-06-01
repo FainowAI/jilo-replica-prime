@@ -28,7 +28,9 @@
       "mcp__supabase-jilo__apply_migration",
       "mcp__supabase-jilo__execute_sql",
       "Bash(npx supabase@2.101.0 projects list)",
-      "mcp__supabase-jilo__deploy_edge_function"
+      "mcp__supabase-jilo__deploy_edge_function",
+      "mcp__supabase-jilo__get_publishable_keys",
+      "mcp__supabase-jilo__get_project_url"
     ]
   },
   "enableAllProjectMcpServers": true,

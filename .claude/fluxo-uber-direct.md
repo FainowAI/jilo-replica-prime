@@ -4,9 +4,13 @@
 
 Frete cobrado em real-time via Uber Direct quando o cart tem menos de 7 marmitas. A partir de 7, frete grátis (entrega Jilo, despachada manualmente em sprint futura).
 
-A loja Jilo está em plano Shopify que não suporta Shipping Rates condicionais por quantidade e a estratégia foi NÃO usar apps de terceiros nem fazer upgrade. Em vez disso, criamos um produto fantasma no Shopify ("Frete Uber Direct", `status: draft`, tag `__internal_shipping`) cujo preço é atualizado em real-time via Admin GraphQL e adicionado ao cart como uma linha normal. Como produtos `draft` são invisíveis ao Storefront API, a variant fantasma só aparece dentro do cart, nunca em listagens.
+A loja Jilo está em plano Shopify que não suporta Shipping Rates condicionais por quantidade e a estratégia foi NÃO usar apps de terceiros nem fazer upgrade. Em vez disso, criamos um produto fantasma no Shopify ("Frete Uber Direct", `status: unlisted`, tag `__internal_shipping`) cujo preço é atualizado em real-time via Admin GraphQL e adicionado ao cart como uma linha normal. Produtos `unlisted` são vendáveis via Storefront API quando referenciados por ID direto (como é nosso caso no `cartLinesAdd`), mas permanecem invisíveis em buscas e coleções — a variant fantasma só aparece dentro do cart, nunca em listagens.
+
+**Sprint 5.0 — `draft` → `unlisted` (root cause do bug de cart):** Originalmente o produto fantasma era `status: draft`. Produtos `draft` são rejeitados SILENCIOSAMENTE pela Storefront API no `cartLinesAdd` (retorna sucesso aparente sem userErrors, mas a linha não entra no cart). Isso travava a feature de frete. A correção foi trocar para `status: unlisted` (disponível na Shopify desde Out 2025) via a edge one-shot `supabase/functions/set-product-unlisted/index.ts`, executada manualmente uma vez. Ver R54.
 
 ## Arquivos envolvidos
+
+**Status do produto fantasma (Sprint 5.0, R54):** O produto "Frete Uber Direct" tem status `UNLISTED` no Shopify Admin (NÃO `DRAFT`, NÃO `ACTIVE`). Mudança feita via edge one-shot `set-product-unlisted`. Razão: a Storefront API rejeita silenciosamente o `cartLinesAdd` de variants de produtos `DRAFT`. O status `UNLISTED` (Shopify 2025-10+) permite a venda via Storefront quando o produto é referenciado por ID direto (como é o caso da variant fantasma — sempre adicionada via `merchandiseId`), mas mantém o produto invisível em buscas/coleções/recomendações. Caso de uso oficial documentado pela Shopify pra "custom pricing items added to cart through code adjustments". Se aparecer alguém querendo trocar pra DRAFT (achando que esconde mais), recusar — reintroduz o bug das Sprints 4.1-4.9.
 
 **Auth Shopify Admin (Sprint 4.7):** Todas as chamadas à Admin API GraphQL passam pelo helper `supabase/functions/_shared/shopify-admin-auth.ts` (`getShopifyAdminToken()`). Não usar mais `SHOPIFY_ADMIN_ACCESS_TOKEN` direto do env — esse secret foi removido. O helper resolve o token via cache (tabela `shopify_admin_tokens`) ou refresh via Client Credentials Grant. Ver R51.
 
@@ -119,6 +123,8 @@ Vide `.claude/requirements.md` regras R34 a R44.
 
 **Nova em Sprint 4.5:** R50 — variant fantasma é singleton (REPLACE atômico em re-sincronização). Vide `requirements.md`.
 
+**Nova em Sprint 5.0:** R55 — verificação pós-add da variant fantasma (defesa em profundidade). Após `addLineToShopifyCart` retornar `success: true` para a variant fantasma, o `cartStore.addItem` faz um `fetchCartFull` e confirma que a linha existe de fato no cart remoto (`lines.edges[].node.merchandise.id === variantId`). Se não existir, loga `[cartStore] CRITICAL` e reverte o `items[]` local (REPLACE) ou não o atualiza (primeira inserção), forçando re-tentativa no próximo render do `ShippingMethodSelector`. A verificação roda APENAS para `isShippingVariant(...)` — itens normais (marmitas, produtos `active`) seguem o fluxo simples sem chamada extra. Protege contra regressões futuras do tipo "sucesso aparente, linha não entra" (ex.: produto voltar a `draft`, mudanças na Storefront API, cache). Vide `requirements.md`.
+
 ## Fluxo do usuário
 
 ### Cliente com cart < 7 marmitas
@@ -180,7 +186,7 @@ Vide `.claude/requirements.md` regras R34 a R44.
 
 ## Gotchas e armadilhas
 
-- Produto fantasma `status: draft` é INVISÍVEL ao Storefront API — não aparece em `PRODUCTS_QUERY`, `COLLECTION_BY_HANDLE_QUERY`. Filtragem `__internal_shipping` necessária APENAS na lista visual do cart (`Carrinho.tsx`, `CartDrawer.tsx`).
+- Produto fantasma `status: unlisted` (Sprint 5.0; era `draft` antes — ver R55) NÃO aparece em buscas nem coleções (`PRODUCTS_QUERY`, `COLLECTION_BY_HANDLE_QUERY`), mas É vendável via Storefront quando referenciado por ID direto no `cartLinesAdd`. Diferença crítica vs. `draft`: `draft` era rejeitado SILENCIOSAMENTE no `cartLinesAdd` (sucesso aparente, linha não entra) — essa era a root cause do bug de frete. Filtragem `__internal_shipping` continua necessária APENAS na lista visual do cart (`Carrinho.tsx`, `CartDrawer.tsx`). NUNCA mudar para `active` — apareceria em coleções abertas.
 - `cartStore` persiste a variant fantasma no localStorage. Em refresh o `<ShippingMethodSelector />` re-sincroniza no primeiro render.
 - A Shopify Admin API **não tem `productVariantUpdate` singular** — sempre `productVariantsBulkUpdate`, mesmo para 1 variant.
 - Preço para Shopify GraphQL é string com 2 decimais (`"14.90"`), não número.
@@ -212,3 +218,9 @@ Vide `.claude/requirements.md` regras R34 a R44.
 - **Edges com retry em 401:** as edges `update-shipping-variant-price` e `shopify-customer-sync` têm retry automático quando Shopify retorna 401 (chama `forceRefreshShopifyAdminToken()` e tenta 1 vez mais). Cenário coberto: token cached foi revogado server-side (raro, mas acontece em rotação manual de client_secret). Se aparecer log `[xxx] Got 401, forcing token refresh and retrying` em produção, é normal — investigar só se for recorrente (sinal de outro problema).
 
 - **Hard-block do checkout (R52, Sprint 4.7):** Mesmo com a variant fantasma sincronizando perfeitamente, o `Carrinho.tsx` valida defesa em profundidade: `Math.abs(shopifyTotal - (subtotal + activeShippingFeeCents/100)) < 0.01`. Se em algum momento o frontend acha que o cart tem frete (`activeQuoteId !== null`) mas o Shopify não tem (variant fantasma não entrou), o botão de checkout fica disabled exibindo "Sincronizando frete...". Console emite warning. Esse é o catch-net pra quando o `update-shipping-variant-price` falha (token issue, network, etc).
+
+- **Status `UNLISTED` é obrigatório para o produto fantasma (R54, Sprint 5.0):** O bug que travou 5 sprints (variant fantasma "aparecia entrar no Cart mas não entrava") tinha causa raiz simples: produto era `DRAFT`. Documentação oficial Shopify é explícita: produtos draft são "unavailable to customers on sales channels and apps", incluindo Storefront API. Solução documentada: status `UNLISTED`. Validação rápida no Console: `query($id:ID!){node(id:$id){...on ProductVariant{availableForSale}}}` deve retornar `true` para a variant fantasma. Se retornar `false`, o produto pai não está unlisted — corrigir via edge `set-product-unlisted`.
+
+- **Verificação pós-add no `cartStore` (R55, Sprint 5.0):** Quando `addItem` é chamado com `isShippingVariant(variantId) === true`, há uma segunda chamada à Shopify (`fetchCartFull`) após o `addLineToShopifyCart` retornar sucesso, pra confirmar que a linha realmente entrou. Adiciona ~200-400ms à operação mas protege contra falhas silenciosas. Se a verificação falhar, o erro `[cartStore] CRITICAL: Storefront returned success for cartLinesAdd of shipping variant, but the line is NOT in the cart after re-fetch` aparece no Console com payload de diagnóstico. Em produção, esse log é canário de regressão — investigar imediatamente.
+
+- **Edge `set-product-unlisted` é one-shot mas pode ser re-executada:** A edge é idempotente. Se o produto já está UNLISTED, retorna `{"status":"already_unlisted",...}` sem operar. Se precisar executar de novo (recriar produto fantasma em ambiente novo, recuperar de status acidentalmente alterado), basta chamar via cURL com o `product_id` correto. Não há efeito colateral.
