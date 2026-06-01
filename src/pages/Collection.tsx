@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Plus, ArrowLeft, Loader2 } from "lucide-react";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import Header from "@/components/sections/Header";
@@ -107,7 +107,7 @@ const Collection = () => {
       try {
         const data = await storefrontApiRequest(PRODUCTS_QUERY, {
           first: 20,
-          query: `product_type:'${current.productType}'`,
+          query: excludeInternalShipping(`product_type:'${current.productType}'`),
         });
         if (!cancelled) setProducts(data?.data?.products?.edges || []);
       } catch {

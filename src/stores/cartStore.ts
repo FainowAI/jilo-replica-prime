@@ -104,10 +104,10 @@ export const useCartStore = create<CartStore>()(
             }
 
             // 3. Verificação pós-add (R55): confirma que a Storefront REALMENTE adicionou
-            // a linha. A API pode retornar sucesso aparente (sem userErrors) mas não criar
-            // a linha — cenário documentado quando o produto pai está draft. Após Sprint 5.0,
-            // o produto fantasma é unlisted (resolve o caso conhecido), mas mantemos a
-            // verificação como defesa em profundidade contra regressões futuras.
+            // a linha. Se o produto fantasma sair do estado correto (ACTIVE + publicado no
+            // Online Store — ver R54), o cartLinesAdd falha e a linha não entra. Após Sprint
+            // 5.0 o produto está ACTIVE + publicado (resolve o caso conhecido), mas mantemos
+            // a verificação como defesa em profundidade contra regressões de publicação/status.
             const verifyCart = await fetchCartFull(cartId);
             const variantInCart = verifyCart?.lines.edges.some(
               (edge) => edge.node.merchandise.id === item.variantId
@@ -174,8 +174,8 @@ export const useCartStore = create<CartStore>()(
             if (result.success) {
               // R55: validação pós-add APENAS para variant fantasma de frete.
               // Itens normais (marmitas) são produtos active e a Storefront é confiável.
-              // A variant fantasma é unlisted (após Sprint 5.0) e a Storefront aceita,
-              // mas mantemos a verificação como defesa contra regressões futuras.
+              // A variant fantasma também é ACTIVE + publicada no Online Store (R54) e a
+              // Storefront aceita, mas mantemos a verificação como defesa contra regressões.
               if (isShippingVariant(item.variantId)) {
                 const verifyCart = await fetchCartFull(cartId);
                 const variantInCart = verifyCart?.lines.edges.some(

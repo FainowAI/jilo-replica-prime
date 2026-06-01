@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { ShoppingBag, ChevronRight, Loader2, RefreshCw } from "lucide-react";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion, AnimatePresence } from "framer-motion";
@@ -95,7 +95,7 @@ export function FullMenu() {
         setError(false);
         try {
             const variables: { first: number; query?: string } = { first: 50 };
-            if (searchQuery) variables.query = searchQuery;
+            variables.query = excludeInternalShipping(searchQuery || undefined);
             const data = await storefrontApiRequest(PRODUCTS_QUERY, variables);
             const products: ShopifyProduct[] = data?.data?.products?.edges || [];
             const groups: Record<string, ShopifyProduct[]> = {};

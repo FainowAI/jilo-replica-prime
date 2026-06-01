@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -96,7 +96,7 @@ const AllDishes = () => {
     setError(false);
     try {
       const variables: { first: number; query?: string } = { first: 50 };
-      if (searchFilter) variables.query = searchFilter;
+      variables.query = excludeInternalShipping(searchFilter || undefined);
       const data = await storefrontApiRequest(PRODUCTS_QUERY, variables);
       const products: ShopifyProduct[] = data?.data?.products?.edges || [];
       const groups: Record<string, ShopifyProduct[]> = {};

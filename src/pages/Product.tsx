@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Minus, Plus, ShoppingBag, Zap, Star, ShieldCheck, ThermometerSnowflake, Leaf } from "lucide-react";
-import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY, setCartAttributes, appendReturnToCheckoutUrl } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, appendReturnToCheckoutUrl } from "@/lib/shopify";
 import { SITE_URL } from "@/config/site";
 import { useCartStore } from "@/stores/cartStore";
 import { Button } from "@/components/ui/button";
@@ -88,7 +88,7 @@ export default function Product() {
     queryFn: async () => {
       const data = await storefrontApiRequest(PRODUCTS_QUERY, {
         first: 5,
-        query: `product_type:${productData.productType}`,
+        query: excludeInternalShipping(`product_type:${productData.productType}`),
       });
       return data?.data?.products?.edges || [];
     },
