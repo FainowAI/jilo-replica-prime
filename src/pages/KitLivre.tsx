@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ShoppingBag, ChevronRight, Loader2, Minus, Plus, Check, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
@@ -63,7 +63,7 @@ export default function KitLivre() {
   const { data: productsData, isLoading: productsLoading } = useQuery({
     queryKey: ["all-products-kit-livre"],
     queryFn: async () => {
-      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 50 });
+      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 50, query: excludeInternalShipping() });
       return (data?.data?.products?.edges || []) as ShopifyProduct[];
     },
   });

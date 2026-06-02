@@ -1,1 +1,4 @@
 project_id = "hofohxvizlmawgkinwwz"
+
+[functions.set-product-unlisted]
+verify_jwt = false

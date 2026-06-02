@@ -1,9 +1,52 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-05-27 (Sprint 4.7 — Refatoração OAuth Client Credentials + hard-block canCheckout)
+2026-06-01 (Sprint 5.0 — Causa raiz resolvida: produto fantasma precisa estar ACTIVE + publicado no Online Store; UNLISTED NÃO é exposto pela Storefront desta loja)
 
-## O que foi feito na última sessão (Sprint 4.7 — OAuth Client Credentials)
+## O que foi feito na última sessão (Sprint 5.0 — Publicação no sales channel + status ACTIVE + filtro de catálogo)
+
+> ⚠️ Correção de rumo: a hipótese inicial desta sprint (status `UNLISTED` resolve o bug) foi **testada empiricamente e refutada** via Playwright + Storefront/Admin API. O que segue é o diagnóstico verificado.
+
+- **Bug raiz verificado (não era status):** o produto fantasma "Frete Uber Direct" (`gid://shopify/Product/9213544136844`, variant `48168478769292` — bate com o `.env`) estava publicado **apenas no sales channel "Point of Sale"**, NÃO no "Online Store". O token Storefront do frontend lê do canal Online Store. Em Shopify, disponibilidade via Storefront = **publicação no sales channel do token**, ortogonal ao status do produto. Por isso o `cartLinesAdd` da variant retornava erro explícito "A mercadoria … não existe" e o `node()` retornava `null` → a linha nunca entrava no Cart → hard-block do checkout sempre travado em "Sincronizando frete...".
+- **UNLISTED NÃO funciona nesta loja (refutado):** depois de publicar o produto no Online Store mantendo `status: UNLISTED`, a variant continuou retornando `node: null` na Storefront em **todas as versões testadas (2025-07, 2025-10, 2025-01, unstable)** ao longo de vários minutos. Só ao mudar para `status: ACTIVE` (já publicado no Online Store) é que `availableForSale: true` e `cartLinesAdd` passaram a funcionar — verificado de ponta a ponta no `/carrinho` (botão "Ir para o Checkout" liberou, TOTAL R$ 29,44). NOTA: não foi feito o teste reverso limpo (ACTIVE→UNLISTED após propagação), então o fato verificado é "UNLISTED+publicado retornou null nos nossos testes", não "UNLISTED é impossível em qualquer cenário".
+- **Correção aplicada (fix completo, escolhido pelo usuário):**
+  - **Shopify (via Admin GraphQL):** produto fantasma `publishablePublish` no Online Store + `status: ACTIVE`.
+  - **Código — filtro de catálogo:** como ACTIVE faz o produto aparecer em listagens (as queries `PRODUCTS_QUERY` não filtravam a tag), foi adicionado o helper `excludeInternalShipping(query?)` em `src/lib/shopify.ts` e aplicado em TODOS os call sites de catálogo (`AllDishes`, `FullMenu`, `Favorites` (2x), `KitLivre`, `Carrinho` sugestões, `Product` relacionados, `Collection`). Verificado: cardápio voltou de 27 → 26 pratos, "Frete Uber Direct" não vaza. A filtragem visual de `__internal_shipping` no carrinho (Carrinho/CartDrawer) continua valendo.
+  - **`cartStore.ts` — validação pós-add (R55):** mantida como defesa em profundidade (após `addLineToShopifyCart` com sucesso para a variant fantasma, confirma via `fetchCartFull` que a linha entrou). Útil pra detectar regressões de publicação/status. (Os comentários internos que diziam "produto é unlisted" foram corrigidos pra "ACTIVE + publicado".)
+- **O que NÃO mudou:** hard-block `canCheckout` (R52, Sprint 4.9), display local (R53), OAuth Client Credentials (R51), REPLACE atômico (R50), memoização (Sprint 4.6) — todos intactos.
+- **Regras:** R54 (status ACTIVE + publicado no Online Store; UNLISTED não serve) e R55 (validação pós-add) em `requirements.md` — **reescritas** pra refletir a realidade verificada.
+- **Arquivos editados:**
+  - `src/lib/shopify.ts` (helper `excludeInternalShipping` + `INTERNAL_SHIPPING_TAG`)
+  - `src/pages/{Carrinho,Product,Collection,KitLivre}.tsx` e `src/components/sections/{AllDishes,FullMenu,Favorites}.tsx` (filtro nas queries de catálogo)
+  - `src/stores/cartStore.ts` (validação pós-add R55, da sessão anterior)
+  - Shopify: produto `9213544136844` → ACTIVE + publicado no Online Store (via Admin API)
+
+### Pendências / Notas para a próxima sessão
+
+- **⚠️ A edge `set-product-unlisted` está OBSOLETA e é PERIGOSA:** ela seta `UNLISTED`, que **re-quebra o carrinho** (a variant some da Storefront). NÃO rodar. Decisão pendente do usuário: deletar a edge OU repropô-la como "set ACTIVE + publishablePublish(Online Store)" — que é o que um ambiente novo (staging) realmente precisa. A entrada em `supabase/config.toml` continua lá.
+- **Estado do produto fantasma a manter:** `status: ACTIVE` + publicado no **Online Store** (e Point of Sale). Conferir via Admin se algum dia o checkout voltar a travar em "Sincronizando frete...".
+- **🐛 BUG ABERTO descoberto nesta sessão — PIX trava o checkout:** ao selecionar PIX no `/carrinho`, o `PaymentMethodSelector` aplica o cupom `PIX5` no Shopify Cart (`applyDiscountCode`), que reduz o `subtotalAmount` do Shopify (`18.94 × 0.95 + 10.50 ≈ 28.5`). O hard-block (`Carrinho.tsx:86-90`) compara esse `shopifySubtotal` (já descontado) contra o `expectedTotal` SEM desconto (29.44) → diff ≈ R$ 0,94 → `canCheckout = false` → botão trava em "Sincronizando frete...". Voltar pra Cartão de Crédito libera. **Bug pré-existente da lógica do hard-block (R52 revisado, Sprint 4.9)** — estava mascarado porque a variant nunca entrava no Cart (o block sempre travava no caso "linha ausente", diff −10,50). Agora que a linha entra, o caso PIX ficou visível. Correção exige ajustar o `totalMatchesShopify` pra considerar desconto de cupom (comparar contra `totalAmount` quando há cupom aplicado, ou subtrair o desconto do `expectedTotal`) SEM enfraquecer a proteção contra frete-ausente. NÃO corrigido nesta sessão (fora do escopo do fix de frete).
+- **Validação manual ainda pendente (usuário):** click-through real até o checkout Shopify (cobrança produtos + frete + Getnet). Spot-check de Favorites/KitLivre (mesmo helper, build passou).
+- **Edge de diagnóstico `shopify-admin-diag`:** foi deployada durante a investigação e **neutralizada** (no-op, `verify_jwt=true`, retorna 410). Deletar via `supabase functions delete shopify-admin-diag`.
+- **Débitos de segurança ainda abertos:** HMAC no `uber-webhook-receiver`, validação server-side de `shipping_fee_cents` (inalterados).
+
+## O que foi feito na sessão anterior (Sprint 4.8 — TOTAL local no carrinho)
+
+- **Bug corrigido:** o TOTAL na página `/carrinho` exibia valor errado (ex: R$ 18,00 quando subtotal R$ 18,94 + frete R$ 10,50 deveria dar R$ 29,44). Causa: `displayTotal` lia `cartCost.totalAmount` do Shopify, que não inclui o frete (variant fantasma não garantida no Cart) E já vem com o desconto do cupom aplicado (R$ 18,94 − 5% PIX5 = R$ 18,00).
+- **Causa raiz conceitual:** o display estava acoplado ao Shopify Cart, quando deveria ser somatória local. O frontend já tem `subtotal` e `activeShippingFeeCents` no estado — não precisa do Shopify pra calcular o que exibe.
+- **Solução:** `displayTotal = subtotal + activeShippingFeeCents / 100` (somatória local). 1 linha em `src/pages/Carrinho.tsx`. Sem desconto no display (decisão de negócio — desconto aparece só no checkout Shopify, como a UI já comunica).
+- **Separação display vs cobrança:** o display virou local. A COBRANÇA do frete continua dependendo da variant fantasma no Shopify Cart (checkout nativo Shopify) — isso NÃO foi alterado, continua sendo trabalho do `<ShippingMethodSelector />` (Sprint 4.1+) e protegido pelo hard-block do `canCheckout` (R52, Sprint 4.7). O `shopifyTotal` continua existindo só para o `totalMatchesShopify`.
+- **Arquivos editados:** `src/pages/Carrinho.tsx` (1 linha — `displayTotal`). 0 migrations, 0 edge functions, 0 mudanças no `cartStore`, 0 mudanças no `ShippingMethodSelector`.
+- **Regra adicionada:** R53 em `requirements.md` (TOTAL local).
+- **Documentação atualizada:** `fluxo-carrinho-checkout.md` (regra + gotcha sobre display vs cobrança).
+
+### Notas para a próxima sessão
+
+- **Display ≠ cobrança (importante):** o `displayTotal` é puramente visual e local. A cobrança real acontece no checkout Shopify, que depende da variant fantasma estar no Cart + descontos configurados no Shopify Admin. Não confundir: mexer no `displayTotal` não muda o que a Shopify cobra, e mexer na variant fantasma não muda o que a página exibe.
+- **Por que o desconto não aparece no display:** decisão de negócio (Sprint 4.8). A UI já comunica "Descontos aplicados no checkout Shopify". Se no futuro quiserem mostrar o desconto na página também, dá pra calcular `cartCost.subtotalAmount - cartCost.totalAmount` e subtrair do display — mas isso foi explicitamente descartado nessa sprint.
+- **O custom checkout com Getnet (planejado) muda esse jogo:** quando o checkout sair do Shopify e for próprio (Getnet), tanto o display quanto a cobrança passam a ser controlados pelo frontend/backend Jilo. Aí a variant fantasma deixa de ser necessária e o `displayTotal` local vira a fonte de verdade tanto pra exibição quanto pra cobrança. Reavaliar toda essa arquitetura quando o custom checkout entrar no roadmap.
+
+## O que foi feito na sessão anterior (Sprint 4.7 — OAuth Client Credentials)
 
 - **Bug raiz corrigido:** o `SHOPIFY_ADMIN_ACCESS_TOKEN` estático estava expirado/inválido em produção (HTTP 401 "Invalid API key or access token"). A Shopify migrou pro Dev Dashboard novo (Dec 2025) e deprecou a entrega direta de `shpat_` permanente. Agora, o `shpat_` é gerado dinamicamente via OAuth 2.0 Client Credentials Grant, e expira em 24h.
 - **Sintoma na produção:** edge `update-shipping-variant-price` retornava 502 em 100% das chamadas. Variant fantasma de frete nunca entrava no Shopify Cart. TOTAL no `/carrinho` exibia só subtotal (sem somar frete). Em paralelo, `shopify-customer-sync` também falhava silenciosamente — clientes novos não sincronizavam no Shopify.
@@ -207,6 +250,8 @@
 - **Sprint 4.5 (2026-05-27)** — Fix variant fantasma duplicada no cart (REPLACE atômico no `cartStore` + cleanup defensivo no `<ShippingMethodSelector />`)
 - **Sprint 4.6 (2026-05-27)** — Fix regressão Sprint 4.5: variant fantasma não entrava no cart (memoização de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
 - **Sprint 4.7 (2026-05-27)** — Refatoração OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
+- **Sprint 4.8 (2026-05-28)** — TOTAL da página de carrinho via somatória local (`subtotal + frete`), desacoplando display da cobrança Shopify
+- **Sprint 5.0 (2026-06-01)** — Causa raiz resolvida: produto fantasma estava publicado só no Point of Sale, não no Online Store; fix = publicar no Online Store + `status: ACTIVE` + filtro `-tag:__internal_shipping` nas queries de catálogo. UNLISTED foi testado e NÃO é exposto pela Storefront desta loja. Validação pós-add (R55) mantida como defesa. (Bug aberto: PIX trava o hard-block do checkout — ver Pendências.)
 
 ## Pendências
 

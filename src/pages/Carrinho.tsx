@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { storefrontApiRequest, PRODUCTS_QUERY, setCartAttributes, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
 import { SITE_URL } from "@/config/site";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
@@ -57,8 +57,21 @@ const Carrinho = () => {
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
-  const shopifyTotal = cartCost ? parseFloat(cartCost.totalAmount) : null;
-  const displayTotal = shopifyTotal ?? subtotal;
+  // R52 (revisado Sprint 4.9): o hard-block compara contra o subtotalAmount da
+  // Shopify (produtos + variant fantasma de frete, SEM desconto), NÃO o totalAmount
+  // (que vem com o desconto do cupom aplicado). Comparar com totalAmount travava o
+  // checkout sempre que havia cupom (ex: PIX5 = −5%), porque o expectedTotal local
+  // é sem desconto. O subtotalAmount valida exatamente o que importa: o frete está
+  // dentro do Shopify Cart?
+  const shopifySubtotal = cartCost ? parseFloat(cartCost.subtotalAmount) : null;
+
+  // R53: o TOTAL exibido na página é somatória LOCAL — subtotal + frete.
+  // NÃO usa cartCost.totalAmount do Shopify porque (a) ele pode não incluir o
+  // frete (variant fantasma pode não estar sincronizada no momento do fetch) e
+  // (b) ele já vem com o desconto do cupom aplicado (ex: PIX5), e o desconto só
+  // deve aparecer no checkout Shopify — a própria UI comunica isso logo abaixo
+  // do total ("Descontos aplicados no checkout Shopify").
+  const displayTotal = subtotal + activeShippingFeeCents / 100;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
@@ -71,15 +84,17 @@ const Carrinho = () => {
   //    da variant fantasma (ex: edge `update-shipping-variant-price` retornando 401)
   //    permitiria avançar pro checkout com frete não cobrado — perda direta de receita.
   const expectedTotal = subtotal + activeShippingFeeCents / 100;
+  // Compara contra o subtotalAmount (produtos + frete, SEM desconto), não o
+  // totalAmount (com desconto). Ver R52 revisado (Sprint 4.9).
   const totalMatchesShopify =
-    shopifyTotal !== null && Math.abs(shopifyTotal - expectedTotal) < 0.01;
+    shopifySubtotal !== null && Math.abs(shopifySubtotal - expectedTotal) < 0.01;
 
   const canCheckout =
     deliveryCheck?.isDeliverable === true &&
     (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null) &&
     // Em frete grátis: expectedTotal = subtotal, validado normalmente.
     // Em frete pago: expectedTotal inclui frete; se a variant fantasma não entrou
-    // no Shopify Cart, shopifyTotal == subtotal != expectedTotal → bloqueia.
+    // no Shopify Cart, shopifySubtotal == subtotal != expectedTotal → bloqueia.
     totalMatchesShopify;
 
   useEffect(() => {
@@ -100,7 +115,7 @@ const Carrinho = () => {
     if (
       !isFreeShipping(totalNonShippingItems) &&
       activeQuoteId !== null &&
-      shopifyTotal !== null &&
+      shopifySubtotal !== null &&
       !totalMatchesShopify
     ) {
       console.warn(
@@ -110,15 +125,15 @@ const Carrinho = () => {
           subtotal,
           activeShippingFeeCents,
           expectedTotal,
-          shopifyTotal,
-          diff: shopifyTotal !== null ? shopifyTotal - expectedTotal : null,
+          shopifySubtotal,
+          diff: shopifySubtotal !== null ? shopifySubtotal - expectedTotal : null,
         }
       );
     }
   }, [
     totalMatchesShopify,
     activeQuoteId,
-    shopifyTotal,
+    shopifySubtotal,
     subtotal,
     activeShippingFeeCents,
     expectedTotal,
@@ -128,7 +143,7 @@ const Carrinho = () => {
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
     try {
-      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 20 });
+      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 20, query: excludeInternalShipping() });
       if (data?.data?.products?.edges) {
         const cartVariantIds = new Set(items.map((i) => i.variantId));
         const filtered = data.data.products.edges.filter(

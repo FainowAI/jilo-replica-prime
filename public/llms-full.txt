@@ -1,6 +1,6 @@
 # Jilo — Contexto completo para LLMs
 
-> Este arquivo é uma versão expandida do [llms.txt](https://jilomarmitas.com/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-05-27.
+> Este arquivo é uma versão expandida do [llms.txt](https://jilomarmitas.com/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-06-01.
 
 ## Sobre a Jilo
 

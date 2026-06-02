@@ -84,6 +84,22 @@ export async function storefrontApiRequest(query: string, variables: Record<stri
   return data;
 }
 
+/**
+ * Tag interna do produto fantasma de frete (R39/R54). Produtos com essa tag
+ * NÃO podem aparecer em listagens de catálogo. O produto fantasma precisa estar
+ * ACTIVE + publicado no Online Store pra ser vendável via Storefront API
+ * (UNLISTED NÃO é exposto pela Storefront nesta loja — ver R54), então a única
+ * forma de mantê-lo fora das listagens é excluí-lo por tag na própria query.
+ * Use `excludeInternalShipping(query)` em TODA chamada de PRODUCTS_QUERY que
+ * lista catálogo (cardápio, kits, sugestões, favoritos, relacionados).
+ */
+export const INTERNAL_SHIPPING_TAG = "__internal_shipping";
+
+export function excludeInternalShipping(query?: string): string {
+  const exclusion = `-tag:${INTERNAL_SHIPPING_TAG}`;
+  return query ? `(${query}) AND ${exclusion}` : exclusion;
+}
+
 export const PRODUCTS_QUERY = `
   query GetProducts($first: Int!, $query: String) {
     products(first: $first, query: $query) {

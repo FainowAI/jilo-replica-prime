@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Plus, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { storefrontApiRequest, PRODUCTS_QUERY, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -18,12 +18,12 @@ const Favorites = () => {
   const fetchFavorites = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 4, query: "tag:mais-pedido" });
+      const data = await storefrontApiRequest(PRODUCTS_QUERY, { first: 4, query: excludeInternalShipping("tag:mais-pedido") });
       const items: ShopifyProduct[] = data?.data?.products?.edges || [];
 
       // Fallback: if fewer than 4, fill with general products
       if (items.length < 4) {
-        const fallback = await storefrontApiRequest(PRODUCTS_QUERY, { first: 8 });
+        const fallback = await storefrontApiRequest(PRODUCTS_QUERY, { first: 8, query: excludeInternalShipping() });
         const all: ShopifyProduct[] = fallback?.data?.products?.edges || [];
         const ids = new Set(items.map((p) => p.node.id));
         for (const p of all) {
