@@ -585,6 +585,12 @@ const Carrinho = () => {
               <button
                 onClick={handleCheckout}
                 disabled={items.length === 0 || isLoading || isSyncing || !canCheckout}
+                aria-busy={
+                  isLoading ||
+                  isSyncing ||
+                  (!isFreeShipping(totalNonShippingItems) && !activeQuoteId) ||
+                  (!isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify)
+                }
                 className="w-full h-14 bg-[#1e3a1e] text-white rounded-2xl font-bold text-base font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {isLoading || isSyncing ? (
@@ -594,12 +600,20 @@ const Carrinho = () => {
                 ) : !deliveryCheck.isDeliverable ? (
                   "Endereço fora da cobertura"
                 ) : !isFreeShipping(totalNonShippingItems) && !activeQuoteId ? (
-                  "Calculando frete..."
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Calculando frete...
+                  </>
                 ) : !isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify ? (
-                  // Quote Uber existe mas variant fantasma não está no Shopify Cart.
-                  // Falha de sincronização (ex: edge update-shipping-variant-price com erro).
-                  // Bloqueia avanço pra não cobrar frete zero do cliente.
-                  "Sincronizando frete..."
+                  // Quote Uber existe mas a variant fantasma ainda não entrou no Shopify Cart.
+                  // Estado TRANSITÓRIO normal (~700ms-1.5s de latência da sincronização) — por isso
+                  // mostramos loading explícito. Em falha real (ex: edge update-shipping-variant-price
+                  // 401), o estado persiste como loading e o hard-block segue protegendo contra
+                  // frete-zero (D1: loading infinito, sem timeout). NÃO adicionar timeout aqui.
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Sincronizando frete...
+                  </>
                 ) : !user ? (
                   <>
                     Entrar para finalizar
