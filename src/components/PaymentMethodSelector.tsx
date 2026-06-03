@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
@@ -9,7 +9,7 @@ export type PaymentMethod = "pix" | "credit" | "paypal";
 interface PaymentMethodSelectorProps {
   className?: string;
   subtotalCents: number;
-  totalNonShippingItems: number;  // NOVO â€” fonte: useNonShippingTotalItems()
+  totalNonShippingItems: number; // fonte: useNonShippingTotalItems()
   onMethodChange?: (method: PaymentMethod) => void;
 }
 
@@ -35,10 +35,10 @@ const PaymentMethodSelector = ({
     (dc) => dc.applicable && !isPixCoupon(dc.code)
   );
 
-  // Quando cliente estÃ¡ com PIX selecionado e cruza o threshold de 7 marmitas
-  // (subindo ou descendo), o cupom PIX vigente muda (PIX5 â†” PIX3).
-  // Aqui detectamos a mudanÃ§a e trocamos o cupom no Shopify Cart automaticamente,
-  // preservando o estado "PIX selecionado" do usuÃ¡rio.
+  // Quando o cliente está com PIX selecionado e cruza o threshold de 7 marmitas
+  // (subindo ou descendo), o cupom PIX vigente muda (PIX5 ↔ PIX3). Aqui detectamos
+  // a mudança e trocamos o cupom no Shopify Cart automaticamente, preservando o
+  // estado "PIX selecionado" do usuário.
   const lastSyncedCouponRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -48,11 +48,9 @@ const PaymentMethodSelector = ({
     }
 
     const expectedCoupon = activePix.code;
-    const currentApplied = discountCodes.find((dc) =>
-      isPixCoupon(dc.code)
-    );
+    const currentApplied = discountCodes.find((dc) => isPixCoupon(dc.code));
 
-    // Se jÃ¡ temos o cupom certo aplicado e marcado como applicable, nada a fazer.
+    // Se já temos o cupom certo aplicado e marcado como applicable, nada a fazer.
     if (
       currentApplied?.code.toUpperCase() === expectedCoupon &&
       currentApplied.applicable
@@ -61,7 +59,7 @@ const PaymentMethodSelector = ({
       return;
     }
 
-    // Evita reentrada quando jÃ¡ estamos no meio de aplicar este cupom.
+    // Evita reentrada quando já estamos no meio de aplicar este cupom.
     if (lastSyncedCouponRef.current === expectedCoupon) return;
 
     lastSyncedCouponRef.current = expectedCoupon;
@@ -72,29 +70,27 @@ const PaymentMethodSelector = ({
         const result = await applyDiscountCode(expectedCoupon);
         if (!result.success || !result.applicable) {
           console.error(
-            "[PaymentMethodSelector] Re-aplicaÃ§Ã£o de PIX falhou apÃ³s mudanÃ§a de threshold",
+            "[PaymentMethodSelector] Re-aplicação de PIX falhou após mudança de threshold",
             {
               expectedCoupon,
               totalNonShippingItems,
               shopifyResult: result,
             }
           );
-          // Reseta para "nenhum mÃ©todo selecionado" â€” UX prefere honesto a quebrado
+          // Reseta para "nenhum método selecionado" — UX prefere honesto a quebrado
           setSelected(null);
           toast.error(
             "Seu desconto PIX precisou ser recalculado mas falhou. Selecione novamente."
           );
         } else {
-          toast.success(
-            `Desconto PIX atualizado: ${activePix.percent}% off`
-          );
+          toast.success(`Desconto PIX atualizado: ${activePix.percent}% off`);
         }
       } finally {
         setApplying(false);
       }
     })();
-    // ESLint: queremos rodar quando totalNonShippingItems mudar.
-    // discountCodes estÃ¡ incluÃ­do pq o `applicable` pode mudar fora do nosso fluxo.
+    // ESLint: queremos rodar quando totalNonShippingItems mudar. discountCodes está
+    // incluído pq o `applicable` pode mudar fora do nosso fluxo.
   }, [activePix.code, activePix.percent, selected, discountCodes, applyDiscountCode, totalNonShippingItems]);
 
   const handleSelect = async (method: PaymentMethod) => {
@@ -105,7 +101,7 @@ const PaymentMethodSelector = ({
         (dc) => dc.applicable && !isPixCoupon(dc.code)
       )?.code;
       const confirmed = window.confirm(
-        `VocÃª tem o cupom ${otherCode} aplicado. Selecionar PIX vai substituÃ­-lo pelo desconto PIX. Deseja continuar?`
+        `Você tem o cupom ${otherCode} aplicado. Selecionar PIX vai substituí-lo pelo desconto PIX. Deseja continuar?`
       );
       if (!confirmed) return;
     }
@@ -117,17 +113,17 @@ const PaymentMethodSelector = ({
         const result = await applyDiscountCode(couponToApply);
         if (result.success && result.applicable) {
           setSelected("pix");
-          toast.success(`PIX selecionado â€” ${activePix.percent}% de desconto aplicado!`);
+          toast.success(`PIX selecionado — ${activePix.percent}% de desconto aplicado!`);
         } else {
-          // DiagnÃ³stico: applicable=false em cenÃ¡rio inesperado.
-          // Esperado apenas se Shopify Admin estiver desconfigurado.
-          console.error("[PaymentMethodSelector] PIX coupon nÃ£o aplicÃ¡vel", {
+          // Diagnóstico: applicable=false em cenário inesperado.
+          // Esperado apenas se o Shopify Admin estiver desconfigurado.
+          console.error("[PaymentMethodSelector] PIX coupon não aplicável", {
             attemptedCode: couponToApply,
             totalNonShippingItems,
             currentDiscountCodes: discountCodes,
             shopifyResult: result,
           });
-          toast.error("NÃ£o foi possÃ­vel aplicar o desconto PIX. Tente novamente.");
+          toast.error("Não foi possível aplicar o desconto PIX. Tente novamente.");
           return;
         }
       } else {
@@ -152,12 +148,12 @@ const PaymentMethodSelector = ({
       id: "pix",
       label: "PIX",
       badge: `${activePix.percent}% off`,
-      description: "Desconto automÃ¡tico no total",
+      description: "Desconto automático no total",
     },
     {
       id: "credit",
-      label: "CartÃ£o de CrÃ©dito",
-      description: "Em atÃ© 3x sem juros",
+      label: "Cartão de Crédito",
+      description: "Em até 3x sem juros",
     },
     {
       id: "paypal",
@@ -169,7 +165,7 @@ const PaymentMethodSelector = ({
   return (
     <div className={`space-y-2 ${className}`}>
       <p className="text-[11px] text-[#9b9b9b] uppercase tracking-wider font-sans font-semibold">
-        Como vocÃª quer pagar?
+        Como você quer pagar?
       </p>
       <div className="space-y-2">
         {PAYMENT_METHODS.map((method) => {
@@ -213,7 +209,7 @@ const PaymentMethodSelector = ({
                 <p className="text-[12px] text-[#1e3a1e] font-semibold mt-1">
                   Total com PIX: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}{" "}
                   <span className="text-[#9b9b9b] font-normal">
-                    ({activePix.percent}% off â€” economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+                    ({activePix.percent}% off — economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
                   </span>
                 </p>
               )}
@@ -226,4 +222,3 @@ const PaymentMethodSelector = ({
 };
 
 export default PaymentMethodSelector;
-

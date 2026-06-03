@@ -1,7 +1,7 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-03 (Sprint 5.1 — kit múltiplo de 7 + frete grátis + PIX efêmero)
+2026-06-03 (Correções pós-Sprint 5.1 — encoding do PaymentMethodSelector + hard-block por presença da linha de frete R59)
 
 ## Última sessão (Sprint 5.1 — kit múltiplo de 7 + frete grátis + PIX efêmero)
 - R56: a partir de 7 marmitas só múltiplos de 7. Soft-block com gate único no canCheckout. Aviso acionável (botão "Adicionar mais N" → /kit-livre).
@@ -13,7 +13,14 @@
 
 ### Pendências
 - QA manual: faixas 6/7/8/13/14/28/35 no carrinho e KitLivre; reabrir o site com PIX de sessão anterior (deve sumir) e com cupom manual (deve ficar); transição 6→7 observando o frete.
-- Bug aberto do PIX no hard-block (pré-existente) segue fora de escopo.
+- Bug aberto do PIX no hard-block (pré-existente) segue fora de escopo. (Resolvido depois pela R59 — ver Correções pós-Sprint 5.1 abaixo.)
+
+## Correções pós-Sprint 5.1
+- Encoding: PaymentMethodSelector.tsx havia sido salvo com mojibake (UTF-8 lido como Latin-1) + BOM. Reescrito em UTF-8 correto. Causa provável: locale do ambiente que gravou o arquivo. Conferir LANG/LC_ALL ao gerar arquivos com acento.
+- Checkout travado em ≥7 (R59): hard-block passou a checar presença da linha de frete (shopifyHasShippingLine) em vez de comparar subtotais — descontos de Kit (DiscountProducts) reduzem o subtotalAmount e quebravam o totalMatchesShopify. Editados: cartStore.ts (refreshCartDetails) e Carrinho.tsx.
+
+### Pendência
+- QA: 6 (pago), 7/14/28 (grátis, deve liberar), 8 (kit inválido, deve travar com nudge), transição 6↔️7 observando o estado do botão.
 
 ## O que foi feito na Ãºltima sessÃ£o (Sprint 5.0 â€” PublicaÃ§Ã£o no sales channel + status ACTIVE + filtro de catÃ¡logo)
 

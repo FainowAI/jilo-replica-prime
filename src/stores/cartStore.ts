@@ -41,6 +41,7 @@ interface CartStore {
     title?: string;
     code?: string;
   }>;
+  shopifyHasShippingLine: boolean;
   addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
@@ -65,6 +66,7 @@ export const useCartStore = create<CartStore>()(
       discountCodes: [],
       cartCost: null,
       cartDiscountAllocations: [],
+      shopifyHasShippingLine: false,
 
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
@@ -335,12 +337,20 @@ export const useCartStore = create<CartStore>()(
         try {
           const cart = await fetchCartFull(cartId);
           if (!cart) return;
+          // Verdade do servidor: a linha de frete (variant fantasma) está no cart?
+          // O hard-block do Carrinho usa isso em vez de comparar subtotais — os
+          // descontos de Kit são "Amount off products" (DiscountProducts) e reduzem
+          // o subtotalAmount, então a comparação de totais nunca batia em pedidos ≥7.
+          const hasShippingLine = cart.lines.edges.some((edge) =>
+            isShippingVariant(edge.node.merchandise.id)
+          );
           set({
             cartCost: cart.cost ? {
               totalAmount: cart.cost.totalAmount.amount,
               subtotalAmount: cart.cost.subtotalAmount.amount,
             } : null,
             cartDiscountAllocations: cart.discountAllocations || [],
+            shopifyHasShippingLine: hasShippingLine,
           });
         } catch (error) {
           console.error('Failed to refresh cart details:', error);
