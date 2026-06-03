@@ -34,7 +34,8 @@
       "PowerShell(Get-NetTCPConnection *)",
       "Bash(npm --version)",
       "Bash(node -e \"const p=require\\('./package.json'\\); const d={...p.dependencies,...p.devDependencies}; ['ts-node','tsx','vitest','eslint','typescript-eslint'].forEach\\(k=>console.log\\(k+': '+\\(d[k]||'AUSENTE'\\)\\)\\)\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('tsx em devDependencies:', p.devDependencies.tsx || 'AUSENTE'\\); console.log\\('scripts que usam ts-node restantes:', Object.entries\\(p.scripts\\).filter\\(\\([k,v]\\)=>v.includes\\('ts-node'\\)\\).map\\(\\([k]\\)=>k\\).join\\(', '\\)||'\\(nenhum\\)'\\)\")"
     ]
   },
   "enableAllProjectMcpServers": true,
