@@ -2,33 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { getPixCouponForCart, isPixCoupon } from "@/config/pixCoupons";
 
 export type PaymentMethod = "pix" | "credit" | "paypal";
 
 interface PaymentMethodSelectorProps {
   className?: string;
   subtotalCents: number;
-  totalNonShippingItems: number;  // NOVO — fonte: useNonShippingTotalItems()
+  totalNonShippingItems: number; // fonte: useNonShippingTotalItems()
   onMethodChange?: (method: PaymentMethod) => void;
-}
-
-// Cupons PIX condicionais à quantidade do carrinho.
-// Política Jilo: <7 marmitas → PIX5 (5%) | ≥7 marmitas → PIX3 (3%, combinável com Kit X% automático).
-// PIX5 é NÃO combinável no Shopify Admin; aplicá-lo com ≥7 marmitas falha com applicable=false.
-// Manter sincronizado com a config do Shopify Admin → Discounts.
-const PIX_COUPON_HIGH_VOLUME = "PIX3";  // ≥ SHIPPING_FREE_THRESHOLD
-const PIX_COUPON_LOW_VOLUME = "PIX5";   // < SHIPPING_FREE_THRESHOLD
-const PIX_COUPON_CODES = new Set([PIX_COUPON_HIGH_VOLUME, PIX_COUPON_LOW_VOLUME]);
-
-function getPixCouponForCart(totalNonShippingItems: number): {
-  code: string;
-  percent: number;
-} {
-  if (totalNonShippingItems >= SHIPPING_FREE_THRESHOLD) {
-    return { code: PIX_COUPON_HIGH_VOLUME, percent: 3 };
-  }
-  return { code: PIX_COUPON_LOW_VOLUME, percent: 5 };
 }
 
 const PaymentMethodSelector = ({
@@ -50,13 +32,13 @@ const PaymentMethodSelector = ({
     : 0;
 
   const hasOtherCoupon = discountCodes.some(
-    (dc) => dc.applicable && !PIX_COUPON_CODES.has(dc.code.toUpperCase())
+    (dc) => dc.applicable && !isPixCoupon(dc.code)
   );
 
-  // Quando cliente está com PIX selecionado e cruza o threshold de 7 marmitas
-  // (subindo ou descendo), o cupom PIX vigente muda (PIX5 ↔ PIX3).
-  // Aqui detectamos a mudança e trocamos o cupom no Shopify Cart automaticamente,
-  // preservando o estado "PIX selecionado" do usuário.
+  // Quando o cliente está com PIX selecionado e cruza o threshold de 7 marmitas
+  // (subindo ou descendo), o cupom PIX vigente muda (PIX5 ↔ PIX3). Aqui detectamos
+  // a mudança e trocamos o cupom no Shopify Cart automaticamente, preservando o
+  // estado "PIX selecionado" do usuário.
   const lastSyncedCouponRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -66,9 +48,7 @@ const PaymentMethodSelector = ({
     }
 
     const expectedCoupon = activePix.code;
-    const currentApplied = discountCodes.find((dc) =>
-      PIX_COUPON_CODES.has(dc.code.toUpperCase())
-    );
+    const currentApplied = discountCodes.find((dc) => isPixCoupon(dc.code));
 
     // Se já temos o cupom certo aplicado e marcado como applicable, nada a fazer.
     if (
@@ -103,16 +83,14 @@ const PaymentMethodSelector = ({
             "Seu desconto PIX precisou ser recalculado mas falhou. Selecione novamente."
           );
         } else {
-          toast.success(
-            `Desconto PIX atualizado: ${activePix.percent}% off`
-          );
+          toast.success(`Desconto PIX atualizado: ${activePix.percent}% off`);
         }
       } finally {
         setApplying(false);
       }
     })();
-    // ESLint: queremos rodar quando totalNonShippingItems mudar.
-    // discountCodes está incluído pq o `applicable` pode mudar fora do nosso fluxo.
+    // ESLint: queremos rodar quando totalNonShippingItems mudar. discountCodes está
+    // incluído pq o `applicable` pode mudar fora do nosso fluxo.
   }, [activePix.code, activePix.percent, selected, discountCodes, applyDiscountCode, totalNonShippingItems]);
 
   const handleSelect = async (method: PaymentMethod) => {
@@ -120,7 +98,7 @@ const PaymentMethodSelector = ({
 
     if (method === "pix" && hasOtherCoupon) {
       const otherCode = discountCodes.find(
-        (dc) => dc.applicable && !PIX_COUPON_CODES.has(dc.code.toUpperCase())
+        (dc) => dc.applicable && !isPixCoupon(dc.code)
       )?.code;
       const confirmed = window.confirm(
         `Você tem o cupom ${otherCode} aplicado. Selecionar PIX vai substituí-lo pelo desconto PIX. Deseja continuar?`
@@ -138,7 +116,7 @@ const PaymentMethodSelector = ({
           toast.success(`PIX selecionado — ${activePix.percent}% de desconto aplicado!`);
         } else {
           // Diagnóstico: applicable=false em cenário inesperado.
-          // Esperado apenas se Shopify Admin estiver desconfigurado.
+          // Esperado apenas se o Shopify Admin estiver desconfigurado.
           console.error("[PaymentMethodSelector] PIX coupon não aplicável", {
             attemptedCode: couponToApply,
             totalNonShippingItems,

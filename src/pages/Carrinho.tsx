@@ -16,8 +16,10 @@ import AuthDialog from "@/components/AuthDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import ShippingMethodSelector from "@/components/ShippingMethodSelector";
 import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { isValidKitQuantity } from "@/config/kitQuantity";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 import SEO from "@/components/SEO";
+import KitQuantityNotice from "@/components/KitQuantityNotice";
 
 const Carrinho = () => {
   const {
@@ -32,9 +34,10 @@ const Carrinho = () => {
     discountCodes,
     applyDiscountCode,
     removeDiscountCode,
-    cartCost,
     cartDiscountAllocations,
     refreshCartDetails,
+    reconcileDiscountsOnLoad,
+    shopifyHasShippingLine,
   } = useCartStore();
 
   const [couponCode, setCouponCode] = useState("");
@@ -51,94 +54,66 @@ const Carrinho = () => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
 
   const totalNonShippingItems = useNonShippingTotalItems();
+  const isQuantityValid = isValidKitQuantity(totalNonShippingItems);
   const visibleItems = useVisibleCartItems();
   const totalItems = totalNonShippingItems;
   const subtotal = visibleItems.reduce(
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
-  // R52 (revisado Sprint 4.9): o hard-block compara contra o subtotalAmount da
-  // Shopify (produtos + variant fantasma de frete, SEM desconto), NÃO o totalAmount
-  // (que vem com o desconto do cupom aplicado). Comparar com totalAmount travava o
-  // checkout sempre que havia cupom (ex: PIX5 = −5%), porque o expectedTotal local
-  // é sem desconto. O subtotalAmount valida exatamente o que importa: o frete está
-  // dentro do Shopify Cart?
-  const shopifySubtotal = cartCost ? parseFloat(cartCost.subtotalAmount) : null;
-
-  // R53: o TOTAL exibido na página é somatória LOCAL — subtotal + frete.
-  // NÃO usa cartCost.totalAmount do Shopify porque (a) ele pode não incluir o
-  // frete (variant fantasma pode não estar sincronizada no momento do fetch) e
-  // (b) ele já vem com o desconto do cupom aplicado (ex: PIX5), e o desconto só
-  // deve aparecer no checkout Shopify — a própria UI comunica isso logo abaixo
-  // do total ("Descontos aplicados no checkout Shopify").
+  // R53: TOTAL exibido é somatória LOCAL — subtotal + frete. NÃO usa cartCost.totalAmount
+  // do Shopify (que vem com desconto de cupom/kit). O desconto aparece só no checkout Shopify.
   const displayTotal = subtotal + activeShippingFeeCents / 100;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
-  // canCheckout cobre 4 condições:
-  // 1. Endereço selecionado e em SJC (whitelist DELIVERY_AREAS)
-  // 2. Frete resolvido — ou é grátis (cart ≥ 7) ou tem quote Uber ativa
-  // 3. Cart não-vazio (verificado depois no disabled do botão)
-  // 4. **NOVO (Sprint 4.7):** o cartCost.totalAmount do Shopify reflete o estado
-  //    real esperado (subtotal + frete). Sem isso, falha silenciosa na sincronização
-  //    da variant fantasma (ex: edge `update-shipping-variant-price` retornando 401)
-  //    permitiria avançar pro checkout com frete não cobrado — perda direta de receita.
-  const expectedTotal = subtotal + activeShippingFeeCents / 100;
-  // Compara contra o subtotalAmount (produtos + frete, SEM desconto), não o
-  // totalAmount (com desconto). Ver R52 revisado (Sprint 4.9).
-  const totalMatchesShopify =
-    shopifySubtotal !== null && Math.abs(shopifySubtotal - expectedTotal) < 0.01;
 
+  const free = isFreeShipping(totalNonShippingItems);
+
+  // R59 (substitui o antigo totalMatchesShopify): o hard-block valida o ESTADO DO FRETE
+  // pela verdade do servidor — a linha de frete (variant fantasma) está no Shopify Cart?
+  // Comparar subtotais quebrava porque os descontos de Kit são "Amount off products"
+  // (DiscountProducts) e reduzem o subtotalAmount; nunca batia com o subtotal local cru,
+  // travando o checkout justamente nas quantidades de kit (≥7).
+  // - frete grátis (≥7): a linha de frete NÃO pode estar no cart
+  // - frete pago (1-6): a linha de frete PRECISA estar no cart
+  const freightStateOk = free ? !shopifyHasShippingLine : shopifyHasShippingLine;
+
+  // Transientes (feedback explícito enquanto o Shopify Cart ainda não reflete o estado):
+  const freightSyncingWhileFree = free && shopifyHasShippingLine; // removendo a linha
+  const freightSyncingWhilePaid =
+    !free && activeQuoteId !== null && !shopifyHasShippingLine; // adicionando a linha
+
+  // canCheckout cobre 4 condições:
+  // 1. Endereço entregável (SJC)
+  // 2. Frete resolvido — grátis (≥7) ou quote Uber ativa
+  // 3. Quantidade válida pela R56 (avulso < 7 ou múltiplos de 7)
+  // 4. Estado do frete no Shopify Cart correto (R59) — imune a descontos
   const canCheckout =
     deliveryCheck?.isDeliverable === true &&
-    (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null) &&
-    // Em frete grátis: expectedTotal = subtotal, validado normalmente.
-    // Em frete pago: expectedTotal inclui frete; se a variant fantasma não entrou
-    // no Shopify Cart, shopifySubtotal == subtotal != expectedTotal → bloqueia.
-    totalMatchesShopify;
+    (free || activeQuoteId !== null) &&
+    isQuantityValid &&
+    freightStateOk;
 
   useEffect(() => {
     syncCart();
     refreshCartDetails();
-  }, [syncCart, refreshCartDetails]);
+    reconcileDiscountsOnLoad();
+  }, [syncCart, refreshCartDetails, reconcileDiscountsOnLoad]);
 
   useEffect(() => {
     refreshCartDetails();
   }, [discountCodes, refreshCartDetails]);
 
-  // Diagnóstico defensivo (Sprint 4.7): se quote Uber está ativa mas o Shopify Cart
-  // não inclui o frete esperado, logar warning. Isso indica falha na sincronização
-  // da variant fantasma (provavelmente edge update-shipping-variant-price com erro).
-  // Cliente legítimo é protegido pelo hard-block do canCheckout, mas o time precisa
-  // saber pra investigar.
   useEffect(() => {
-    if (
-      !isFreeShipping(totalNonShippingItems) &&
-      activeQuoteId !== null &&
-      shopifySubtotal !== null &&
-      !totalMatchesShopify
-    ) {
+    if (freightSyncingWhilePaid) {
       console.warn(
-        "[Carrinho] Discrepância detectada: quote Uber ativa mas Shopify Cart sem frete. " +
-        "Variant fantasma pode não ter entrado. Checkout bloqueado por segurança.",
-        {
-          subtotal,
-          activeShippingFeeCents,
-          expectedTotal,
-          shopifySubtotal,
-          diff: shopifySubtotal !== null ? shopifySubtotal - expectedTotal : null,
-        }
+        "[Carrinho] Quote Uber ativa mas a linha de frete ainda não está no Shopify Cart. " +
+        "Estado transitório de sincronização; checkout bloqueado por segurança até a variant entrar.",
+        { subtotal, activeShippingFeeCents, totalNonShippingItems }
       );
     }
-  }, [
-    totalMatchesShopify,
-    activeQuoteId,
-    shopifySubtotal,
-    subtotal,
-    activeShippingFeeCents,
-    expectedTotal,
-    totalNonShippingItems,
-  ]);
+  }, [freightSyncingWhilePaid, subtotal, activeShippingFeeCents, totalNonShippingItems]);
 
   const fetchSuggestions = useCallback(async () => {
     setLoadingSuggestions(true);
@@ -576,6 +551,8 @@ const Carrinho = () => {
 
 
 
+              <KitQuantityNotice totalNonShippingItems={totalNonShippingItems} className="mb-4" />
+
               {/* Payment Method Selector */}
               <div className="mb-5">
                 <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} totalNonShippingItems={totalNonShippingItems} />
@@ -589,7 +566,8 @@ const Carrinho = () => {
                   isLoading ||
                   isSyncing ||
                   (!isFreeShipping(totalNonShippingItems) && !activeQuoteId) ||
-                  (!isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify)
+                  freightSyncingWhilePaid ||
+                  freightSyncingWhileFree
                 }
                 className="w-full h-14 bg-[#1e3a1e] text-white rounded-2xl font-bold text-base font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -599,12 +577,14 @@ const Carrinho = () => {
                   "Selecione um endereço"
                 ) : !deliveryCheck.isDeliverable ? (
                   "Endereço fora da cobertura"
+                ) : !isQuantityValid ? (
+                  "Complete seu kit de 7"
                 ) : !isFreeShipping(totalNonShippingItems) && !activeQuoteId ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Calculando frete...
                   </>
-                ) : !isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify ? (
+                ) : freightSyncingWhilePaid ? (
                   // Quote Uber existe mas a variant fantasma ainda não entrou no Shopify Cart.
                   // Estado TRANSITÓRIO normal (~700ms-1.5s de latência da sincronização) — por isso
                   // mostramos loading explícito. Em falha real (ex: edge update-shipping-variant-price
@@ -613,6 +593,11 @@ const Carrinho = () => {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Sincronizando frete...
+                  </>
+                ) : freightSyncingWhileFree ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Atualizando frete grátis…
                   </>
                 ) : !user ? (
                   <>
