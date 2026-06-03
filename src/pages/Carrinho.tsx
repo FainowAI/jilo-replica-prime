@@ -37,6 +37,7 @@ const Carrinho = () => {
     cartCost,
     cartDiscountAllocations,
     refreshCartDetails,
+    reconcileDiscountsOnLoad,
   } = useCartStore();
 
   const [couponCode, setCouponCode] = useState("");
@@ -91,6 +92,14 @@ const Carrinho = () => {
   const totalMatchesShopify =
     shopifySubtotal !== null && Math.abs(shopifySubtotal - expectedTotal) < 0.01;
 
+  // Frete grátis (≥7) mas o Shopify Cart ainda tem a linha de frete (remoção em curso
+  // ou falhou). Enquanto isso, o hard-block segura o checkout (R52) — aqui só damos
+  // feedback explícito em vez de um botão travado e mudo.
+  const freightSyncingWhileFree =
+    isFreeShipping(totalNonShippingItems) &&
+    shopifySubtotal !== null &&
+    shopifySubtotal - expectedTotal > 0.01;
+
   const canCheckout =
     deliveryCheck?.isDeliverable === true &&
     (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null) &&
@@ -103,7 +112,8 @@ const Carrinho = () => {
   useEffect(() => {
     syncCart();
     refreshCartDetails();
-  }, [syncCart, refreshCartDetails]);
+    reconcileDiscountsOnLoad();
+  }, [syncCart, refreshCartDetails, reconcileDiscountsOnLoad]);
 
   useEffect(() => {
     refreshCartDetails();
@@ -594,7 +604,8 @@ const Carrinho = () => {
                   isLoading ||
                   isSyncing ||
                   (!isFreeShipping(totalNonShippingItems) && !activeQuoteId) ||
-                  (!isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify)
+                  (!isFreeShipping(totalNonShippingItems) && activeQuoteId && !totalMatchesShopify) ||
+                  freightSyncingWhileFree
                 }
                 className="w-full h-14 bg-[#1e3a1e] text-white rounded-2xl font-bold text-base font-sans shadow-[0px_4px_20px_0px_rgba(30,58,30,0.28)] hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -620,6 +631,11 @@ const Carrinho = () => {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Sincronizando frete...
+                  </>
+                ) : freightSyncingWhileFree ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Atualizando frete grátis…
                   </>
                 ) : !user ? (
                   <>

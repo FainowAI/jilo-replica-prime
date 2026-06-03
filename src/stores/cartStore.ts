@@ -12,6 +12,7 @@ import {
   fetchCartFull,
 } from '@/lib/shopify';
 import { isShippingVariant } from '@/config/shipping';
+import { PIX_COUPON_CODES } from '@/config/pixCoupons';
 
 export interface CartItem {
   lineId: string | null;
@@ -29,6 +30,7 @@ interface CartStore {
   checkoutUrl: string | null;
   isLoading: boolean;
   isSyncing: boolean;
+  pixReconciled: boolean;
   discountCodes: Array<{ code: string; applicable: boolean }>;
   cartCost: {
     totalAmount: string;
@@ -46,6 +48,7 @@ interface CartStore {
   syncCart: () => Promise<void>;
   getCheckoutUrl: () => string | null;
   applyDiscountCode: (code: string) => Promise<{ success: boolean; applicable?: boolean }>;
+  reconcileDiscountsOnLoad: () => Promise<void>;
   removeDiscountCode: () => Promise<void>;
   refreshCartDetails: () => Promise<void>;
 }
@@ -58,6 +61,7 @@ export const useCartStore = create<CartStore>()(
       checkoutUrl: null,
       isLoading: false,
       isSyncing: false,
+      pixReconciled: false,
       discountCodes: [],
       cartCost: null,
       cartDiscountAllocations: [],
@@ -274,6 +278,52 @@ export const useCartStore = create<CartStore>()(
         } catch (error) {
           console.error('Failed to apply discount code:', error);
           return { success: false };
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      reconcileDiscountsOnLoad: async () => {
+        // Roda no máximo uma vez por sessão de carregamento.
+        if (get().pixReconciled) return;
+        set({ pixReconciled: true });
+
+        const { cartId, discountCodes, clearCart } = get();
+        if (!cartId) return;
+
+        const hasPix = discountCodes.some((dc) =>
+          PIX_COUPON_CODES.has(dc.code.toUpperCase())
+        );
+        if (!hasPix) return; // nada de PIX grudento — não mexe
+
+        // Mantém apenas cupons NÃO-PIX (manuais sobrevivem).
+        const keep = discountCodes.filter(
+          (dc) => !PIX_COUPON_CODES.has(dc.code.toUpperCase())
+        );
+
+        // Otimista: limpa PIX do estado local já, pra UI não piscar "PIX aplicado".
+        set({ discountCodes: keep });
+
+        set({ isLoading: true });
+        try {
+          if (keep.length === 0) {
+            // Sem manuais → limpa todos os códigos do Shopify Cart (caminho conhecido).
+            const result = await removeDiscountCodesFromCart(cartId);
+            if (result.cartNotFound) { clearCart(); return; }
+            if (result.success) set({ discountCodes: [] });
+          } else {
+            // Reaplica SÓ os manuais — cartDiscountCodesUpdate substitui o conjunto,
+            // então o PIX sai e os manuais ficam.
+            const keepCodes = keep.map((dc) => dc.code);
+            const result = await applyDiscountCodesToCart(cartId, keepCodes);
+            if (result.cartNotFound) { clearCart(); return; }
+            if (result.success && result.discountCodes) {
+              set({ discountCodes: result.discountCodes });
+            }
+          }
+          await get().refreshCartDetails();
+        } catch (error) {
+          console.error("[cartStore] reconcileDiscountsOnLoad falhou:", error);
         } finally {
           set({ isLoading: false });
         }

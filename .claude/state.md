@@ -1,20 +1,19 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-03 (Sprint 5.1 — Venda em múltiplos de 7)
+2026-06-03 (Sprint 5.1 — kit múltiplo de 7 + frete grátis + PIX efêmero)
 
-## O que foi feito na última sessão (Sprint 5.1 — Venda em múltiplos de 7)
+## Última sessão (Sprint 5.1 — kit múltiplo de 7 + frete grátis + PIX efêmero)
+- R56: a partir de 7 marmitas só múltiplos de 7. Soft-block com gate único no canCheckout. Aviso acionável (botão "Adicionar mais N" → /kit-livre).
+- R57: PIX (PIX3/PIX5) nunca grudento — reconcileDiscountsOnLoad remove no load, manuais (100teste) sobrevivem.
+- R58: transição pra frete grátis blindada — remoção robusta da variant fantasma + "Atualizando frete grátis…".
+- Criados: src/config/kitQuantity.ts, src/config/pixCoupons.ts, src/components/KitQuantityNotice.tsx.
+- Editados: cartStore.ts, ShippingMethodSelector.tsx, Carrinho.tsx, CartDrawer.tsx, KitLivre.tsx, PaymentMethodSelector.tsx (refactor de import).
+- 0 migrations, 0 edge functions. Loja confirmada: PIX5/PIX3 ACTIVE, 100teste manual; variant fantasma ACTIVE; kits 7/14/21/28 (teto 25%).
 
-- Regra R56: a partir de 7 marmitas, só múltiplos de 7 (logística da sacola Jiló). 1–6 segue avulso.
-- Soft-block: gate único no `canCheckout` do `Carrinho.tsx` (4ª condição). Nenhum ponto de adição rejeita.
-- Criados: `src/config/kitQuantity.ts` (`KIT_STEP = SHIPPING_FREE_THRESHOLD`, `isValidKitQuantity`, `getKitQuantityGuidance`), `src/components/KitQuantityNotice.tsx` (copy voz Jiló da fase inicial).
-- Editados: `Carrinho.tsx` (`canCheckout` + aviso + label do botão), `CartDrawer.tsx` (aviso informativo), `KitLivre.tsx` (múltiplos ilimitados, removido cap de 28, lógica de próximo múltiplo genérica).
-- 0 migrations, 0 edge functions. Loja Shopify confirmada íntegra (26 marmitas, variant fantasma ACTIVE, kits 7/14/21/28 >=-based com teto 25% em 28+).
-
-### Pendências / Notas
-
-- Validação manual: testar faixas 6, 7, 8, 13, 14, 21, 28, 35 no `/carrinho` e no KitLivre.
-- Bug aberto do PIX no hard-block (pré-existente) segue NÃO resolvido — fora do escopo desta sprint.
+### Pendências
+- QA manual: faixas 6/7/8/13/14/28/35 no carrinho e KitLivre; reabrir o site com PIX de sessão anterior (deve sumir) e com cupom manual (deve ficar); transição 6→7 observando o frete.
+- Bug aberto do PIX no hard-block (pré-existente) segue fora de escopo.
 
 ## O que foi feito na Ãºltima sessÃ£o (Sprint 5.0 â€” PublicaÃ§Ã£o no sales channel + status ACTIVE + filtro de catÃ¡logo)
 
@@ -265,6 +264,7 @@
 - **Sprint 4.7 (2026-05-27)** â€” RefatoraÃ§Ã£o OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
 - **Sprint 4.8 (2026-05-28)** â€” TOTAL da pÃ¡gina de carrinho via somatÃ³ria local (`subtotal + frete`), desacoplando display da cobranÃ§a Shopify
 - **Sprint 5.0 (2026-06-01)** â€” Causa raiz resolvida: produto fantasma estava publicado sÃ³ no Point of Sale, nÃ£o no Online Store; fix = publicar no Online Store + `status: ACTIVE` + filtro `-tag:__internal_shipping` nas queries de catÃ¡logo. UNLISTED foi testado e NÃƒO Ã© exposto pela Storefront desta loja. ValidaÃ§Ã£o pÃ³s-add (R55) mantida como defesa. (Bug aberto: PIX trava o hard-block do checkout â€” ver PendÃªncias.)
+- **Sprint 5.1 (2026-06-03)** — Kit em múltiplos de 7 com UX acionável (R56), frete grátis blindado na transição ≥7 (R58) e cupom PIX efêmero reconciliado no load (R57). Criados `kitQuantity.ts`, `pixCoupons.ts`, `KitQuantityNotice.tsx`. 0 migrations, 0 edge functions.
 
 ## PendÃªncias
 
