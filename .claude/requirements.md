@@ -86,6 +86,10 @@
 
 - **R55.** O método `cartStore.addItem` deve fazer **verificação pós-add** apenas quando o item adicionado é a variant fantasma de frete (`isShippingVariant(variantId) === true`). Após `addLineToShopifyCart` retornar `success: true`, fazer `fetchCartFull` e confirmar que existe uma linha cujo `merchandise.id === item.variantId`. Se NÃO existir, logar `console.error` com payload de diagnóstico (cartId, variantId, contagem de lines, IDs das lines existentes), reverter o `items[]` local pra refletir a falha, e o hard-block do `canCheckout` (R52) impede o checkout naturalmente. Itens normais (marmitas, produtos ACTIVE) NÃO precisam dessa verificação. Defesa em profundidade contra regressões da publicação/status do produto fantasma (ex.: produto despublicado do Online Store, status revertido). Sprint 5.0.
 
+## Quantidade mínima de kit (Sprint 5.1, Junho 2026)
+
+- **R56.** Venda em múltiplos de `KIT_STEP` a partir de `KIT_STEP` marmitas. De 1 a 6 marmitas: avulso livre (frete Uber Direct, R34). A partir de 7: só múltiplos exatos de 7 (7, 14, 21, 28, 35, 42...), sem teto — pedidos maiores saem em sacola fechada da Jiló (formato da fase inicial do programa). `KIT_STEP` = `SHIPPING_FREE_THRESHOLD` (fonte única, `src/config/kitQuantity.ts`). Aplicação é SOFT-BLOCK: nenhum ponto de adição rejeita itens; o gate único é o `canCheckout` em `Carrinho.tsx` (4ª condição `isValidKitQuantity(totalNonShippingItems)`), que desabilita o checkout com label "Complete seu kit de 7" e exibe `<KitQuantityNotice />`. Contagem via `useNonShippingTotalItems` (exclui variant fantasma). Carrinho legado em qtd inválida NÃO é auto-editado. Sem migration (carrinho não vive no Supabase). KitLivre passou a aceitar múltiplos ilimitados (era travado em 28). Desconto Shopify satura em 25% a partir de 28 (não há tier acima).
+
 ## Domínio do checkout e return URL (Sprint 4.2, Maio 2026)
 
 - **R45.** Em todo redirect pro checkout Shopify (`handleCheckout` em `Carrinho.tsx`, `handleBuyNow` em `Product.tsx`), o frontend DEVE:

@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import PixCallout from "@/components/PixCallout";
+import KitQuantityNotice from "@/components/KitQuantityNotice";
 import { isFreeShipping, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 
@@ -89,6 +90,7 @@ export const CartDrawer = () => {
                     : `Frete grátis a partir de ${SHIPPING_FREE_THRESHOLD} marmitas (faltam ${itemsRemaining})`}
                 </p>
               </div>
+              <KitQuantityNotice totalNonShippingItems={totalNonShippingItems} variant="inline" />
             </div>
 
             {/* Items List */}
