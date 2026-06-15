@@ -12,6 +12,7 @@ import {
   fetchCartFull,
 } from '@/lib/shopify';
 import { isShippingVariant } from '@/config/shipping';
+import { PIX_COUPON_CODES } from '@/config/pixCoupons';
 
 export interface CartItem {
   lineId: string | null;
@@ -29,6 +30,7 @@ interface CartStore {
   checkoutUrl: string | null;
   isLoading: boolean;
   isSyncing: boolean;
+  pixReconciled: boolean;
   discountCodes: Array<{ code: string; applicable: boolean }>;
   cartCost: {
     totalAmount: string;
@@ -39,6 +41,7 @@ interface CartStore {
     title?: string;
     code?: string;
   }>;
+  shopifyHasShippingLine: boolean;
   addItem: (item: Omit<CartItem, 'lineId'>) => Promise<void>;
   updateQuantity: (variantId: string, quantity: number) => Promise<void>;
   removeItem: (variantId: string) => Promise<void>;
@@ -46,6 +49,7 @@ interface CartStore {
   syncCart: () => Promise<void>;
   getCheckoutUrl: () => string | null;
   applyDiscountCode: (code: string) => Promise<{ success: boolean; applicable?: boolean }>;
+  reconcileDiscountsOnLoad: () => Promise<void>;
   removeDiscountCode: () => Promise<void>;
   refreshCartDetails: () => Promise<void>;
 }
@@ -58,9 +62,11 @@ export const useCartStore = create<CartStore>()(
       checkoutUrl: null,
       isLoading: false,
       isSyncing: false,
+      pixReconciled: false,
       discountCodes: [],
       cartCost: null,
       cartDiscountAllocations: [],
+      shopifyHasShippingLine: false,
 
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
@@ -279,6 +285,52 @@ export const useCartStore = create<CartStore>()(
         }
       },
 
+      reconcileDiscountsOnLoad: async () => {
+        // Roda no máximo uma vez por sessão de carregamento.
+        if (get().pixReconciled) return;
+        set({ pixReconciled: true });
+
+        const { cartId, discountCodes, clearCart } = get();
+        if (!cartId) return;
+
+        const hasPix = discountCodes.some((dc) =>
+          PIX_COUPON_CODES.has(dc.code.toUpperCase())
+        );
+        if (!hasPix) return; // nada de PIX grudento — não mexe
+
+        // Mantém apenas cupons NÃO-PIX (manuais sobrevivem).
+        const keep = discountCodes.filter(
+          (dc) => !PIX_COUPON_CODES.has(dc.code.toUpperCase())
+        );
+
+        // Otimista: limpa PIX do estado local já, pra UI não piscar "PIX aplicado".
+        set({ discountCodes: keep });
+
+        set({ isLoading: true });
+        try {
+          if (keep.length === 0) {
+            // Sem manuais → limpa todos os códigos do Shopify Cart (caminho conhecido).
+            const result = await removeDiscountCodesFromCart(cartId);
+            if (result.cartNotFound) { clearCart(); return; }
+            if (result.success) set({ discountCodes: [] });
+          } else {
+            // Reaplica SÓ os manuais — cartDiscountCodesUpdate substitui o conjunto,
+            // então o PIX sai e os manuais ficam.
+            const keepCodes = keep.map((dc) => dc.code);
+            const result = await applyDiscountCodesToCart(cartId, keepCodes);
+            if (result.cartNotFound) { clearCart(); return; }
+            if (result.success && result.discountCodes) {
+              set({ discountCodes: result.discountCodes });
+            }
+          }
+          await get().refreshCartDetails();
+        } catch (error) {
+          console.error("[cartStore] reconcileDiscountsOnLoad falhou:", error);
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
       refreshCartDetails: async () => {
         const { cartId } = get();
         if (!cartId) return;
@@ -291,7 +343,8 @@ export const useCartStore = create<CartStore>()(
 
           // Agrega as allocations de LINHA (descontos de kit do tipo DiscountProducts,
           // que alocam por linha e nunca aparecem em cart.discountAllocations).
-          // Soma discountedAmount.amount agrupando por title.
+          // Soma discountedAmount.amount agrupando por title. (Sprint 5.1 — necessário
+          // para EXIBIR o desconto de kit no carrinho.)
           const lineTotalsByTitle = new Map<
             string,
             { amount: number; currencyCode: string }
@@ -318,6 +371,13 @@ export const useCartStore = create<CartStore>()(
             title,
           }));
 
+          // Verdade do servidor: a linha de frete (variant fantasma) está no cart?
+          // O hard-block do Carrinho (R59) usa isso em vez de comparar subtotais — os
+          // descontos de Kit são "Amount off products" (DiscountProducts) e reduzem
+          // o subtotalAmount, então a comparação de totais nunca batia em pedidos ≥7.
+          const hasShippingLine = cart.lines.edges.some((edge) =>
+            isShippingVariant(edge.node.merchandise.id)
+          );
           set({
             cartCost: cart.cost ? {
               totalAmount: cart.cost.totalAmount.amount,
@@ -327,6 +387,7 @@ export const useCartStore = create<CartStore>()(
               ...cartLevelAllocations,
               ...aggregatedLineAllocations,
             ],
+            shopifyHasShippingLine: hasShippingLine,
           });
         } catch (error) {
           console.error('Failed to refresh cart details:', error);

@@ -170,8 +170,38 @@ export default function ShippingMethodSelector({
     const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
     if (isFree || addressNotDeliverable || !cepParams) {
       if (shippingItem) {
-        removeItem(SHIPPING_VARIANT_ID);
         lastSyncedFeeRef.current = null;
+        (async () => {
+          try {
+            await removeItem(SHIPPING_VARIANT_ID);
+            // Verifica no snapshot fresh do store se a linha realmente saiu.
+            const stillThere = useCartStore
+              .getState()
+              .items.some((i) => i.variantId === SHIPPING_VARIANT_ID);
+            if (stillThere) {
+              console.warn(
+                "[ShippingMethodSelector] Variant fantasma ainda presente após remoção " +
+                  "em frete grátis — retry."
+              );
+              await removeItem(SHIPPING_VARIANT_ID);
+              const stillThereAfterRetry = useCartStore
+                .getState()
+                .items.some((i) => i.variantId === SHIPPING_VARIANT_ID);
+              if (stillThereAfterRetry) {
+                console.error(
+                  "[ShippingMethodSelector] CRÍTICO: não foi possível remover a variant " +
+                    "fantasma num carrinho de frete grátis. O hard-block do Carrinho segue " +
+                    "protegendo contra cobrança de frete indevida."
+                );
+              }
+            }
+          } catch (err) {
+            console.error(
+              "[ShippingMethodSelector] Falha ao remover variant fantasma em frete grátis:",
+              err
+            );
+          }
+        })();
       }
       return;
     }

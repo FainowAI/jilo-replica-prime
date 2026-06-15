@@ -31,7 +31,12 @@
       "mcp__supabase-jilo__deploy_edge_function",
       "mcp__supabase-jilo__get_publishable_keys",
       "mcp__supabase-jilo__get_project_url",
-      "PowerShell(Get-NetTCPConnection *)"
+      "PowerShell(Get-NetTCPConnection *)",
+      "Bash(npm --version)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); const d={...p.dependencies,...p.devDependencies}; ['ts-node','tsx','vitest','eslint','typescript-eslint'].forEach\\(k=>console.log\\(k+': '+\\(d[k]||'AUSENTE'\\)\\)\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('tsx em devDependencies:', p.devDependencies.tsx || 'AUSENTE'\\); console.log\\('scripts que usam ts-node restantes:', Object.entries\\(p.scripts\\).filter\\(\\([k,v]\\)=>v.includes\\('ts-node'\\)\\).map\\(\\([k]\\)=>k\\).join\\(', '\\)||'\\(nenhum\\)'\\)\")",
+      "Bash(echo \"TSC_EXIT:$?\")"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -46,7 +46,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 
 1. **Kit temático**: Busca pratos de uma Collection do Shopify. Seletor de tamanho (7/14/21/28). Distribui a quantidade igualmente entre os pratos do grupo (remainder vai para os primeiros). Cada prato é adicionado individualmente via `addItem`.
 
-2. **Kit livre**: Busca todos os 50 produtos do catálogo. Usuário seleciona +/- por card. Validação: mínimo 7, máximo 28, múltiplo de 7.
+2. **Kit livre**: Busca todos os 50 produtos do catálogo. Usuário seleciona +/- por card. Validação: mínimo 7, sem teto superior, sempre múltiplo de 7. O desconto estimado usa `getDiscountForQty` e satura em 25% para qualquer quantidade >= 28.
 
 3. **Preço estimado (frontend)**: Antes de adicionar ao carrinho, o frontend calcula: preço base × (1 - desconto%). Isso é exibido como "~R$ X" com nota "Desconto aplicado automaticamente no carrinho".
 
@@ -76,7 +76,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 4. Adiciona/remove pratos individualmente (+/- em cada card)
 5. Sidebar (desktop) ou bottom bar (mobile) mostra progresso até múltiplo de 7
 6. Helper: "Adicione mais N para completar o kit de Y"
-7. Quando múltiplo de 7 (7-28): botão habilitado
+7. Quando múltiplo de 7 (7, 14, 21, 28, 35, 42...): botão habilitado
 8. Clica "Adicionar Kit ao Carrinho"
 9. Todos os itens selecionados são adicionados individualmente
 10. `refreshCartDetails()` busca desconto real
@@ -108,8 +108,9 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 3. Trocar tamanho (7→14→21→28) → preço estimado atualiza corretamente
 4. "Adicionar Kit ao Carrinho" → itens aparecem no CartDrawer → desconto Shopify visível
 5. Kit Livre: selecionar pratos, verificar progresso, botão desabilitado até múltiplo de 7
-6. Kit Livre: completar 7+ pratos → botão habilita → adicionar → desconto no carrinho
-7. Mobile (375px): bottom sheet funcional em Kit e KitLivre, sem overflow horizontal
+6. Kit Livre: completar 7, 14, 28, 35 e 42 pratos → botão habilita → adicionar → desconto no carrinho
+7. Kit Livre: confirmar que 35/42 não travam os botões `Adicionar`/`+` e que o desconto estimado permanece em 25%
+8. Mobile (375px): bottom sheet funcional em Kit e KitLivre, sem overflow horizontal
 
 ## Gotchas e armadilhas
 - **O desconto de kit aloca por LINHA, não por cart (Sprint 5.1):** o Automatic Discount dos kits é do tipo `DiscountProducts` no Shopify, que distribui o desconto em `line.discountAllocations` de cada item — `cart.discountAllocations` (nível cart) vem VAZIO para esse tipo. Qualquer leitura de desconto de kit DEVE agregar o nível de linha (somar `node.discountAllocations[].discountedAmount.amount` agrupando por `title`). O `refreshCartDetails()` em `cartStore.ts` já faz essa agregação e mescla com allocations de cart-level. Se um dia o desconto sumir do carrinho mesmo configurado no Admin, primeiro suspeito: alguém voltou a ler só `cart.discountAllocations`.
@@ -121,5 +122,5 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 - A tabela `kit_discount_tiers` no Supabase NÃO é consumida pelo frontend — os tiers estão hardcoded em `KIT_SIZES`/`KIT_TIERS`.
 - O preço estimado usa média simples dos preços dos pratos × quantidade — pode divergir do real se pratos tiverem preços muito diferentes.
 - Kit temático distribui quantidade igualmente entre todos os pratos da Collection — se a Collection tiver 3 pratos e o kit for de 7, a distribuição será 3+2+2.
-- Kit livre valida múltiplo de 7 entre 7 e 28 — quantidades fora disso desabilitam o botão.
+- Kit livre valida mínimo 7 e múltiplos de 7 sem teto superior — 35, 42 e acima são válidos; o desconto estimado continua saturando em 25% para quantidades >= 28.
 - A Collection no Shopify precisa existir com o handle correto (kit-leveza, kit-sabor, etc.) — se não existir, o preço aparece como "—" no WeeklyKits e a grid fica vazia no Kit.

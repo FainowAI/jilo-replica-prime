@@ -12,6 +12,7 @@ import BenefitsSummary from "@/components/BenefitsSummary";
 import FreeBadge from "@/components/FreeBadge";
 import PixCallout from "@/components/PixCallout";
 import SEO from "@/components/SEO";
+import { KIT_STEP, getKitQuantityGuidance } from "@/config/kitQuantity";
 import { toast } from "sonner";
 
 const CATEGORY_ORDER = ["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"];
@@ -34,13 +35,6 @@ function getDiscountForQty(qty: number) {
     if (qty >= KIT_TIERS[i].qty) return KIT_TIERS[i].discount;
   }
   return 0;
-}
-
-function getNextTier(qty: number) {
-  for (const tier of KIT_TIERS) {
-    if (qty < tier.qty) return tier;
-  }
-  return null;
 }
 
 function formatPrice(amount: number) {
@@ -87,10 +81,12 @@ export default function KitLivre() {
 
   // Selection state
   const totalSelected = Array.from(selectedItems.values()).reduce((sum, item) => sum + item.quantity, 0);
-  const isValidKit = totalSelected >= 7 && totalSelected <= 28 && totalSelected % 7 === 0;
+  const isValidKit = totalSelected >= KIT_STEP && totalSelected % KIT_STEP === 0;
   const discount = getDiscountForQty(totalSelected);
-  const nextTier = getNextTier(totalSelected);
-  const remaining = nextTier ? nextTier.qty - totalSelected : 0;
+  const guidance = getKitQuantityGuidance(totalSelected);
+  // quando já é múltiplo válido, não há "faltando"; senão, faltam guidance.toAdd
+  const remaining = isValidKit ? 0 : guidance.toAdd;
+  const nextTargetQty = totalSelected === 0 ? KIT_STEP : guidance.nextMultiple;
 
   // Estimated prices
   const estimatedBase = Array.from(selectedItems.values()).reduce(
@@ -100,8 +96,8 @@ export default function KitLivre() {
   const estimatedDiscounted = estimatedBase * (1 - discount / 100);
 
   // Progress bar
-  const progressTarget = nextTier ? nextTier.qty : (totalSelected > 0 ? totalSelected : 7);
-  const progressPct = Math.min(100, (totalSelected / progressTarget) * 100);
+  const progressTarget = nextTargetQty;
+  const progressPct = isValidKit ? 100 : Math.min(100, (totalSelected / progressTarget) * 100);
 
   const updateQuantity = useCallback((variantId: string, product: ShopifyProduct, delta: number) => {
     setSelectedItems((prev) => {
@@ -112,15 +108,9 @@ export default function KitLivre() {
 
       if (newQty === 0) {
         next.delete(variantId);
-      } else if (newQty > 28) {
-        return prev;
       } else {
         next.set(variantId, { product, quantity: newQty });
       }
-
-      // Check total doesn't exceed 28
-      const newTotal = Array.from(next.values()).reduce((s, i) => s + i.quantity, 0);
-      if (newTotal > 28) return prev;
 
       return next;
     });
@@ -161,7 +151,7 @@ export default function KitLivre() {
     <div className="min-h-screen bg-[#faf7f2]">
       <SEO
         title="Kit Livre | Monte seu kit Jilo da semana"
-        description="Monte seu Kit Livre Jilo escolhendo pratos de qualquer categoria. Mínimo 7, máximo 28, sempre múltiplo de 7. Descontos progressivos até 25%."
+        description="Monte seu Kit Livre Jilo escolhendo pratos de qualquer categoria. A partir de 7, sempre em múltiplos de 7. Descontos progressivos até 25%."
         path="/kit-livre"
       />
       <AnnouncementBar />
@@ -185,7 +175,7 @@ export default function KitLivre() {
                 Monte seu Kit da Semana
               </h1>
               <p className="text-sm lg:text-base text-[#1e3a1e]/70 font-sans max-w-lg">
-                Escolha seus pratos favoritos de qualquer categoria. Mínimo 7, máximo 28, sempre múltiplo de 7.
+                Escolha seus pratos favoritos de qualquer categoria. A partir de 7, sempre em múltiplos de 7.
               </p>
             </div>
             <FreeBadge size="md" className="bg-[#1e3a1e]/15 text-[#1e3a1e] self-start lg:self-auto" />
@@ -288,7 +278,6 @@ export default function KitLivre() {
                                   {selectedQty === 0 ? (
                                     <button
                                       onClick={() => updateQuantity(variantId, product, 1)}
-                                      disabled={totalSelected >= 28}
                                       className="w-full py-2.5 bg-[#1e3a1e] text-white rounded-xl text-xs font-bold font-sans hover:bg-[#1e3a1e]/90 transition-all disabled:opacity-40 flex items-center justify-center gap-1.5"
                                     >
                                       <Plus className="w-3.5 h-3.5" />
@@ -310,7 +299,6 @@ export default function KitLivre() {
                                       <span className="text-sm font-bold text-[#1e3a1e] font-sans">{selectedQty}</span>
                                       <button
                                         onClick={() => updateQuantity(variantId, product, 1)}
-                                        disabled={totalSelected >= 28}
                                         aria-label={`Aumentar quantidade de ${product.node.title}`}
                                         className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-white transition-colors disabled:opacity-40"
                                       >
@@ -338,7 +326,7 @@ export default function KitLivre() {
               isValidKit={isValidKit}
               discount={discount}
               remaining={remaining}
-              nextTier={nextTier}
+              nextTargetQty={nextTargetQty}
               progressPct={progressPct}
               progressTarget={progressTarget}
               estimatedBase={estimatedBase}
@@ -377,7 +365,7 @@ export default function KitLivre() {
               isValidKit={isValidKit}
               discount={discount}
               remaining={remaining}
-              nextTier={nextTier}
+              nextTargetQty={nextTargetQty}
               progressPct={progressPct}
               progressTarget={progressTarget}
               estimatedBase={estimatedBase}
@@ -435,7 +423,7 @@ function SidebarContent({
   isValidKit,
   discount,
   remaining,
-  nextTier,
+  nextTargetQty,
   progressPct,
   progressTarget,
   estimatedBase,
@@ -451,7 +439,7 @@ function SidebarContent({
   isValidKit: boolean;
   discount: number;
   remaining: number;
-  nextTier: { qty: number; discount: number } | null;
+  nextTargetQty: number;
   progressPct: number;
   progressTarget: number;
   estimatedBase: number;
@@ -487,9 +475,9 @@ function SidebarContent({
             style={{ width: `${progressPct}%` }}
           />
         </div>
-        {!isValidKit && totalSelected > 0 && nextTier && (
+        {!isValidKit && totalSelected > 0 && (
           <p className="text-xs text-[#9b9b9b] font-sans mt-1.5">
-            Adicione mais <span className="font-semibold text-[#d4a017]">{remaining}</span> para completar o kit de {nextTier.qty}
+            Adicione mais <span className="font-semibold text-[#d4a017]">{remaining}</span> para completar o kit de {nextTargetQty}
           </p>
         )}
         {isValidKit && (

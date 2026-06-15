@@ -4,13 +4,14 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import PixCallout from "@/components/PixCallout";
+import KitQuantityNotice from "@/components/KitQuantityNotice";
 import { isFreeShipping, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
-  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, cartDiscountAllocations } = useCartStore();
+  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, reconcileDiscountsOnLoad, cartDiscountAllocations } = useCartStore();
   const totalNonShippingItems = useNonShippingTotalItems();
   const visibleItems = useVisibleCartItems();
   const totalItems = totalNonShippingItems;
@@ -21,7 +22,12 @@ export const CartDrawer = () => {
   const isFree = isFreeShipping(totalNonShippingItems);
   const itemsRemaining = SHIPPING_FREE_THRESHOLD - totalNonShippingItems;
 
-  useEffect(() => { if (isOpen) syncCart(); }, [isOpen, syncCart]);
+  useEffect(() => {
+    if (isOpen) {
+      syncCart();
+      reconcileDiscountsOnLoad();
+    }
+  }, [isOpen, syncCart, reconcileDiscountsOnLoad]);
 
   const handleCheckout = () => {
     setIsOpen(false);
@@ -89,6 +95,14 @@ export const CartDrawer = () => {
                     : `Frete grátis a partir de ${SHIPPING_FREE_THRESHOLD} marmitas (faltam ${itemsRemaining})`}
                 </p>
               </div>
+            </div>
+
+            <div className="px-5 pb-2">
+              <KitQuantityNotice
+                totalNonShippingItems={totalNonShippingItems}
+                variant="inline"
+                onNavigate={() => setIsOpen(false)}
+              />
             </div>
 
             {/* Items List */}
