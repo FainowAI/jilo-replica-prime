@@ -592,6 +592,9 @@ export const CART_FULL_QUERY = `
               ... on CartAutomaticDiscountAllocation {
                 title
               }
+              ... on CartCodeDiscountAllocation {
+                code
+              }
             }
           }
         }
