@@ -65,13 +65,25 @@ const Carrinho = () => {
   // dentro do Shopify Cart?
   const shopifySubtotal = cartCost ? parseFloat(cartCost.subtotalAmount) : null;
 
-  // R53: o TOTAL exibido na página é somatória LOCAL — subtotal + frete.
-  // NÃO usa cartCost.totalAmount do Shopify porque (a) ele pode não incluir o
-  // frete (variant fantasma pode não estar sincronizada no momento do fetch) e
-  // (b) ele já vem com o desconto do cupom aplicado (ex: PIX5), e o desconto só
-  // deve aparecer no checkout Shopify — a própria UI comunica isso logo abaixo
-  // do total ("Descontos aplicados no checkout Shopify").
-  const displayTotal = subtotal + activeShippingFeeCents / 100;
+  // Desconto de kit agregado (vem de cartDiscountAllocations após o PROMPT 1).
+  const kitDiscountTotal = cartDiscountAllocations.reduce(
+    (sum, alloc) => sum + parseFloat(alloc.discountedAmount.amount),
+    0
+  );
+
+  // Produtos com desconto = subtotal cheio (soma local) menos o desconto de kit.
+  // NÃO usamos cartCost.subtotalAmount como fonte do número exibido: ele inclui a
+  // variant fantasma de frete quando ela está no cart, o que causaria dupla
+  // contagem do frete no TOTAL. A derivação local é robusta independente disso.
+  // (cartCost.subtotalAmount fica só como diagnóstico em shopifySubtotal.)
+  const productsTotalWithDiscount = subtotal - kitDiscountTotal;
+
+  // R53: o TOTAL exibido na página é somatória LOCAL — produtos (já com desconto
+  // de kit) + frete. NÃO usa cartCost.totalAmount do Shopify porque (a) ele pode
+  // não incluir o frete (variant fantasma pode não estar sincronizada no momento
+  // do fetch) e (b) ele já vem com o desconto do CUPOM manual aplicado (ex: PIX5),
+  // que só deve aparecer no checkout Shopify.
+  const displayTotal = productsTotalWithDiscount + activeShippingFeeCents / 100;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
@@ -83,18 +95,24 @@ const Carrinho = () => {
   //    real esperado (subtotal + frete). Sem isso, falha silenciosa na sincronização
   //    da variant fantasma (ex: edge `update-shipping-variant-price` retornando 401)
   //    permitiria avançar pro checkout com frete não cobrado — perda direta de receita.
-  const expectedTotal = subtotal + activeShippingFeeCents / 100;
-  // Compara contra o subtotalAmount (produtos + frete, SEM desconto), não o
-  // totalAmount (com desconto). Ver R52 revisado (Sprint 4.9).
+  // R52 (revisado): a base de comparação é o subtotal LÍQUIDO de kit (subtotal cheio
+  // menos kitDiscountTotal), porque o cartCost.subtotalAmount do Shopify já vem COM
+  // o desconto automático de kit aplicado por linha. Comparar contra o subtotal cheio
+  // travava o checkout dos kits (diff == desconto) mesmo em frete grátis. Para 1-6
+  // itens kitDiscountTotal = 0, então a base é idêntica ao subtotal cheio e a proteção
+  // de frete pago permanece inalterada.
+  const expectedTotal = (subtotal - kitDiscountTotal) + activeShippingFeeCents / 100;
+  // Compara contra o subtotalAmount (produtos com desconto de kit + frete, SEM cupom
+  // manual), não o totalAmount (que já desconta o cupom). Ver R52 revisado.
   const totalMatchesShopify =
     shopifySubtotal !== null && Math.abs(shopifySubtotal - expectedTotal) < 0.01;
 
   const canCheckout =
     deliveryCheck?.isDeliverable === true &&
     (isFreeShipping(totalNonShippingItems) || activeQuoteId !== null) &&
-    // Em frete grátis: expectedTotal = subtotal, validado normalmente.
+    // Em frete grátis: expectedTotal = subtotal líquido de kit, validado normalmente.
     // Em frete pago: expectedTotal inclui frete; se a variant fantasma não entrou
-    // no Shopify Cart, shopifySubtotal == subtotal != expectedTotal → bloqueia.
+    // no Shopify Cart, shopifySubtotal != expectedTotal → bloqueia.
     totalMatchesShopify;
 
   useEffect(() => {
@@ -570,15 +588,17 @@ const Carrinho = () => {
                   R$ {displayTotal.toFixed(2).replace(".", ",")}
                 </span>
               </div>
-              <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
-                Descontos aplicados no checkout Shopify
-              </p>
+              {hasAppliedCoupon && (
+                <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
+                  Seu cupom será aplicado no checkout
+                </p>
+              )}
 
 
 
               {/* Payment Method Selector */}
               <div className="mb-5">
-                <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} totalNonShippingItems={totalNonShippingItems} />
+                <PaymentMethodSelector subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)} totalNonShippingItems={totalNonShippingItems} />
               </div>
 
               {/* Checkout Button */}

@@ -285,12 +285,48 @@ export const useCartStore = create<CartStore>()(
         try {
           const cart = await fetchCartFull(cartId);
           if (!cart) return;
+
+          // Allocations de nível cart (descontos por código/cart) — mantidas como base.
+          const cartLevelAllocations = cart.discountAllocations || [];
+
+          // Agrega as allocations de LINHA (descontos de kit do tipo DiscountProducts,
+          // que alocam por linha e nunca aparecem em cart.discountAllocations).
+          // Soma discountedAmount.amount agrupando por title.
+          const lineTotalsByTitle = new Map<
+            string,
+            { amount: number; currencyCode: string }
+          >();
+          for (const edge of cart.lines?.edges || []) {
+            for (const alloc of edge.node?.discountAllocations || []) {
+              const title = alloc.title || 'Desconto de kit';
+              const amount = parseFloat(alloc.discountedAmount?.amount ?? '0');
+              if (!amount) continue;
+              const currencyCode = alloc.discountedAmount?.currencyCode ?? 'BRL';
+              const existing = lineTotalsByTitle.get(title);
+              if (existing) {
+                existing.amount += amount;
+              } else {
+                lineTotalsByTitle.set(title, { amount, currencyCode });
+              }
+            }
+          }
+
+          const aggregatedLineAllocations = Array.from(
+            lineTotalsByTitle.entries()
+          ).map(([title, { amount, currencyCode }]) => ({
+            discountedAmount: { amount: amount.toFixed(2), currencyCode },
+            title,
+          }));
+
           set({
             cartCost: cart.cost ? {
               totalAmount: cart.cost.totalAmount.amount,
               subtotalAmount: cart.cost.subtotalAmount.amount,
             } : null,
-            cartDiscountAllocations: cart.discountAllocations || [],
+            cartDiscountAllocations: [
+              ...cartLevelAllocations,
+              ...aggregatedLineAllocations,
+            ],
           });
         } catch (error) {
           console.error('Failed to refresh cart details:', error);

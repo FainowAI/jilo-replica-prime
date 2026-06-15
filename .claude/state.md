@@ -1,7 +1,27 @@
 # Estado do projeto Jilo
 
 ## Última atualização
-2026-06-01 (Sprint 5.0 — Causa raiz resolvida: produto fantasma precisa estar ACTIVE + publicado no Online Store; UNLISTED NÃO é exposto pela Storefront desta loja)
+2026-06-15 (Sprint 5.1 — Bug do desconto de kit no carrinho corrigido: leitura agrega `line.discountAllocations`, TOTAL usa subtotal líquido de kit, hard-block compara contra subtotal descontado, base do PIX com desconto)
+
+## O que foi feito na última sessão (Sprint 5.1 — Desconto de kit visível no carrinho)
+
+- **Bug corrigido:** o desconto de kit (Kit 7/14/21/28) NÃO aparecia no `/carrinho` e, pior, o hard-block do checkout travava todos os kits em "Sincronizando frete…" mesmo em frete grátis. Pedido de kit não finalizava.
+- **Causa raiz:** o desconto de kit é um Automatic Discount do tipo `DiscountProducts` no Shopify, que aloca **por linha** (`line.discountAllocations`). O `refreshCartDetails()` lia apenas `cart.discountAllocations` (nível cart), que vem VAZIO para esse tipo → `cartDiscountAllocations` ficava `[]`. Como o TOTAL e o hard-block usavam o subtotal cheio (sem desconto), enquanto o `cartCost.subtotalAmount` do Shopify já vinha descontado, a diferença (== valor do desconto) travava o `canCheckout`.
+- **Solução (4 mudanças encadeadas):**
+  1. **`cartStore.refreshCartDetails()`** — agrega `line.discountAllocations` somando por `title` (fallback "Desconto de kit"), mescla com allocations de cart-level (cart-level primeiro), e popula `cartDiscountAllocations`. `cartCost` inalterado. Sem mudança na interface pública nem no `partialize`.
+  2. **`Carrinho.tsx` — TOTAL com desconto:** `kitDiscountTotal` = soma das allocations; `productsTotalWithDiscount = subtotal - kitDiscountTotal`; `displayTotal = productsTotalWithDiscount + frete`. (Não usa `cartCost.subtotalAmount` direto pra evitar dupla contagem do frete da variant fantasma.) Linha de desconto já existia no JSX; texto auxiliar passou a aparecer só com cupom manual.
+  3. **`Carrinho.tsx` — hard-block:** `expectedTotal = (subtotal - kitDiscountTotal) + frete`. Mantém `totalMatchesShopify` e a proteção de frete pago (para 1-6 itens `kitDiscountTotal = 0`, comportamento idêntico ao anterior).
+  4. **`Carrinho.tsx` — base do PIX:** prop `subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)}` ao `<PaymentMethodSelector />`. O componente não mudou — só a prop.
+- **O que NÃO mudou:** `CART_FULL_QUERY` e `src/lib/shopify.ts` (a query já buscava `line.discountAllocations` + `cost.subtotalAmount`), variant fantasma de frete (R50/R55), `addItem`/`updateQuantity`/`removeItem`/`applyDiscountCode`/`removeDiscountCode`, chaves do localStorage, lógica interna do `PaymentMethodSelector`.
+- **Regra adicionada:** R56 em `requirements.md` (desconto de kit via agregação de linha; cupom manual só no checkout).
+- **Documentação atualizada:** `fluxo-kits.md` (regra 4 + gotcha), `fluxo-carrinho-checkout.md` (regra 16, R52/R53 revisadas, 3 gotchas), `requirements.md` (R56).
+- **Arquivos editados:** `src/stores/cartStore.ts` e `src/pages/Carrinho.tsx` (inclui o ajuste de prop do `<PaymentMethodSelector />` instanciado). 0 mudanças no `PaymentMethodSelector.tsx`, 0 na query, 0 migrations, 0 edge functions. `npx tsc --noEmit` limpo após cada prompt.
+
+### Pendências / Notas para a próxima sessão (Sprint 5.1)
+
+- **Validar manualmente:** kit de 7/14/21/28 em SJC com endereço válido → linha verde "Kit N – X% off", TOTAL com desconto, botão "Ir para o Checkout" habilitado (não trava em "Sincronizando frete…"). Cart de 1-6 avulsos → sem linha de desconto, total = subtotal + frete, proteção de frete pago intacta.
+- **Bug PIX no hard-block (Sprint 5.0) provavelmente resolvido como efeito colateral — CONFIRMAR:** como `kitDiscountTotal` soma TODAS as `cartDiscountAllocations` (incluindo o cupom PIX no nível cart), o `expectedTotal` agora desconta o PIX e deve bater com o `shopifySubtotal`. Testar PIX em cart de 1-6 itens com frete pago; se travar, aplicar a correção dedicada (comparar contra `totalAmount` quando há cupom) sem enfraquecer a proteção de frete-ausente. Ver gotcha em `fluxo-carrinho-checkout.md`.
+- **Débitos herdados ainda abertos:** edge `set-product-unlisted` obsoleta/perigosa (Sprint 5.0), HMAC `uber-webhook-receiver`, validação server-side de `shipping_fee_cents`, `PixCallout` estático "5% off".
 
 ## O que foi feito na última sessão (Sprint 5.0 — Publicação no sales channel + status ACTIVE + filtro de catálogo)
 
@@ -252,6 +272,7 @@
 - **Sprint 4.7 (2026-05-27)** — Refatoração OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
 - **Sprint 4.8 (2026-05-28)** — TOTAL da página de carrinho via somatória local (`subtotal + frete`), desacoplando display da cobrança Shopify
 - **Sprint 5.0 (2026-06-01)** — Causa raiz resolvida: produto fantasma estava publicado só no Point of Sale, não no Online Store; fix = publicar no Online Store + `status: ACTIVE` + filtro `-tag:__internal_shipping` nas queries de catálogo. UNLISTED foi testado e NÃO é exposto pela Storefront desta loja. Validação pós-add (R55) mantida como defesa. (Bug aberto: PIX trava o hard-block do checkout — ver Pendências.)
+- **Sprint 5.1 (2026-06-15)** — Desconto de kit visível no carrinho: `refreshCartDetails()` agrega `line.discountAllocations` (tipo `DiscountProducts` aloca por linha, não em `cart.discountAllocations`); TOTAL usa subtotal líquido de kit; hard-block compara contra subtotal descontado; base do PIX com desconto. R56 adicionada. (Provável efeito colateral: bug PIX do hard-block resolvido — validar.)
 
 ## Pendências
 
