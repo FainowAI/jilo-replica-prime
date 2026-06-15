@@ -50,7 +50,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 
 3. **Preço estimado (frontend)**: Antes de adicionar ao carrinho, o frontend calcula: preço base × (1 - desconto%). Isso é exibido como "~R$ X" com nota "Desconto aplicado automaticamente no carrinho".
 
-4. **Desconto real (Shopify)**: Após adicionar os itens ao carrinho, `refreshCartDetails()` busca `cart.discountAllocations` do Shopify. O desconto real aparece no Carrinho e CartDrawer.
+4. **Desconto real (Shopify)**: Após adicionar os itens ao carrinho, `refreshCartDetails()` lê o desconto do Shopify e popula `cartDiscountAllocations`. **Atenção:** o desconto de kit é um Automatic Discount do tipo `DiscountProducts`, que aloca **por linha** (`line.discountAllocations`), NÃO no nível do cart (`cart.discountAllocations`, que vem vazio para esse tipo). Por isso `refreshCartDetails()` AGREGA as allocations de linha (somando por `title`, ex: "Kit 7 – 10% off") e mescla com eventuais allocations de nível cart. O desconto real aparece no Carrinho e CartDrawer. (Sprint 5.1 — ver `fluxo-carrinho-checkout.md`.)
 
 5. **WeeklyKits**: Busca preço mínimo de cada Collection via `COLLECTION_BY_HANDLE_QUERY`. Exibe como "a partir de R$ X/un" (com 10% off = menor tier). Kit Livre usa o menor preço entre todos os kits.
 
@@ -113,6 +113,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 8. Mobile (375px): bottom sheet funcional em Kit e KitLivre, sem overflow horizontal
 
 ## Gotchas e armadilhas
+- **O desconto de kit aloca por LINHA, não por cart (Sprint 5.1):** o Automatic Discount dos kits é do tipo `DiscountProducts` no Shopify, que distribui o desconto em `line.discountAllocations` de cada item — `cart.discountAllocations` (nível cart) vem VAZIO para esse tipo. Qualquer leitura de desconto de kit DEVE agregar o nível de linha (somar `node.discountAllocations[].discountedAmount.amount` agrupando por `title`). O `refreshCartDetails()` em `cartStore.ts` já faz essa agregação e mescla com allocations de cart-level. Se um dia o desconto sumir do carrinho mesmo configurado no Admin, primeiro suspeito: alguém voltou a ler só `cart.discountAllocations`.
 - Se Automatic Discounts NÃO estiverem configurados no Shopify Admin → carrinho funciona mas sem desconto visível. O preço estimado no frontend não baterá com o checkout.
 - Limite de 50 produtos por query (`PRODUCTS_QUERY` e `COLLECTION_BY_HANDLE_QUERY`) — se o catálogo crescer, precisa de paginação.
 - `KIT_META` é hardcoded em `Kit.tsx` — adicionar um novo kit temático requer alterar o código.

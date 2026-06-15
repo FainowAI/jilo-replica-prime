@@ -61,9 +61,25 @@ const Carrinho = () => {
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
-  // R53: TOTAL exibido é somatória LOCAL — subtotal + frete. NÃO usa cartCost.totalAmount
-  // do Shopify (que vem com desconto de cupom/kit). O desconto aparece só no checkout Shopify.
-  const displayTotal = subtotal + activeShippingFeeCents / 100;
+  // Desconto de kit agregado (vem de cartDiscountAllocations — agregação de
+  // line.discountAllocations feita no cartStore.refreshCartDetails, Sprint 5.1).
+  const kitDiscountTotal = cartDiscountAllocations.reduce(
+    (sum, alloc) => sum + parseFloat(alloc.discountedAmount.amount),
+    0
+  );
+
+  // Produtos com desconto = subtotal cheio (soma local) menos o desconto de kit.
+  // NÃO usamos cartCost.subtotalAmount como fonte do número exibido: ele inclui a
+  // variant fantasma de frete quando ela está no cart, o que causaria dupla
+  // contagem do frete no TOTAL. A derivação local é robusta independente disso.
+  const productsTotalWithDiscount = subtotal - kitDiscountTotal;
+
+  // R53 (revisado Sprint 5.1): o TOTAL exibido na página é somatória LOCAL —
+  // produtos (já com desconto de kit) + frete. NÃO usa cartCost.totalAmount do
+  // Shopify porque (a) ele pode não incluir o frete (variant fantasma pode não
+  // estar sincronizada no momento do fetch) e (b) ele já vem com o desconto do
+  // CUPOM manual aplicado (ex: PIX5), que só deve aparecer no checkout Shopify.
+  const displayTotal = productsTotalWithDiscount + activeShippingFeeCents / 100;
 
   const appliedDiscount = discountCodes.find((dc) => dc.applicable);
   const hasAppliedCoupon = !!appliedDiscount;
@@ -545,9 +561,11 @@ const Carrinho = () => {
                   R$ {displayTotal.toFixed(2).replace(".", ",")}
                 </span>
               </div>
-              <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
-                Descontos aplicados no checkout Shopify
-              </p>
+              {hasAppliedCoupon && (
+                <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
+                  Seu cupom será aplicado no checkout
+                </p>
+              )}
 
 
 
@@ -555,7 +573,7 @@ const Carrinho = () => {
 
               {/* Payment Method Selector */}
               <div className="mb-5">
-                <PaymentMethodSelector subtotalCents={Math.round(subtotal * 100)} totalNonShippingItems={totalNonShippingItems} />
+                <PaymentMethodSelector subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)} totalNonShippingItems={totalNonShippingItems} />
               </div>
 
               {/* Checkout Button */}

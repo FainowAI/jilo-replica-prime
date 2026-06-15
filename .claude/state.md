@@ -1,7 +1,25 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-03 (Correções pós-Sprint 5.1 — encoding do PaymentMethodSelector + hard-block por presença da linha de frete R59)
+2026-06-15 (Merge main↔fi — Sprint 5.1 consolidada: kit múltiplo de 7 (R56) + PIX efêmero (R57) + frete grátis blindado (R58) + hard-block por presença da linha de frete (R59) + desconto de kit visível no carrinho (R60))
+
+## O que foi feito no merge (consolidação Sprint 5.1, 2026-06-15)
+
+Duas linhas de trabalho rotuladas "Sprint 5.1" divergiram entre `main` e `fi` e foram integradas. O código mesclado contém AMBAS:
+
+- **Da `main` (R56–R59):** kit em múltiplos de 7 (`src/config/kitQuantity.ts`), PIX efêmero reconciliado no load (`reconcileDiscountsOnLoad` + `src/config/pixCoupons.ts`), frete grátis blindado na transição, e o hard-block do checkout validando a PRESENÇA da linha de frete (`shopifyHasShippingLine`) em vez de comparar subtotais — imune a descontos. Detalhes nas seções abaixo ("Sprint 5.1" + "Correções pós-Sprint 5.1").
+- **Da `fi` (R60 — desconto de kit visível):** `cartStore.refreshCartDetails()` agrega `line.discountAllocations` (o desconto de kit é `DiscountProducts`, aloca por linha, nunca em `cart.discountAllocations`) e popula `cartDiscountAllocations`; `Carrinho.tsx` exibe a linha verde de desconto, usa `displayTotal = (subtotal - kitDiscountTotal) + frete`, e passa a base já com desconto ao PIX (`subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)}`).
+
+**Conflitos resolvidos no merge:**
+- `src/stores/cartStore.ts` (`refreshCartDetails`): COMBINADO — a agregação de allocations (fi) E o `shopifyHasShippingLine` (main) coexistem no mesmo `set`.
+- `src/pages/Carrinho.tsx`: mantém `kitDiscountTotal`/`productsTotalWithDiscount`/`displayTotal` com desconto (fi) e adota o `canCheckout` por `freightStateOk` + `isQuantityValid` (main, R59/R56). O antigo `totalMatchesShopify`/`expectedTotal`/`shopifySubtotal` (fi) foi **DESCARTADO** — substituído pela R59, que já é imune a descontos (resolve também o display do kit sem precisar da aritmética de subtotal).
+- Docs: minha regra de agregação foi renumerada **R56→R60** (a `main` já usava R56–R59); `fluxo-carrinho-checkout.md` integra ambos os conjuntos; `fluxo-kits.md` traz a nota de agregação por linha.
+
+### Pendências / Notas (pós-merge)
+
+- **QA manual consolidado:** faixas 6 (pago) / 7,14,28 (grátis, libera) / 8 (kit inválido, trava com nudge) / transição 6↔7 observando o botão; reabrir o site com PIX de sessão anterior (deve sumir) e com cupom manual (deve ficar); kit de 7/14/21/28 → linha verde de desconto + TOTAL com desconto + checkout liberado.
+- **Bug PIX no hard-block:** resolvido pela R59 (eliminou a comparação de subtotais) — confirmar no QA acima.
+- **Débitos herdados ainda abertos:** edge `set-product-unlisted` obsoleta/perigosa (Sprint 5.0), HMAC `uber-webhook-receiver`, validação server-side de `shipping_fee_cents`, `PixCallout` estático "5% off". Encoding mojibake na seção Sprint 5.0 deste `state.md` (herdado da `main`) — corrigir quando reescrever a seção.
 
 ## Última sessão (Sprint 5.1 — kit múltiplo de 7 + frete grátis + PIX efêmero)
 - R56: a partir de 7 marmitas só múltiplos de 7. Soft-block com gate único no canCheckout. Aviso acionável (botão "Adicionar mais N" → /kit-livre).
@@ -257,21 +275,22 @@
 - `fluxo-uber-direct.md` criado documentando todo o fluxo
 - `fluxo-carrinho-checkout.md`, `fluxo-shopify-sync.md` atualizados
 
-## HistÃ³rico de sprints
-- **Sprint 1 (2026-04-16)** â€” Ãrea do cliente completa (auth, perfil, pedidos, endereÃ§os, timeline)
-- **Sprint 2 (2026-04-16)** â€” Shopify customer sync + checkout gating
-- **Sprint 3 (2026-04-22)** â€” SEO tradicional + GEO (llms.txt) com geraÃ§Ã£o em build time + correÃ§Ã£o do domÃ­nio canÃ´nico
-- **Sprint 3.5 (2026-04-22)** â€” CorreÃ§Ã£o do shell HTML: meta tags estÃ¡ticas completas, favicon vÃ¡lido, og-image prÃ³pria, robots.txt regenerado
-- **Sprint 4.1 (2026-04-29)** â€” Frete Uber Direct condicional
-- **Sprint 4.2 (2026-05-11)** â€” Return URL no checkout Shopify (`return_to` querystring + cart attribute `return_url`) e centralizaÃ§Ã£o da constante `SITE_URL` em `src/config/site.ts`
-- **Sprint 4.3 (2026-05-18)** â€” Seletor de endereÃ§o no carrinho (`<DeliveryAddressSelector />` substituindo `<CepChecker />`, cart attribute `selected_address_id`)
-- **Sprint 4.4 (2026-05-20)** â€” Cupom PIX condicional por quantidade (PIX5 < 7 marmitas, PIX3 â‰¥ 7)
-- **Sprint 4.5 (2026-05-27)** â€” Fix variant fantasma duplicada no cart (REPLACE atÃ´mico no `cartStore` + cleanup defensivo no `<ShippingMethodSelector />`)
-- **Sprint 4.6 (2026-05-27)** â€” Fix regressÃ£o Sprint 4.5: variant fantasma nÃ£o entrava no cart (memoizaÃ§Ã£o de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
-- **Sprint 4.7 (2026-05-27)** â€” RefatoraÃ§Ã£o OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
-- **Sprint 4.8 (2026-05-28)** â€” TOTAL da pÃ¡gina de carrinho via somatÃ³ria local (`subtotal + frete`), desacoplando display da cobranÃ§a Shopify
-- **Sprint 5.0 (2026-06-01)** â€” Causa raiz resolvida: produto fantasma estava publicado sÃ³ no Point of Sale, nÃ£o no Online Store; fix = publicar no Online Store + `status: ACTIVE` + filtro `-tag:__internal_shipping` nas queries de catÃ¡logo. UNLISTED foi testado e NÃƒO Ã© exposto pela Storefront desta loja. ValidaÃ§Ã£o pÃ³s-add (R55) mantida como defesa. (Bug aberto: PIX trava o hard-block do checkout â€” ver PendÃªncias.)
-- **Sprint 5.1 (2026-06-03)** — Kit em múltiplos de 7 com UX acionável (R56), frete grátis blindado na transição ≥7 (R58) e cupom PIX efêmero reconciliado no load (R57). Criados `kitQuantity.ts`, `pixCoupons.ts`, `KitQuantityNotice.tsx`. 0 migrations, 0 edge functions.
+## Histórico de sprints
+- **Sprint 1 (2026-04-16)** — Área do cliente completa (auth, perfil, pedidos, endereços, timeline)
+- **Sprint 2 (2026-04-16)** — Shopify customer sync + checkout gating
+- **Sprint 3 (2026-04-22)** — SEO tradicional + GEO (llms.txt) com geração em build time + correção do domínio canônico
+- **Sprint 3.5 (2026-04-22)** — Correção do shell HTML: meta tags estáticas completas, favicon válido, og-image própria, robots.txt regenerado
+- **Sprint 4.1 (2026-04-29)** — Frete Uber Direct condicional
+- **Sprint 4.2 (2026-05-11)** — Return URL no checkout Shopify (`return_to` querystring + cart attribute `return_url`) e centralização da constante `SITE_URL` em `src/config/site.ts`
+- **Sprint 4.3 (2026-05-18)** — Seletor de endereço no carrinho (`<DeliveryAddressSelector />` substituindo `<CepChecker />`, cart attribute `selected_address_id`)
+- **Sprint 4.4 (2026-05-20)** — Cupom PIX condicional por quantidade (PIX5 < 7 marmitas, PIX3 ≥ 7)
+- **Sprint 4.5 (2026-05-27)** — Fix variant fantasma duplicada no cart (REPLACE atômico no `cartStore` + cleanup defensivo no `<ShippingMethodSelector />`)
+- **Sprint 4.6 (2026-05-27)** — Fix regressão Sprint 4.5: variant fantasma não entrava no cart (memoização de `CepValidationResult` no produtor + `cepParams` no consumidor + logging defensivo)
+- **Sprint 4.7 (2026-05-27)** — Refatoração OAuth Client Credentials Grant para Shopify Admin API (tabela `shopify_admin_tokens` + helper `_shared/shopify-admin-auth.ts`) + hard-block do `canCheckout` validando estado real do Shopify Cart
+- **Sprint 4.8 (2026-05-28)** — TOTAL da página de carrinho via somatória local (`subtotal + frete`), desacoplando display da cobrança Shopify
+- **Sprint 5.0 (2026-06-01)** — Causa raiz resolvida: produto fantasma estava publicado só no Point of Sale, não no Online Store; fix = publicar no Online Store + `status: ACTIVE` + filtro `-tag:__internal_shipping` nas queries de catálogo. UNLISTED foi testado e NÃO é exposto pela Storefront desta loja. Validação pós-add (R55) mantida como defesa.
+- **Sprint 5.1 (2026-06-03 / 06-15, consolidada no merge)** — Kit em múltiplos de 7 com UX acionável (R56), frete grátis blindado na transição ≥7 (R58), cupom PIX efêmero reconciliado no load (R57) e hard-block por presença da linha de frete `shopifyHasShippingLine` (R59, substitui o `totalMatchesShopify` — resolve o bug do PIX travando o checkout). Criados `kitQuantity.ts`, `pixCoupons.ts`, `KitQuantityNotice.tsx`. Em paralelo (branch `fi`): desconto de kit visível no carrinho via agregação de `line.discountAllocations` + TOTAL com desconto + base do PIX descontada (R60). 0 migrations, 0 edge functions.
+
 
 ## PendÃªncias
 
@@ -335,5 +354,3 @@ Sprint 4 (resto):
 - **Sprint 4.2:** ApÃ³s deploy do cÃ³digo, confirmar no Shopify Admin: `checkout.jilomarmitas.com` configurado como domÃ­nio primÃ¡rio e SSL ativo. Esse passo manual Ã© complementar ao cÃ³digo â€” sem ele, o `?return_to=` pode nÃ£o ser honrado em todos os flows.
 - `VITE_SITE_URL` pode ser usado pra apontar pra ambientes nÃ£o-produÃ§Ã£o (staging/preview) sem mexer no cÃ³digo â€” coloca no `.env` local ou nas vars do hosting. Sem override, fallback Ã© sempre `https://jilomarmitas.com`.
 - **Sobre customizaÃ§Ã£o da thank-you page Shopify:** Se em algum momento precisarmos sobrescrever o botÃ£o "Continue Shopping" ou injetar lÃ³gica na thank-you page (pixel custom, mensagem personalizada), a Ãºnica via vÃ¡lida hoje Ã© construir uma Checkout UI Extension como app Shopify dedicada â€” Additional Scripts foi descontinuado. Estimativa: 2â€“3 dias de dev. Priorizar somente se houver demanda concreta.
-
-

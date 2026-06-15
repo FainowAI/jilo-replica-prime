@@ -337,8 +337,42 @@ export const useCartStore = create<CartStore>()(
         try {
           const cart = await fetchCartFull(cartId);
           if (!cart) return;
+
+          // Allocations de nível cart (descontos por código/cart) — mantidas como base.
+          const cartLevelAllocations = cart.discountAllocations || [];
+
+          // Agrega as allocations de LINHA (descontos de kit do tipo DiscountProducts,
+          // que alocam por linha e nunca aparecem em cart.discountAllocations).
+          // Soma discountedAmount.amount agrupando por title. (Sprint 5.1 — necessário
+          // para EXIBIR o desconto de kit no carrinho.)
+          const lineTotalsByTitle = new Map<
+            string,
+            { amount: number; currencyCode: string }
+          >();
+          for (const edge of cart.lines?.edges || []) {
+            for (const alloc of edge.node?.discountAllocations || []) {
+              const title = alloc.title || 'Desconto de kit';
+              const amount = parseFloat(alloc.discountedAmount?.amount ?? '0');
+              if (!amount) continue;
+              const currencyCode = alloc.discountedAmount?.currencyCode ?? 'BRL';
+              const existing = lineTotalsByTitle.get(title);
+              if (existing) {
+                existing.amount += amount;
+              } else {
+                lineTotalsByTitle.set(title, { amount, currencyCode });
+              }
+            }
+          }
+
+          const aggregatedLineAllocations = Array.from(
+            lineTotalsByTitle.entries()
+          ).map(([title, { amount, currencyCode }]) => ({
+            discountedAmount: { amount: amount.toFixed(2), currencyCode },
+            title,
+          }));
+
           // Verdade do servidor: a linha de frete (variant fantasma) está no cart?
-          // O hard-block do Carrinho usa isso em vez de comparar subtotais — os
+          // O hard-block do Carrinho (R59) usa isso em vez de comparar subtotais — os
           // descontos de Kit são "Amount off products" (DiscountProducts) e reduzem
           // o subtotalAmount, então a comparação de totais nunca batia em pedidos ≥7.
           const hasShippingLine = cart.lines.edges.some((edge) =>
@@ -349,7 +383,10 @@ export const useCartStore = create<CartStore>()(
               totalAmount: cart.cost.totalAmount.amount,
               subtotalAmount: cart.cost.subtotalAmount.amount,
             } : null,
-            cartDiscountAllocations: cart.discountAllocations || [],
+            cartDiscountAllocations: [
+              ...cartLevelAllocations,
+              ...aggregatedLineAllocations,
+            ],
             shopifyHasShippingLine: hasShippingLine,
           });
         } catch (error) {
