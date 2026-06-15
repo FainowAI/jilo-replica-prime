@@ -24,12 +24,13 @@ const PaymentMethodSelector = ({
   const { discountCodes, applyDiscountCode, removeDiscountCode } = useCartStore();
 
   const activePix = getPixCouponForCart(totalNonShippingItems);
-  const pixDiscount = subtotalCents
-    ? (subtotalCents * activePix.percent) / 100 / 100
+  // Arredonda em centavos para que (final + economia) feche exatamente com a base.
+  const pixDiscountCents = subtotalCents
+    ? Math.round((subtotalCents * activePix.percent) / 100)
     : 0;
-  const pixFinalValue = subtotalCents
-    ? (subtotalCents * (100 - activePix.percent)) / 100 / 100
-    : 0;
+  const pixFinalCents = subtotalCents ? subtotalCents - pixDiscountCents : 0;
+  const pixDiscount = pixDiscountCents / 100;
+  const pixFinalValue = pixFinalCents / 100;
 
   const hasOtherCoupon = discountCodes.some(
     (dc) => dc.applicable && !isPixCoupon(dc.code)
@@ -207,9 +208,9 @@ const PaymentMethodSelector = ({
               <p className="text-[11px] text-[#9b9b9b] mt-0.5">{method.description}</p>
               {method.id === "pix" && isSelected && pixFinalValue > 0 && (
                 <p className="text-[12px] text-[#1e3a1e] font-semibold mt-1">
-                  Total com PIX: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}{" "}
+                  Total com PIX: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
                   <span className="text-[#9b9b9b] font-normal">
-                    ({activePix.percent}% off — economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+                    ({activePix.percent}% off — economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                   </span>
                 </p>
               )}

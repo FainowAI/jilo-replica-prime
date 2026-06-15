@@ -338,8 +338,13 @@ export const useCartStore = create<CartStore>()(
           const cart = await fetchCartFull(cartId);
           if (!cart) return;
 
-          // Allocations de nível cart (descontos por código/cart) — mantidas como base.
-          const cartLevelAllocations = cart.discountAllocations || [];
+          // Allocations de nível cart — manter SOMENTE automáticas (sem `code`).
+          // Descontos por código (PIX3/PIX5 classe ORDER, cupons manuais) NÃO entram
+          // aqui: o TOTAL da página reflete só o desconto de Kit (R53/R60); cupom é
+          // exibido como "Aplicado ✓" e aplicado no checkout Shopify.
+          const cartLevelAllocations = (cart.discountAllocations || []).filter(
+            (alloc: { code?: string }) => !alloc.code
+          );
 
           // Agrega as allocations de LINHA (descontos de kit do tipo DiscountProducts,
           // que alocam por linha e nunca aparecem em cart.discountAllocations).
@@ -351,6 +356,8 @@ export const useCartStore = create<CartStore>()(
           >();
           for (const edge of cart.lines?.edges || []) {
             for (const alloc of edge.node?.discountAllocations || []) {
+              // Pula descontos por código (PIX/cupom) — só o Kit automático é agregado.
+              if (alloc.code) continue;
               const title = alloc.title || 'Desconto de kit';
               const amount = parseFloat(alloc.discountedAmount?.amount ?? '0');
               if (!amount) continue;
@@ -412,7 +419,7 @@ export const useCartStore = create<CartStore>()(
     {
       name: 'shopify-cart',
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl, discountCodes: state.discountCodes, cartCost: state.cartCost, cartDiscountAllocations: state.cartDiscountAllocations }),
+      partialize: (state) => ({ items: state.items, cartId: state.cartId, checkoutUrl: state.checkoutUrl, discountCodes: state.discountCodes }),
     }
   )
 );
