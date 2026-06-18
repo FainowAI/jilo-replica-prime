@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
@@ -36,63 +36,10 @@ const PaymentMethodSelector = ({
     (dc) => dc.applicable && !isPixCoupon(dc.code)
   );
 
-  // Quando o cliente está com PIX selecionado e cruza o threshold de 7 marmitas
-  // (subindo ou descendo), o cupom PIX vigente muda (PIX5 ↔ PIX3). Aqui detectamos
-  // a mudança e trocamos o cupom no Shopify Cart automaticamente, preservando o
-  // estado "PIX selecionado" do usuário.
-  const lastSyncedCouponRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (selected !== "pix") {
-      lastSyncedCouponRef.current = null;
-      return;
-    }
-
-    const expectedCoupon = activePix.code;
-    const currentApplied = discountCodes.find((dc) => isPixCoupon(dc.code));
-
-    // Se já temos o cupom certo aplicado e marcado como applicable, nada a fazer.
-    if (
-      currentApplied?.code.toUpperCase() === expectedCoupon &&
-      currentApplied.applicable
-    ) {
-      lastSyncedCouponRef.current = expectedCoupon;
-      return;
-    }
-
-    // Evita reentrada quando já estamos no meio de aplicar este cupom.
-    if (lastSyncedCouponRef.current === expectedCoupon) return;
-
-    lastSyncedCouponRef.current = expectedCoupon;
-
-    (async () => {
-      setApplying(true);
-      try {
-        const result = await applyDiscountCode(expectedCoupon);
-        if (!result.success || !result.applicable) {
-          console.error(
-            "[PaymentMethodSelector] Re-aplicação de PIX falhou após mudança de threshold",
-            {
-              expectedCoupon,
-              totalNonShippingItems,
-              shopifyResult: result,
-            }
-          );
-          // Reseta para "nenhum método selecionado" — UX prefere honesto a quebrado
-          setSelected(null);
-          toast.error(
-            "Seu desconto PIX precisou ser recalculado mas falhou. Selecione novamente."
-          );
-        } else {
-          toast.success(`Desconto PIX atualizado: ${activePix.percent}% off`);
-        }
-      } finally {
-        setApplying(false);
-      }
-    })();
-    // ESLint: queremos rodar quando totalNonShippingItems mudar. discountCodes está
-    // incluído pq o `applicable` pode mudar fora do nosso fluxo.
-  }, [activePix.code, activePix.percent, selected, discountCodes, applyDiscountCode, totalNonShippingItems]);
+  // R61: o cupom PIX é sempre PIX5 (5%), independente da quantidade. Não há mais
+  // troca PIX5 ↔ PIX3 ao cruzar threshold, então o antigo useEffect de re-aplicação
+  // por mudança de volume foi removido — a aplicação do cupom acontece em handleSelect
+  // quando o usuário seleciona PIX.
 
   const handleSelect = async (method: PaymentMethod) => {
     if (selected === method || applying) return;

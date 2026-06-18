@@ -15,7 +15,7 @@ import { type CepValidationResult } from "@/lib/cepValidator";
 import AuthDialog from "@/components/AuthDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import ShippingMethodSelector from "@/components/ShippingMethodSelector";
-import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD, LALAMOVE_METHOD_LABEL } from "@/config/shipping";
 import { isValidKitQuantity } from "@/config/kitQuantity";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 import SEO from "@/components/SEO";
@@ -191,11 +191,20 @@ const Carrinho = () => {
     }
     const cartId = useCartStore.getState().cartId;
     if (cartId) {
+      // Item 5: activeQuoteId === "lalamove" é o sentinela do fallback fora do raio Uber.
+      // Nesse caso o método é "lalamove" (não derivado por quantidade) e NÃO há uber_quote_id.
+      const isLalamove = activeQuoteId === "lalamove";
+      const resolvedDeliveryMethod = isLalamove
+        ? "lalamove"
+        : getDeliveryMethod(totalNonShippingItems);
       const attrs: Array<{ key: string; value: string }> = [
-        { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+        { key: "delivery_method", value: resolvedDeliveryMethod },
         { key: "return_url", value: SITE_URL },
       ];
-      if (activeQuoteId) {
+      if (isLalamove) {
+        // Label legível pro Admin (note_attribute "Entrega Lalamove"); o sentinela não tem quote Uber.
+        attrs.push({ key: "delivery_label", value: LALAMOVE_METHOD_LABEL });
+      } else if (activeQuoteId) {
         attrs.push({ key: "uber_quote_id", value: activeQuoteId });
       }
       if (selectedAddressId) {
@@ -217,11 +226,17 @@ const Carrinho = () => {
       (async () => {
         const cartId = useCartStore.getState().cartId;
         if (cartId) {
+          const isLalamove = activeQuoteId === "lalamove";
+          const resolvedDeliveryMethod = isLalamove
+            ? "lalamove"
+            : getDeliveryMethod(totalNonShippingItems);
           const attrs: Array<{ key: string; value: string }> = [
-            { key: "delivery_method", value: getDeliveryMethod(totalNonShippingItems) },
+            { key: "delivery_method", value: resolvedDeliveryMethod },
             { key: "return_url", value: SITE_URL },
           ];
-          if (activeQuoteId) {
+          if (isLalamove) {
+            attrs.push({ key: "delivery_label", value: LALAMOVE_METHOD_LABEL });
+          } else if (activeQuoteId) {
             attrs.push({ key: "uber_quote_id", value: activeQuoteId });
           }
           if (selectedAddressId) {
