@@ -38,7 +38,7 @@ O carrinho da Jilo opera em 3 camadas: (1) Zustand store local com persist, (2) 
 | `src/lib/shopify.ts` | Mutations: createShopifyCart, addLineToShopifyCart, updateShopifyCartLine, removeLineFromShopifyCart, fetchShopifyCart, applyDiscountCodesToCart, removeDiscountCodesFromCart, fetchCartWithDiscounts, setCartAttributes. Helpers: formatCheckoutUrl (interno), appendReturnToCheckoutUrl (exportado, Sprint 4.2). |
 | `src/config/site.ts` | Constantes globais: `SITE_URL` (URL canônica do site, com fallback `https://jilomarmitas.com`) e `SITE_HOSTNAME`. Fonte única para qualquer link absoluto no frontend (return URLs, etc). |
 | `src/config/kitQuantity.ts` | Helper puro da R56: `KIT_STEP = SHIPPING_FREE_THRESHOLD`, `isValidKitQuantity(totalNonShippingItems)` e `getKitQuantityGuidance(totalNonShippingItems)` |
-| `src/config/pixCoupons.ts` | Fonte compartilhada dos cupons PIX condicionais (R19): `PIX3`, `PIX5`, `isPixCoupon` e `getPixCouponForCart(totalNonShippingItems)` |
+| `src/config/pixCoupons.ts` | Fonte única do cupom PIX (R19, atualizado em R61): `PIX5` (ativo, sempre 5%), `PIX3` (descontinuado, reconhecido só p/ reconciliação), `isPixCoupon` e `getPixCouponForCart()` (sempre retorna PIX5/5%; o parâmetro `totalNonShippingItems` é ignorado) |
 | `src/lib/cepValidator.ts` | Validação de CEP via ViaCEP. Whitelist de áreas atendidas em `DELIVERY_AREAS`. Funções: `validateCep()`, `formatCep()`, `isAreaDeliverable(uf, city)` (síncrono, sem chamada ViaCEP — usado pelo `<DeliveryAddressSelector />`) |
 
 ## Tabelas do banco
@@ -48,9 +48,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 | Constante | Valor | Onde é usada |
 |-----------|-------|-------------|
-| `PIX5` (cupom Shopify) | 5% off | Shopify Admin (NÃO combinável). Aplicado quando `<7` marmitas. |
-| `PIX3` (cupom Shopify) | 3% off | Shopify Admin — classe **ORDER** ("Amount off order", R61). Aplicado quando `≥7` marmitas, acumula com Kit X% (ORDER + PRODUCT combinam). |
-| `PIX_COUPON_CODES` | `PIX3`, `PIX5` | `src/config/pixCoupons.ts`; usado para identificar cupons PIX efêmeros |
+| `PIX5` (cupom Shopify) | 5% off | Shopify Admin — classe **ORDER** ("Amount off order", R61), 5% para QUALQUER quantidade. Combina com Kit X% (ORDER + PRODUCT). Único cupom PIX aplicado pelo frontend. |
+| `PIX3` (cupom Shopify) | descontinuado | **DESATIVADO no Shopify Admin.** Não é mais aplicado pelo frontend; permanece em `PIX_COUPON_CODES` só para o `reconcileDiscountsOnLoad` limpar resíduo de sessões antigas. |
+| `PIX_COUPON_CODES` | `PIX3`, `PIX5` | `src/config/pixCoupons.ts`; usado para identificar cupons PIX efêmeros (PIX3 mantido p/ reconciliação) |
 | Cupons de desconto | Validados via Shopify (BEMVINDO10, JILOVIP15, PIX5, PIX3, JILO10) | Carrinho.tsx → cartStore → Shopify Cart API |
 | Frete | Sempre grátis (cortesia Jilo) | Carrinho.tsx, CartDrawer.tsx |
 | `SHIPPING_FREE_THRESHOLD` | 7 marmitas | `src/config/shipping.ts` (Sprint 4.1) |
@@ -76,15 +76,14 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 8. **Cupons de desconto**: Validados via Shopify Cart API (`cartDiscountCodesUpdate`). Cupons configurados no Shopify Admin (BEMVINDO10, JILOVIP15, PIX5, JILO10). O desconto real é aplicado no checkout Shopify. O frontend mostra o cupom como "Aplicado ✓" sem exibir o valor do desconto.
 
-9. **Desconto PIX condicional via seletor (Sprint 4.4)**: Na página `/carrinho`, o componente `PaymentMethodSelector` oferece 3 opções (PIX, Cartão de Crédito, PayPal). Ao selecionar PIX, o cupom aplicado depende da quantidade de marmitas no cart (excluindo variant fantasma de frete):
-   - `<7 marmitas` → cupom `PIX5` (5%). É NÃO combinável no Shopify — não acumula com nada.
-   - `≥7 marmitas` → cupom `PIX3` (3%, classe **ORDER** — R61). Acumula com Kit 7/14/21/28 porque ORDER + PRODUCT são classes que combinam na Shopify Basic (combinabilidade bidirecional configurada nos dois lados).
-   - Quando o cliente cruza o threshold com PIX selecionado, um `useEffect` interno detecta a mudança e troca o cupom no Shopify Cart API automaticamente, sem perder a seleção PIX do usuário. Toast de atualização: "Desconto PIX atualizado: X% off".
+9. **Desconto PIX sempre 5% via seletor (Sprint 4.4, atualizado em R61)**: Na página `/carrinho`, o componente `PaymentMethodSelector` oferece 3 opções (PIX, Cartão de Crédito, PayPal). Ao selecionar PIX, aplica sempre o cupom `PIX5` (5%), independente da quantidade de marmitas:
+   - `PIX5` é classe **ORDER** (R61) e combina com Kit 7/14/21/28 (ORDER + PRODUCT combinam na Shopify Basic). Não há mais regra condicional por volume — a antiga troca `PIX5 ↔ PIX3` ao cruzar o threshold de 7 marmitas foi removida.
+   - `getPixCouponForCart()` retorna sempre `{ code: "PIX5", percent: 5 }`; o parâmetro `totalNonShippingItems` é ignorado (mantido só para não quebrar os call sites). Como o cupom não muda mais com a quantidade, o `useEffect` de re-aplicação por threshold foi removido do componente.
    - Se houver cupom manual ativo (BEMVINDO10, JILOVIP15, etc), o seletor mostra `window.confirm` antes de substituir.
-   - Quando o cliente seleciona outro método com PIX antes ativo, o cupom (PIX5 ou PIX3) é removido via `removeDiscountCode()`.
-   - PIX é efêmero: `cartStore.reconcileDiscountsOnLoad()` remove PIX3/PIX5 persistido no localStorage/Shopify Cart uma vez por sessão, preservando cupons manuais.
+   - Quando o cliente seleciona outro método com PIX antes ativo, o cupom é removido via `removeDiscountCode()`.
+   - PIX é efêmero: `cartStore.reconcileDiscountsOnLoad()` remove PIX3/PIX5 persistido no localStorage/Shopify Cart uma vez por sessão, preservando cupons manuais. PIX3 segue reconhecido por `isPixCoupon` (apesar de descontinuado) justamente para que essa limpeza remova qualquer PIX3 grudento de sessões antigas.
    - Em qualquer cenário de `applicable=false`, o componente loga `console.error` com payload do cart para diagnóstico.
-   - No `CartDrawer`, o `PixCallout` continua passivo/educativo com 5% — **débito técnico**: em sprint futura, considerar tornar o callout sensível à quantidade.
+   - No `CartDrawer`, o `PixCallout` continua passivo/educativo com 5% — agora consistente com o cupom aplicado (PIX5 sempre 5%), sem o antigo descompasso de quantidade.
 
 10. **Validação de CEP via ViaCEP (Sprint 2)**: `CepChecker` no resumo do pedido consulta a API ViaCEP e verifica contra a whitelist `DELIVERY_AREAS` em `src/lib/cepValidator.ts`. Se a região NÃO é atendida, o botão de checkout é desabilitado com "Região não atendida". Se o CEP não foi verificado, o checkout funciona normalmente — a verificação é recomendada, não obrigatória.
 
@@ -216,9 +215,9 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - Usuários antigos com endereço em `profiles.address/cep/...` mas sem linha em `addresses` são tratados como "sem endereço". Migração desses dados é débito técnico pra sprint futura.
 - Cart attribute `selected_address_id` é metadado adicional — NÃO substitui o `shipping_address` JSONB de `orders` (que continua vindo do payload do webhook `orders/paid`, regra R43).
 - **`cartStore.addItem` tem dois caminhos:** (1) marmitas + primeira inserção de variant fantasma → fluxo normal (soma quantity se existir). (2) re-inserção de variant fantasma quando ela já existe → REPLACE atômico (remove no Shopify + add quantity=1 + atualiza array local via `.map` em vez de spread). Se mexer no `addItem`, lembre que o early return após o bloco de REPLACE é o que impede o fluxo normal de executar em sequência e voltar o bug.
-- O cupom PIX é **condicional à quantidade** (R19): `PIX5` se cart <7 marmitas, `PIX3` se ≥7. Ambos vivem no Shopify Admin. `PIX5` é classe `PRODUCT` não-combinável; **`PIX3` é classe `ORDER`** (R61) — empilha com os Kits (classe `PRODUCT`) porque são classes diferentes, com `combinesWith` ligado nos dois lados. ⚠️ Dois descontos de PRODUTO na mesma linha NÃO empilham na Shopify Basic (só com Plus via `productDiscountsWithTagsOnSameCartLine`); por isso o PIX precisa ser ORDER. Não rebaixar o PIX3 para PRODUCT — o `applicable: false` volta. Não trocar a configuração sem alinhar com regras de margem do Jilo.
-- O `PixCallout` (em Product, CartDrawer, Kit, KitLivre) ainda exibe "5% off" estático e NÃO reflete a regra condicional. Cliente que pretende fechar ≥7 marmitas vê "5%" na vitrine mas paga 3% no carrinho. É inconsistência educativa conhecida — débito técnico documentado em `state.md`.
-- O threshold de troca de cupom (`SHIPPING_FREE_THRESHOLD = 7`) é o MESMO usado pelo Uber Direct. Se o threshold mudar, isso afeta TRÊS lugares: frete, kits do Shopify Admin (que assumem 7) e a regra PIX.
+- O cupom PIX é **sempre 5%** (R19, atualizado em R61): o frontend aplica `PIX5` para qualquer quantidade. **`PIX5` é classe `ORDER`** (R61) — empilha com os Kits (classe `PRODUCT`) porque são classes diferentes, com `combinesWith` ligado nos dois lados. ⚠️ Dois descontos de PRODUTO na mesma linha NÃO empilham na Shopify Basic (só com Plus via `productDiscountsWithTagsOnSameCartLine`); por isso o PIX precisa ser ORDER. Não rebaixar o PIX5 para PRODUCT — o `applicable: false` volta. `PIX3` foi DESATIVADO no Shopify Admin e não é mais aplicado; segue em `isPixCoupon` só para reconciliação de resíduo. Não trocar a configuração sem alinhar com regras de margem do Jilo.
+- O `PixCallout` (em Product, CartDrawer, Kit, KitLivre) exibe "5% off" estático — agora **consistente** com o cupom aplicado no carrinho (PIX5 sempre 5%). A antiga inconsistência educativa (vitrine 5% vs. carrinho 3% em ≥7 marmitas) deixou de existir com o fim da regra condicional.
+- O `SHIPPING_FREE_THRESHOLD = 7` ainda governa frete (Uber Direct) e kits do Shopify Admin, mas **não governa mais o PIX** (que é 5% fixo). Se o threshold mudar, afeta frete e kits — não a regra PIX.
 - **Cadeia de identidade referencial `DeliveryAddressSelector` → `Carrinho.tsx` → `ShippingMethodSelector`:** O `<DeliveryAddressSelector />` produz um `CepValidationResult` via `buildResultFromAddress(selected)`. Esse resultado é passado pro `Carrinho.tsx` via `onResult(...)` callback, que faz `setDeliveryCheck(result)`. O `deliveryCheck` é então prop do `<ShippingMethodSelector />`. Cada link dessa cadeia DEVE preservar identidade referencial quando os valores não mudam — senão o `useEffect` de sincronização da variant fantasma no `<ShippingMethodSelector />` entra em loop de cancellation. Memoização em duas camadas (Sprint 4.6): (a) `DeliveryAddressSelector` memoiza `CepValidationResult` com chaves primitivas do endereço; (b) `ShippingMethodSelector` memoiza `cepParams` interno com chaves primitivas do `deliveryCheck.cepInfo`. Se um novo consumer de `deliveryCheck` aparecer no futuro, seguir o mesmo padrão.
 - **Hard-block do `canCheckout` é defesa em profundidade (R52):** ele NÃO é o que sincroniza a variant fantasma — isso continua sendo trabalho do `<ShippingMethodSelector />`. O hard-block é o catch-net: se a sincronização falhar por qualquer motivo (token expirado, network error, race condition), o cliente é protegido de avançar pro checkout com cart bugado. Se aparecer "Sincronizando frete..." de forma persistente em ambiente normal (não simulado), investigar: provável que a edge `update-shipping-variant-price` esteja retornando erro — ver Console pro warning `[Carrinho] Discrepância detectada...` com o payload pra diagnóstico.
 - **Gate de quantidade é soft-block (R56):** todos os pontos de adição (cards, página de produto, sugestões, steppers, KitLivre) somam livremente; só o checkout do `/carrinho` bloqueia. O `CartDrawer` apenas exibe `<KitQuantityNotice variant="inline" />` como aviso informativo e continua navegando para `/carrinho`. Não auto-editar carrinho legado em quantidade inválida.
@@ -231,14 +230,14 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 ## Roteiro de QA do checkout
 
-> Cenários de regressão para o desconto PIX × Kit (Sprint 5.2). Caso de referência: **7 pratos**, subtotal **R$ 188,30**, Kit 7 **−10%** (−R$ 18,83) ⇒ base R$ 169,47; PIX3 **−3%** ⇒ preview R$ 164,39 (economia R$ 5,08).
+> Cenários de regressão para o desconto PIX × Kit (Sprint 5.2; PIX atualizado para 5% sempre em R61/R19). Caso de referência: **7 pratos**, subtotal **R$ 188,30**, Kit 7 **−10%** (−R$ 18,83) ⇒ base R$ 169,47; PIX5 **−5%** ⇒ preview R$ 161,00 (economia R$ 8,47).
 
-- **Sem PIX (7 itens):** linha "Kit 7 – 10% off" = −R$ 18,83; sem linha "PIX3"; TOTAL = R$ 169,47.
-- **Com PIX (7 itens):** "Total com PIX: R$ 164,39 (3% off — economia de R$ 5,08)"; sem 3 casas decimais; TOTAL grande continua R$ 169,47 (não muda ao selecionar PIX); "Cupom PIX3 Aplicado ✓".
+- **Sem PIX (7 itens):** linha "Kit 7 – 10% off" = −R$ 18,83; sem linha "PIX5"; TOTAL = R$ 169,47.
+- **Com PIX (7 itens):** "Total com PIX: R$ 161,00 (5% off — economia de R$ 8,47)"; sem 3 casas decimais; TOTAL grande continua R$ 169,47 (não muda ao selecionar PIX); "Cupom PIX5 Aplicado ✓".
 - **1–6 itens + PIX:** cupom = PIX5 (5%), base = subtotal cheio (Kit = 0); preview = subtotal × 0,95, 2 casas.
 - **Cupom manual + 7 itens:** cupom manual só como "Aplicado ✓" (não entra no TOTAL); linha "Kit 7 – 10% off" segue; TOTAL = subtotal − Kit.
-- **CartDrawer:** linha de desconto mostra o Kit (ex.: "Kit 7 – 10% off −R$ 18,83") — nunca "PIX3". Se aparecer PIX3 no drawer, o filtro da R62 não foi aplicado.
+- **CartDrawer:** linha de desconto mostra o Kit (ex.: "Kit 7 – 10% off −R$ 18,83") — nunca "PIX5"/"PIX3". Se aparecer cupom PIX no drawer, o filtro da R62 não foi aplicado.
 - **Reload (D4):** com 7 itens + PIX previamente selecionado, recarregar a página: `cartDiscountAllocations` é recalculado (não vem do localStorage); não deve "piscar" valor velho de PIX; `reconcileDiscountsOnLoad` remove o PIX grudento.
 - **Consistência matemática:** em qualquer cenário com PIX, `pixFinalValue + pixDiscount` = base (subtotal − Kit), sem diferença de centavo.
 - **Hard-block intacto (R59):** selecionar PIX em cart de 1–6 (frete pago) e em 7+ (com Kit) — o botão "Ir para o Checkout" libera normalmente quando endereço/quantidade/frete estão OK (o hard-block usa `shopifyHasShippingLine`, não subtotais).
-- **Cenário Fiscal (invariante R63):** o **total do checkout Shopify == total prometido no carrinho** (preview PIX), tolerância ± centavos. O imposto deve aparecer como **INCLUSO**, nunca somado ao total (market "Brasil" = `INCLUDES_TAXES_IN_PRICE`). Caso de referência: 7 pratos, Kit 7 −10%, PIX3 −3% → total **R$ 164,39**. Se o checkout somar imposto por cima (total > preview), suspeitar de reversão para `ADD_TAXES_AT_CHECKOUT` no market (ver R63).
+- **Cenário Fiscal (invariante R63):** o **total do checkout Shopify == total prometido no carrinho** (preview PIX), tolerância ± centavos. O imposto deve aparecer como **INCLUSO**, nunca somado ao total (market "Brasil" = `INCLUDES_TAXES_IN_PRICE`). Caso de referência: 7 pratos, Kit 7 −10%, PIX5 −5% → total **R$ 161,00**. Se o checkout somar imposto por cima (total > preview), suspeitar de reversão para `ADD_TAXES_AT_CHECKOUT` no market (ver R63).

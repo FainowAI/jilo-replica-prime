@@ -5,7 +5,7 @@ import { ShoppingCart, Minus, Plus, Trash2, Loader2, ArrowLeft, Truck } from "lu
 import { useCartStore } from "@/stores/cartStore";
 import PixCallout from "@/components/PixCallout";
 import KitQuantityNotice from "@/components/KitQuantityNotice";
-import { isFreeShipping, SHIPPING_FREE_THRESHOLD } from "@/config/shipping";
+import { isFreeShipping, SHIPPING_FREE_THRESHOLD, DELIVERY_PROMISE_LABEL } from "@/config/shipping";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 
 export const CartDrawer = () => {
@@ -91,8 +91,8 @@ export const CartDrawer = () => {
                 <Truck className="h-4 w-4 text-[#1e3a1e]" />
                 <p className="text-xs text-[#1e3a1e] font-sans font-medium">
                   {isFree
-                    ? "Frete grátis — entrega Jilo em até 48h"
-                    : `Frete grátis a partir de ${SHIPPING_FREE_THRESHOLD} marmitas (faltam ${itemsRemaining})`}
+                    ? `Frete grátis pela frota Jilo. ${DELIVERY_PROMISE_LABEL}.`
+                    : `Frete grátis a partir de ${SHIPPING_FREE_THRESHOLD} marmitas (faltam ${itemsRemaining}). ${DELIVERY_PROMISE_LABEL}.`}
                 </p>
               </div>
             </div>

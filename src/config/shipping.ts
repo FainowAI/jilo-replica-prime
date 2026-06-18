@@ -9,7 +9,22 @@
  */
 export const SHIPPING_FREE_THRESHOLD = 7;
 
-export type DeliveryMethod = "uber_direct" | "jilo_own";
+/**
+ * Promessa institucional de entrega ao cliente: até 48h, INDEPENDENTE do método
+ * (Uber Direct, frota Jilo ou Lalamove). O tempo "~Ymin" exibido na cotação Uber
+ * é só a janela de coleta/transporte da Uber — a promessa ao cliente é sempre 48h.
+ * Fonte única do texto para não espalhar a string literal pela UI.
+ */
+export const DELIVERY_PROMISE_LABEL = "Entrega em até 48h";
+
+export type DeliveryMethod = "uber_direct" | "jilo_own" | "lalamove";
+
+/** Frete fixo da Entrega Lalamove (fallback fora do raio Uber, <7 marmitas).
+ *  Espelha o shipping rate cadastrado no painel Shopify. Item 5, jun/2026. */
+export const LALAMOVE_FIXED_FEE_CENTS = 1990; // R$ 19,90
+
+/** Label legível da Entrega Lalamove para uso na UI. */
+export const LALAMOVE_METHOD_LABEL = "Entrega Lalamove";
 
 /**
  * GID da variant fantasma usada para cobrar frete dinâmico no Shopify Cart.

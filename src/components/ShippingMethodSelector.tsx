@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { Truck, Loader2, Info } from "lucide-react";
-import { SHIPPING_FREE_THRESHOLD, SHIPPING_VARIANT_ID, isFreeShipping } from "@/config/shipping";
+import { Truck, Loader2, Info, Check } from "lucide-react";
+import {
+  SHIPPING_FREE_THRESHOLD,
+  SHIPPING_VARIANT_ID,
+  DELIVERY_PROMISE_LABEL,
+  LALAMOVE_FIXED_FEE_CENTS,
+  LALAMOVE_METHOD_LABEL,
+  isFreeShipping,
+} from "@/config/shipping";
 import { useShippingQuote } from "@/hooks/useShippingQuote";
 import { updateShippingVariantPrice, UberQuoteError } from "@/lib/uberDirect";
 import { useCartStore } from "@/stores/cartStore";
@@ -48,12 +55,15 @@ export default function ShippingMethodSelector({
   const removeItem = useCartStore((s) => s.removeItem);
   const lastSyncedFeeRef = useRef<number | null>(null);
   const [didCleanupOnMount, setDidCleanupOnMount] = useState(false);
+  // Item 5: o cliente optou pela Entrega Lalamove no fallback "SJC + <7 + fora do raio Uber".
+  const [lalamoveSelected, setLalamoveSelected] = useState(false);
   const cancelCountRef = useRef(0);
   const lastDepsSnapshotRef = useRef<{
     isFree: boolean | null;
     quoteFeeCents: number | null;
     cepHash: string | null;
-  }>({ isFree: null, quoteFeeCents: null, cepHash: null });
+    lalamoveSelected: boolean | null;
+  }>({ isFree: null, quoteFeeCents: null, cepHash: null, lalamoveSelected: null });
 
   // Memoiza cepParams com base em chaves primitivas do deliveryCheck. Sem isso,
   // um novo objeto seria criado a cada render do componente, vazando para a
@@ -78,6 +88,25 @@ export default function ShippingMethodSelector({
 
   const { quote, loading, error } = useShippingQuote(totalNonShippingItems, cepParams);
 
+  // Distingue os dois cenários de "não dá pra Uber":
+  // - deliveryCheck.isDeliverable === false  → cidade fora de SJC (sem fallback, só bloqueio)
+  // - isDeliverable === true + UberQuoteError address_undeliverable → SJC fora do raio Uber
+  //   (oferecemos o fallback Lalamove com frete fixo).
+  const isUberUndeliverable =
+    error instanceof UberQuoteError && error.code === "address_undeliverable";
+  const addressDeliverable = deliveryCheck?.isDeliverable === true;
+  // Lalamove só vale enquanto o cenário for "SJC + <7 + fora do raio Uber" E o cliente optar.
+  const wantsLalamove =
+    lalamoveSelected && isUberUndeliverable && addressDeliverable && !isFree && !!cepParams;
+
+  // Reseta a opção Lalamove quando o cenário muda: (a) cruza pra frete grátis,
+  // (b) endereço deixa de ser entregável, (c) a cotação Uber volta a funcionar (existe quote).
+  useEffect(() => {
+    if (isFree || !addressDeliverable || quote) {
+      setLalamoveSelected(false);
+    }
+  }, [isFree, addressDeliverable, quote]);
+
   // Reporta o quote ativo para o Carrinho (usa nos cart attributes e no canCheckout).
   // Quando endereço não é entregável ou sem cotação, reporta (null, 0) para garantir
   // que o canCheckout do Carrinho rejeite o avanço.
@@ -97,9 +126,16 @@ export default function ShippingMethodSelector({
       onQuoteChange(quote.quote_id, quote.fee_cents);
       return;
     }
+    // Fallback Lalamove: não há quote Uber, reporta um sentinela "lalamove" + frete fixo.
+    // O hard-block R59 (freightStateOk) segue protegendo: só libera quando a variant
+    // fantasma de fato entrar no Shopify Cart.
+    if (wantsLalamove) {
+      onQuoteChange("lalamove", LALAMOVE_FIXED_FEE_CENTS);
+      return;
+    }
     // sem cotação ainda (loading/error) — zera para evitar checkout antes da cotação chegar
     onQuoteChange(null, 0);
-  }, [isFree, quote, deliveryCheck, onQuoteChange]);
+  }, [isFree, quote, deliveryCheck, wantsLalamove, onQuoteChange]);
 
   // Cleanup defensivo no mount: se o cart hidratado do localStorage contém
   // variant fantasma com quantity > 1 (estado bugado de sessão anterior, R50),
@@ -144,18 +180,20 @@ export default function ShippingMethodSelector({
     const depsChanged =
       prev.isFree !== isFree ||
       prev.quoteFeeCents !== (quote?.fee_cents ?? null) ||
-      prev.cepHash !== cepHash;
+      prev.cepHash !== cepHash ||
+      prev.lalamoveSelected !== lalamoveSelected;
     if (!depsChanged && import.meta.env.DEV) {
       console.warn(
         "[ShippingMethodSelector] useEffect re-rodou sem mudança de deps primitivas. " +
         "Provável regressão de memoização (objeto literal nas deps). Investigar.",
-        { isFree, quoteFeeCents: quote?.fee_cents, cepHash }
+        { isFree, quoteFeeCents: quote?.fee_cents, cepHash, lalamoveSelected }
       );
     }
     lastDepsSnapshotRef.current = {
       isFree,
       quoteFeeCents: quote?.fee_cents ?? null,
       cepHash,
+      lalamoveSelected,
     };
     // ────────────────────────────────────────────────────────────────────────
 
@@ -167,8 +205,13 @@ export default function ShippingMethodSelector({
 
     // Caso 1: frete grátis OU endereço não-entregável OU sem CEP — remover se existir.
     // R41: variant fantasma só entra no cart se área é entregável e cotação válida.
+    // Item 5: também remove no cenário fora-do-raio Uber quando o cliente NÃO escolheu
+    // Lalamove (beco sem saída, checkout bloqueado como antes). O caminho positivo do
+    // Lalamove (wantsLalamove) NÃO cai aqui: addressNotDeliverable é false (CEP está em SJC)
+    // e cepParams existe, então sincroniza com preço fixo logo abaixo.
     const addressNotDeliverable = deliveryCheck != null && !deliveryCheck.isDeliverable;
-    if (isFree || addressNotDeliverable || !cepParams) {
+    const undeliverableNoLalamove = isUberUndeliverable && !lalamoveSelected;
+    if (isFree || addressNotDeliverable || !cepParams || undeliverableNoLalamove) {
       if (shippingItem) {
         lastSyncedFeeRef.current = null;
         (async () => {
@@ -206,12 +249,22 @@ export default function ShippingMethodSelector({
       return;
     }
 
-    // Caso 2: cotação ainda não chegou — não fazer nada
-    if (!quote) return;
+    // Determina a fee a sincronizar:
+    // - Fallback Lalamove selecionado → preço FIXO (não há quote Uber).
+    // - Caso padrão → fee da cotação Uber (se já chegou).
+    let feeToSync: number | null = null;
+    if (wantsLalamove) {
+      feeToSync = LALAMOVE_FIXED_FEE_CENTS;
+    } else if (quote) {
+      feeToSync = quote.fee_cents;
+    } else {
+      // Caso 2: cotação ainda não chegou — não fazer nada
+      return;
+    }
 
-    // Caso 3: cotação igual à última sincronizada E variant fantasma única e correta — nada a fazer
+    // Caso 3: fee igual à última sincronizada E variant fantasma única e correta — nada a fazer
     if (
-      lastSyncedFeeRef.current === quote.fee_cents &&
+      lastSyncedFeeRef.current === feeToSync &&
       shippingItem &&
       shippingItem.quantity === 1
     ) {
@@ -223,22 +276,23 @@ export default function ShippingMethodSelector({
     const sync = async () => {
       syncStarted = true;
       try {
-        await updateShippingVariantPrice(quote.fee_cents);
+        await updateShippingVariantPrice(feeToSync);
 
         // addItem detecta isShippingVariant(variantId) e decide:
         // - primeira inserção → cria linha nova
         // - re-inserção → REPLACE atômico (remove + add quantity=1)
-        // Garantia singleton vive no store (R50).
+        // Garantia singleton vive no store (R50). A variant fantasma é a MESMA SKU
+        // do Uber — no Lalamove só muda o preço (fixo), nunca um segundo SKU de frete.
         await addItem({
-          product: buildShippingVariantProduct(quote.fee_cents),
+          product: buildShippingVariantProduct(feeToSync),
           variantId: SHIPPING_VARIANT_ID,
           variantTitle: "Default",
-          price: { amount: (quote.fee_cents / 100).toFixed(2), currencyCode: "BRL" },
+          price: { amount: (feeToSync / 100).toFixed(2), currencyCode: "BRL" },
           quantity: 1,
           selectedOptions: [],
         });
 
-        lastSyncedFeeRef.current = quote.fee_cents;
+        lastSyncedFeeRef.current = feeToSync;
         // Sync completou — zera contador de cancellations
         cancelCountRef.current = 0;
       } catch (err) {
@@ -267,8 +321,19 @@ export default function ShippingMethodSelector({
       // ──────────────────────────────────────────────────────────────────────
     };
     // PROPOSITAL: `items` NÃO está nas deps — usamos getState() para snapshot fresh
-    // sem encadear loop. O effect re-roda quando isFree, quote ou cepParams mudam.
-  }, [isFree, quote, cepParams, deliveryCheck, addItem, removeItem]);
+    // sem encadear loop. O effect re-roda quando isFree, quote, cepParams ou o estado
+    // do fallback Lalamove (wantsLalamove/lalamoveSelected/isUberUndeliverable) mudam.
+  }, [
+    isFree,
+    quote,
+    cepParams,
+    deliveryCheck,
+    wantsLalamove,
+    lalamoveSelected,
+    isUberUndeliverable,
+    addItem,
+    removeItem,
+  ]);
 
   // UI: endereço selecionado mas fora da cobertura (não está em SJC)
   if (deliveryCheck != null && !deliveryCheck.isDeliverable) {
@@ -340,10 +405,42 @@ export default function ShippingMethodSelector({
                   Esse endereço está a mais de ~5km do nosso ponto de partida em São José
                   dos Campos. A Uber Direct não consegue entregar aqui.
                 </p>
+
+                {/* Fallback: Entrega Lalamove com frete fixo (despacho manual pela frota) */}
+                <button
+                  type="button"
+                  onClick={() => setLalamoveSelected(true)}
+                  className={`w-full text-left border rounded-xl p-3 transition-all bg-white ${
+                    lalamoveSelected
+                      ? "border-[#1e3a1e] ring-1 ring-[#1e3a1e]"
+                      : "border-[#e8e8e4] hover:border-[#1e3a1e]/40"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Truck className="h-4 w-4 text-[#1a1a1a] flex-shrink-0" />
+                      <span className="text-sm font-bold text-[#1a1a1a]">
+                        {LALAMOVE_METHOD_LABEL} — R$ {(LALAMOVE_FIXED_FEE_CENTS / 100).toFixed(2).replace(".", ",")}
+                      </span>
+                    </div>
+                    {lalamoveSelected && (
+                      <div className="w-5 h-5 rounded-full bg-[#1e3a1e] flex items-center justify-center flex-shrink-0">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#9b9b9b] mt-1 flex items-start gap-1">
+                    <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                    <span>{DELIVERY_PROMISE_LABEL}, qualquer que seja o método.</span>
+                  </p>
+                  {/* TODO(PROMPT 3): adicionar a nota de dias úteis via DELIVERY_BUSINESS_DAYS_NOTE
+                      quando a constante existir em @/config/shipping. */}
+                </button>
+
                 {itemsRemaining > 0 && (
                   <div className="mt-2 pt-2 border-t border-amber-200">
                     <p className="text-xs text-[#1e3a1e] font-semibold mb-1">
-                      Sugestão: adicione mais {itemsRemaining} marmita{itemsRemaining === 1 ? "" : "s"} ao pedido.
+                      Ou adicione mais {itemsRemaining} marmita{itemsRemaining === 1 ? "" : "s"} pra ter frete grátis.
                     </p>
                     <p className="text-[11px] text-amber-800">
                       Com {SHIPPING_FREE_THRESHOLD}+ marmitas, a entrega é feita pela nossa frota.
@@ -366,7 +463,11 @@ export default function ShippingMethodSelector({
                 <span className="font-bold">
                   R$ {(quote.fee_cents / 100).toFixed(2).replace(".", ",")}
                 </span>
-                <span className="text-[#9b9b9b]"> • Entrega em ~{quote.duration_minutes}min</span>
+                <span className="text-[#9b9b9b]"> • Coleta Uber em ~{quote.duration_minutes}min</span>
+              </p>
+              <p className="text-[11px] text-[#9b9b9b] font-sans mt-1.5 flex items-start gap-1">
+                <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                <span>{DELIVERY_PROMISE_LABEL}, qualquer que seja o método.</span>
               </p>
               <p className="text-[11px] text-[#9b9b9b] font-sans mt-1.5 flex items-start gap-1">
                 <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
