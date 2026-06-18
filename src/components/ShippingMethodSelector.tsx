@@ -444,8 +444,6 @@ export default function ShippingMethodSelector({
                     </p>
                     <p className="text-[11px] text-amber-800">
                       Com {SHIPPING_FREE_THRESHOLD}+ marmitas, a entrega é feita pela nossa frota.
-                      <strong> Atenção:</strong> como este endereço fica fora do nosso raio padrão,
-                      o frete será calculado à parte e confirmado via WhatsApp.
                     </p>
                   </div>
                 )}
