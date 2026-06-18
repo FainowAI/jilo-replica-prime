@@ -168,12 +168,19 @@ serve(async (req) => {
       const lineItems = payload.line_items ?? [];
 
       const totalNonShippingItems = calculateNonShippingItemsTotal(lineItems);
-      const deliveryMethod: "uber_direct" | "jilo_own" =
-        totalNonShippingItems >= SHIPPING_FREE_THRESHOLD ? "jilo_own" : "uber_direct";
+      const { uber_quote_id, delivery_method_hint } = extractDeliveryAttributes(payload);
+
+      const deliveryMethod: "uber_direct" | "jilo_own" | "lalamove" =
+        delivery_method_hint === "lalamove"
+          ? "lalamove"
+          : totalNonShippingItems >= SHIPPING_FREE_THRESHOLD
+            ? "jilo_own"
+            : "uber_direct";
       const shippingFeeCents = findShippingFeeCents(lineItems);
-      const { uber_quote_id } = extractDeliveryAttributes(payload);
       const initialDeliveryStatus =
-        deliveryMethod === "jilo_own" ? "jilo_pending" : "pending_dispatch";
+        deliveryMethod === "uber_direct" ? "pending_dispatch"
+        : deliveryMethod === "lalamove"  ? "lalamove_pending"
+        : "jilo_pending"; // jilo_own
 
       const { data: updatedOrder, error: updateErr } = await supabase
         .from("orders")

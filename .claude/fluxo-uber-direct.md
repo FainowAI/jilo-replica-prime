@@ -17,8 +17,8 @@ A loja Jilo está em plano Shopify que não suporta Shipping Rates condicionais 
 ### Config
 | Arquivo | Descrição |
 |---------|-----------|
-| `src/config/shipping.ts` | Constantes de frete: `SHIPPING_FREE_THRESHOLD = 7`, `SHIPPING_VARIANT_ID` (do .env), helpers `getDeliveryMethod`, `isFreeShipping`, `isShippingVariant` |
-| `supabase/functions/_shared/shipping-constants.ts` | Constantes equivalentes para uso em Edge Functions Deno (manter sincronizado com `src/config/shipping.ts`) |
+| `src/config/shipping.ts` | Constantes de frete: `SHIPPING_FREE_THRESHOLD = 7`, `SHIPPING_VARIANT_ID` (do .env), `DELIVERY_PROMISE_LABEL = "Entrega em até 48h"` (fonte única da copy da promessa), `LALAMOVE_FIXED_FEE_CENTS = 1990` (R$ 19,90) e `LALAMOVE_METHOD_LABEL` (fallback Lalamove — Item 5), tipo `DeliveryMethod = "uber_direct" \| "jilo_own" \| "lalamove"`, helpers `getDeliveryMethod`, `isFreeShipping`, `isShippingVariant` |
+| `supabase/functions/_shared/shipping-constants.ts` | Constantes equivalentes para uso em Edge Functions Deno (manter sincronizado com `src/config/shipping.ts`): `SHIPPING_FREE_THRESHOLD`, `LALAMOVE_FIXED_FEE_CENTS`, tipo `DeliveryMethod` (inclui `"lalamove"`), `getDeliveryMethod`. Também consumido pela `02-track-edge` — apenas adicionar, nunca alterar o existente |
 
 ### Hooks
 | Arquivo | Descrição |
@@ -125,6 +125,20 @@ Vide `.claude/requirements.md` regras R34 a R44.
 
 **Nova em Sprint 5.0:** R54 — produto fantasma deve ser `status: ACTIVE` + publicado no sales channel "Online Store" (UNLISTED/DRAFT não funcionam na Storefront desta loja), com filtro `-tag:__internal_shipping` nas queries de catálogo. Vide `requirements.md`.
 
+**Fallback Lalamove (Item 5, jun/2026):** Quando o endereço está em SJC mas fora do raio Uber Direct (Uber retorna `address_undeliverable`) e o cart tem <7 marmitas, oferecemos um terceiro método: "Entrega Lalamove", frete fixo R$ 19,90 (`LALAMOVE_FIXED_FEE_CENTS = 1990`, espelha o shipping rate do painel Shopify), despacho manual pela frota interna, flagado via cart attribute `delivery_method = 'lalamove'`. A escolha NÃO é derivada por quantidade — `getDeliveryMethod` segue decidindo só `uber_direct` vs `jilo_own`; o `lalamove` é uma escolha EXPLÍCITA do usuário no fallback.
+
+Mecânica no `<ShippingMethodSelector />`:
+- **Distinção de cenário:** `deliveryCheck.isDeliverable === false` = cidade fora de SJC (sem fallback, só bloqueio); `isDeliverable === true` + `UberQuoteError.code === "address_undeliverable"` = SJC fora do raio Uber (oferece Lalamove).
+- **Estado:** `lalamoveSelected` (useState). Reseta para `false` quando o cenário muda — cart vira frete grátis (`isFree`), endereço deixa de ser entregável, ou a cotação Uber volta a funcionar (`quote` existe). Derivado `wantsLalamove = lalamoveSelected && isUberUndeliverable && isDeliverable && !isFree && cepParams`.
+- **UI:** no bloco amarelo do `address_undeliverable`, além da explicação do raio ~5km, um card selecionável "Entrega Lalamove — R$ 19,90" (mesmo padrão de border/ring do `PaymentMethodSelector`); coexiste com a sugestão "adicione mais N marmitas pra frete grátis".
+- **Variant fantasma (R50):** mesma SKU singleton do Uber — no Lalamove só muda o PREÇO (fixo `LALAMOVE_FIXED_FEE_CENTS`, não a cotação). O `useEffect` de sync usa um `feeToSync` (Lalamove fixo OU `quote.fee_cents`) com REPLACE atômico. Não há segundo SKU de frete.
+- **onQuoteChange:** quando `wantsLalamove`, reporta o sentinela `("lalamove", 1990)` ao `Carrinho.tsx` → `activeQuoteId = "lalamove"`, `activeShippingFeeCents = 1990`. Isso satisfaz `canCheckout` (`free || activeQuoteId !== null`). O hard-block R59 (`freightStateOk`) segue protegendo: só libera quando a variant fantasma de fato entra no Shopify Cart.
+- **Checkout (`Carrinho.tsx`):** `handleCheckout` e o effect espelho de auto-checkout pós-login derivam `resolvedDeliveryMethod = activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(...)` e gravam `delivery_method = resolvedDeliveryMethod`. No sentinela Lalamove gravam também `delivery_label = LALAMOVE_METHOD_LABEL` ("Entrega Lalamove", leitura humana no Admin) e PULAM o `uber_quote_id` (não há cotação Uber). `return_url`/`selected_address_id` (R45/R48) e o fail-silent (R26) inalterados.
+
+**Pendências (outros itens):** a nota de dias úteis no card Lalamove (`DELIVERY_BUSINESS_DAYS_NOTE`, PROMPT 3 — ainda não existe; há um TODO no componente) e o CHECK de `orders.delivery_method` aceitando `'lalamove'` (hoje `IN ('uber_direct','jilo_own')` + NULL — migration necessária antes de qualquer order ser gravada como lalamove).
+
+**Promessa de entrega (48h):** A entrega é em até 48h **independente do método** (Uber Direct, frota Jilo ou Lalamove). A copy vem da constante `DELIVERY_PROMISE_LABEL` (`src/config/shipping.ts`) e é exibida em TODOS os ramos de UI do `<ShippingMethodSelector />` (grátis e pago) e nos dois ramos do `CartDrawer`. No ramo pago, o `~Ymin` da cotação Uber é só a janela de coleta/transporte — por isso é rotulado "Coleta Uber em ~Ymin", para não conflitar com a promessa de 48h.
+
 **Nova em Sprint 5.0:** R55 — verificação pós-add da variant fantasma (defesa em profundidade). Após `addLineToShopifyCart` retornar `success: true` para a variant fantasma, o `cartStore.addItem` faz um `fetchCartFull` e confirma que a linha existe de fato no cart remoto (`lines.edges[].node.merchandise.id === variantId`). Se não existir, loga `[cartStore] CRITICAL` e reverte o `items[]` local (REPLACE) ou não o atualiza (primeira inserção), forçando re-tentativa no próximo render do `ShippingMethodSelector`. A verificação roda APENAS para `isShippingVariant(...)` — itens normais (marmitas) seguem o fluxo simples sem chamada extra. Protege contra regressões do tipo "sucesso aparente, linha não entra" (ex.: produto despublicado do Online Store, status revertido pra DRAFT/UNLISTED). Vide `requirements.md`.
 
 ## Fluxo do usuário
@@ -137,7 +151,7 @@ Vide `.claude/requirements.md` regras R34 a R44.
 4. Resumo do pedido mostra `<CepChecker />` + aviso "Verifique antes de finalizar"
 5. Cliente verifica CEP → resultado positivo dispara `<ShippingMethodSelector />`
 6. `useShippingQuote` chama edge `uber-quote` → recebe `{quote_id, fee_cents}`
-7. `<ShippingMethodSelector />` exibe "Entrega Uber Direct • R$ X • Entrega em ~Ymin"
+7. `<ShippingMethodSelector />` exibe "Entrega Uber Direct • R$ X • Coleta Uber em ~Ymin" + nota "Entrega em até 48h, qualquer que seja o método" (constante `DELIVERY_PROMISE_LABEL`). O `~Ymin` é a janela de coleta/transporte da Uber; a promessa ao cliente é sempre 48h, independente do método.
 8. Em paralelo, sincroniza variant fantasma no Shopify Cart (debounce 300ms):
    - Chama edge `update-shipping-variant-price` com `fee_cents`
    - Adiciona variant fantasma ao cart via `cartLinesAdd`
@@ -149,7 +163,7 @@ Vide `.claude/requirements.md` regras R34 a R44.
 ### Cliente com cart ≥ 7 marmitas
 
 1. Cliente adiciona 7+ marmitas (típico: monta Kit Livre ou compra Kit temático)
-2. CartDrawer mostra "Frete grátis — entrega Jilo em até 48h"
+2. CartDrawer mostra "Frete grátis pela frota Jilo. Entrega em até 48h." (a promessa de 48h via `DELIVERY_PROMISE_LABEL` aparece nos dois ramos do CartDrawer — grátis e <7)
 3. Em `/carrinho`, `<ShippingMethodSelector />` mostra "Entrega Jilo • Frete grátis"
 4. Se variant fantasma estava no cart (cliente adicionou marmitas adicionais cruzando o threshold), `<ShippingMethodSelector />` remove ela automaticamente
 5. Cliente vai pro checkout, `setCartAttributes` grava `{key:'delivery_method',value:'jilo_own'}`
