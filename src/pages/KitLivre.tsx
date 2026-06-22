@@ -24,10 +24,10 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 const KIT_TIERS = [
-  { qty: 7, discount: 10 },
-  { qty: 14, discount: 15 },
-  { qty: 21, discount: 20 },
-  { qty: 28, discount: 25 },
+  { qty: 7, discount: 5 },
+  { qty: 14, discount: 10 },
+  { qty: 21, discount: 15 },
+  { qty: 28, discount: 20 },
 ];
 
 function getDiscountForQty(qty: number) {
@@ -151,7 +151,7 @@ export default function KitLivre() {
     <div className="min-h-screen bg-[#faf7f2]">
       <SEO
         title="Kit Livre | Monte seu kit Jilo da semana"
-        description="Monte seu Kit Livre Jilo escolhendo pratos de qualquer categoria. A partir de 7, sempre em múltiplos de 7. Descontos progressivos até 25%."
+        description="Monte seu Kit Livre Jilo escolhendo pratos de qualquer categoria. A partir de 7, sempre em múltiplos de 7. Descontos progressivos até 20%."
         path="/kit-livre"
       />
       <AnnouncementBar />

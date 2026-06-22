@@ -101,7 +101,7 @@ const WeeklyKits = () => {
             const products = data?.data?.collectionByHandle?.products?.edges || [];
             if (products.length > 0) {
               const minPrice = Math.min(...products.map((p: ShopifyProduct) => parseFloat(p.node.priceRange.minVariantPrice.amount)));
-              const priceFrom = (minPrice * 0.90).toFixed(2); // 10% off = kit de 7
+              const priceFrom = (minPrice * 0.80).toFixed(2); // 20% off = kit de 28 (maior desconto → menor preço/un = "a partir de")
               prices[kit.slug] = formatPrice(priceFrom);
             } else {
               prices[kit.slug] = null;

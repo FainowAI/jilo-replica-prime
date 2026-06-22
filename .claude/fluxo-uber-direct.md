@@ -106,14 +106,14 @@ Migration: `20260429000000_orders_uber_delivery_fields.sql` (já aplicada).
 | `UBER_CUSTOMER_ID` | Painel Uber Direct |
 | `UBER_API_BASE` | `https://api.uber.com` (prod) / `https://sandbox-api.uber.com` (dev) |
 
-**Pickup Jilo:**
-| Nome | Origem |
+**Pickup Jilo** — endereço oficial = CNPJ JILO ALIMENTACAO LTDA (05.574.020/0001-90), corrigido em Junho/2026. ⚠️ São **Edge Function Secrets**: setados via Dashboard (Project Settings → Edge Functions → Secrets) ou `supabase secrets set`. **NÃO** são graváveis pelo MCP do Supabase (que não tem ferramenta de secret) nem por `execute_sql` (não estão em tabela). As edges leem o valor no boot do isolate — após alterar o secret, redeployar `uber-quote`/`uber-create-delivery` (ou aguardar cold start) para o novo valor valer.
+| Nome | Valor |
 |------|--------|
 | `JILO_PICKUP_NAME` | `Jilo Marmitas` |
 | `JILO_PICKUP_PHONE` | `+5512988950426` (E.164) |
-| `JILO_PICKUP_ADDRESS_JSON` | JSON com endereço da cozinha |
-| `JILO_PICKUP_LATITUDE` | Decimal |
-| `JILO_PICKUP_LONGITUDE` | Decimal |
+| `JILO_PICKUP_ADDRESS_JSON` | `{"street_address":["Avenida Engenheiro Juarez de Siqueira Britto Wanderley, 50","Loja 05"],"city":"São José dos Campos","state":"SP","zip_code":"12238565","country":"BR"}` (Eldorado, SJC/SP, CEP 12238-565) |
+| `JILO_PICKUP_LATITUDE` | `-23.2625966` (eixo da avenida; confirmar pino do nº 50 antes de produção) |
+| `JILO_PICKUP_LONGITUDE` | `-45.9155005` |
 
 **Custom App scopes obrigatórios:** `write_customers` (existente), `read_customers` (opcional), `write_products` (novo), `read_products` (opcional).
 

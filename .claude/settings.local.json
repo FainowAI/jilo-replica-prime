@@ -42,7 +42,14 @@
       "Bash(python -c \"import json; json.load\\(open\\('.claude/settings.local.json', encoding='utf-8'\\)\\); print\\('JSON OK'\\)\")",
       "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1 | Select-Object -First 40)",
       "PowerShell(npx eslint src/components/ShippingMethodSelector.tsx src/pages/Carrinho.tsx 2>&1 | Select-Object -First 60)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "Bash(echo \"=== TSC EXIT $? ===\")",
+      "mcp__claude_ai_Shopify__graphql_query",
+      "mcp__claude_ai_Shopify__get-shop-info",
+      "Bash(npx vitest *)",
+      "WebFetch(domain:nominatim.openstreetmap.org)",
+      "Bash(supabase secrets *)",
+      "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: $\\($c.Source\\)\"; & supabase --version } else { \"supabase NOT on PATH\" }; \"--- scoop ---\"; $s = Get-Command scoop -ErrorAction SilentlyContinue; if \\($s\\) { \"scoop present\" } else { \"no scoop\" })"
     ]
   },
   "enableAllProjectMcpServers": true,

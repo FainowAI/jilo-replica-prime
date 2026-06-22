@@ -30,3 +30,6 @@ dist-ssr
 
 #MCPs
 .mcp.json
+
+# Claude skills
+.claude/skills/

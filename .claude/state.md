@@ -1,7 +1,88 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-15 (Sprint 5.2 — fix combinabilidade PIX × Kit: PIX3 migrado de PRODUCT para ORDER discount, R61. Branch `fix/checkout-pix`)
+2026-06-22 (fixes de desconto de kit: (1) frontend anunciava 10/15/20/25 vs Shopify 5/10/15/20 — alinhado; (2) CartDrawer não subtraía o desconto do total — corrigido; (4.1) regra de arredondamento definida (mantém valor real do Shopify); (4.2) "a partir de" da home passou a usar o maior desconto (kit 28, ×0.80). + Endereço de coleta Uber Direct corrigido p/ o do CNPJ (secret, setado pelo usuário). Branch `main`)
+
+## Sessão 2026-06-22 — Fix discrepância de desconto dos kits (frontend × Shopify)
+
+**Bug:** páginas de kit (Leveza/Sabor/Força/Verde) e Kit Livre anunciavam 7→10%, 14→15%, 21→20%, 28→25%, mas o carrinho aplicava 7→5%, 14→10%, 21→15%, 28→20%. Cliente via "−10%" na página e recebia só "−5%" no carrinho (label "Kit 7 – 5% off").
+
+**Causa-raiz (confirmada via Shopify Admin API MCP, loja live "Jilo Marmitas" / checkout.jilomarmitas.com):** os 4 Automatic Discounts ATIVOS são 5/10/15/20 (a planilha oficial) — nodes 1321712844940 (5%), 1321712910476 (10%), 1321713074316 (15%), 1321713139852 (20%). O frontend tinha `KIT_SIZES`/`KIT_TIERS` hardcoded em 10/15/20/25 e a doc `fluxo-kits.md` documentava 10/15/20/25 (errado). Duas fontes de verdade divergentes.
+
+**Decisão de negócio validada (gate feature-builder):** escala oficial = 5/10/15/20. Alinhar o FRONTEND à planilha (baixar o anunciado), NÃO mexer no Shopify. Sem impacto de margem; cliente passa a ver o desconto real.
+
+**Correção (só código + docs, nenhuma mutation no Shopify):**
+- `src/pages/Kit.tsx` — `KIT_SIZES` discounts 10/15/20/25 → 5/10/15/20.
+- `src/pages/KitLivre.tsx` — `KIT_TIERS` 10/15/20/25 → 5/10/15/20; SEO "até 25%" → "até 20%".
+- `src/components/sections/WeeklyKits.tsx` — "a partir de" `× 0.90` → `× 0.95` (5% = menor tier).
+
+**Docs atualizados:** `fluxo-kits.md` (tabela de Automatic Discounts + labels + saturação 20%); `fluxo-carrinho-checkout.md` (cenário de QA recomputado: Kit 7 −5% → base R$ 178,88; PIX5 −5% → R$ 169,94); `requirements.md` R61 (exemplos kit 7/28 → 5%/20%); esta entrada.
+
+**⚠️ Correção das sessões anteriores:** as entradas da Sprint 5.2 (abaixo, 2026-06-15) usavam a premissa "kit 7 = 10% → R$ 169,47 → PIX 3% → R$ 164,39" — factualmente errada (o Shopify sempre aplicou 5%). Números de referência corretos: 7 pratos, subtotal R$ 188,30 → Kit 7 −5% = −R$ 9,42 → base R$ 178,88 → PIX5 −5% → R$ 169,94.
+
+**Verificação:** `npx tsc --noEmit` exit 0; `vitest run` 1/1 passou.
+
+### Pendências
+- **QA manual:** abrir `/kit/kit-leveza` (e demais), conferir o selector mostrando −5/−10/−15/−20%; montar kit de 7 → carrinho deve bater com o anunciado ("Kit 7 – 5% off").
+- Tiers seguem hardcoded em 2 lugares (`KIT_SIZES`, `KIT_TIERS`) + `WeeklyKits` — nada impede frontend e Shopify de divergirem de novo. Backlog: fonte única (ou ler do Shopify).
+
+
+## Sessão 2026-06-22 (Uber pickup) — Correção do endereço de coleta da Uber Direct
+
+**Demanda:** corrigir o endereço de coleta usado nas chamadas à API Uber Direct, usando o endereço do `CNPJ JILÓ.pdf` como fonte de verdade.
+
+**Endereço correto (CNPJ JILO ALIMENTACAO LTDA, 05.574.020/0001-90):** Av. Engenheiro Juarez de Siqueira Britto Wanderley, 50 – Loja 05, Eldorado, São José dos Campos/SP, CEP 12238-565.
+
+**Onde mora a config (achado):** o endereço de coleta NÃO está em tabela — está em **Edge Function Secrets** (`JILO_PICKUP_ADDRESS_JSON`, `JILO_PICKUP_LATITUDE`, `JILO_PICKUP_LONGITUDE`, `JILO_PICKUP_NAME`, `JILO_PICKUP_PHONE`), lido por `Deno.env.get(...)` (sem fallback) em `uber-quote` e `uber-create-delivery`. O MCP do Supabase NÃO escreve secrets (sem ferramenta) e `execute_sql` não alcança — então a correção é feita pelo Dashboard/CLI, pelo usuário. Decisão validada com o usuário (gate): manter em secrets, usuário seta.
+
+**Valores corretos entregues ao usuário p/ setar (projeto `hofohxvizlmawgkinwwz`):**
+- `JILO_PICKUP_ADDRESS_JSON` = `{"street_address":["Avenida Engenheiro Juarez de Siqueira Britto Wanderley, 50","Loja 05"],"city":"São José dos Campos","state":"SP","zip_code":"12238565","country":"BR"}`
+- `JILO_PICKUP_LATITUDE` = `-23.2625966` / `JILO_PICKUP_LONGITUDE` = `-45.9155005` (geocode Nominatim+web, eixo da avenida).
+
+**Docs:** `fluxo-uber-direct.md` (tabela "Pickup Jilo" agora traz os valores reais + nota de que são secrets não-graváveis por MCP); esta entrada.
+
+**✅ Verificado (2026-06-22):** usuário atualizou os secrets pelo Dashboard. Testei a `uber-quote` ao vivo (cold start já aplicou o novo valor — sem redeploy): destino longe (Colinas Shopping, Av. São João 2200) → `address_undeliverable` com distância calculada 4,09 mi (>5 km); destino perto (Av. Cassiano Ricardo 601, Jardim Aquarius) → **200, fee R$ 21,90, quote_id `dqt_…`**. As distâncias batem com o novo pickup (Eldorado/Jardim Aquarius). Integração funcional.
+
+### Pendências
+- **Confirmar pino exato do nº 50** no Google Maps antes de produção (o geocode é o eixo da avenida; a Uber coleta na coordenada).
+- **Usuário: revogar o Personal Access Token** colado no chat (`sbp_…`) em supabase.com/dashboard/account/tokens.
+- Obs.: o MCP `get_logs` só retorna logs de acesso (200/502), não a linha `console.log` do payload — a confirmação foi comportamental (auth + cálculo de raio a partir do pickup), não byte-a-byte do `pickup_address`.
+
+
+## Sessão 2026-06-22 (4.1 + 4.2) — Arredondamento do desconto + "a partir de" da home
+
+**4.1 — Regra de arredondamento (DECISÃO, sem mudança de código):** o desconto de kit exibido (ex.: kit 7 = −R$ 6,93) é a alocação REAL do Shopify, lida em `cartStore.refreshCartDetails` das `line.discountAllocations[].discountedAmount` (não é calculado no frontend). O Shopify arredonda 5% por unidade para baixo (R$ 19,98 × 5% = R$ 0,999 → R$ 0,99 × 7 = R$ 6,93), vs R$ 6,99 dos 5% exatos. **Decisão validada com o usuário (gate):** MANTER o valor real (vitrine == checkout); não recalcular no frontend (recálculo reintroduziria a divergência das Inconsistências 1/2). Regra documentada em `fluxo-kits.md` (regra #4). A diferença (centavos, a favor da loja) é aceita.
+
+**4.2 — "A partir de" da home (FIX de código):** os cards do `WeeklyKits.tsx` mostravam o preço/un de um tier intermediário (antes 10%, depois 5% após o fix da Inconsistência 1) — não o mínimo real. Corrigido para usar o **maior desconto** (kit de 28 = 20% off): fator `× 0.95` → `× 0.80`. Agora "a partir de" reflete o menor preço/un atingível: G1 R$ 15,98, G2 R$ 16,79, G3/G4 R$ 21,52 (confere com os valores do usuário). Kit Livre (menor preço entre kits) acompanha automaticamente.
+
+**Verificação:** `npx tsc --noEmit` exit 0; `vitest run` 1/1.
+
+**Docs:** `fluxo-kits.md` (regra #4 — arredondamento; regra #5 — fator do WeeklyKits); esta entrada.
+
+### Pendências
+- **QA visual:** home → cards "a partir de" devem mostrar R$ 15,98 (Leveza) / R$ 16,79 (Sabor) / R$ 21,52 (Força/Verde). Carrinho de 7 → desconto −R$ 6,93 (real do Shopify), batendo com o checkout.
+
+
+## Sessão 2026-06-22 (Inconsistência 2) — Mini-carrinho não aplicava o desconto no total
+
+**Bug (reproduzido ao vivo):** no `CartDrawer` (drawer lateral), a linha de desconto de kit aparecia, mas o "Total estimado" e o botão "Finalizar Compra" exibiam o SUBTOTAL CHEIO. Ex.: 7 pratos R$ 139,86, "Kit 7 – 5% off" −R$ 6,93 → drawer mostrava R$ 139,86 (errado); /carrinho mostrava R$ 132,93 (correto).
+
+**Causa-raiz:** `CartDrawer.tsx` calculava `subtotal` cru e renderizava a linha de `cartDiscountAllocations`, mas os dois totais (l.221 "Total estimado" e l.238 botão) usavam `subtotal.toFixed(2)` direto — nunca subtraíam o desconto. O cálculo correto já existia em `Carrinho.tsx` (`kitDiscountTotal` → `displayTotal`). Defeito isolado no componente do drawer.
+
+**Correção (cirúrgica, só `src/components/CartDrawer.tsx`):**
+- Novo `kitDiscountTotal = Σ cartDiscountAllocations[].discountedAmount` e `totalWithDiscount = subtotal − kitDiscountTotal` (espelha Carrinho.tsx).
+- "Total estimado" e botão "Finalizar Compra" passam a usar `totalWithDiscount`.
+- Linha de desconto agora mapeia TODAS as allocations (`.map`) em vez de só `[0]`, garantindo que o total nunca divirja das linhas exibidas.
+- Drawer NÃO inclui frete no total (mostrado à parte) — "Total estimado" = produtos com desconto, consistente com a UX do mini-cart.
+
+**Verificação:** `npx tsc --noEmit` exit 0; `vitest run` 1/1.
+
+**Docs:** `fluxo-carrinho-checkout.md` (seção CartDrawer + cenário de QA do total do drawer); esta entrada.
+
+### Pendências
+- **QA visual:** adicionar 7 marmitas, abrir o drawer → "Total estimado" e botão devem mostrar subtotal − desconto (ex.: R$ 132,93), batendo com o /carrinho.
+- Formatação: o drawer usa `.toFixed(2)` (ponto) nos totais enquanto /carrinho usa vírgula (`.replace(".", ",")`) — inconsistência de formato pré-existente, NÃO tocada neste fix. Backlog se quiser padronizar.
+
 
 ## Sessão 2026-06-15 — Fix combinabilidade PIX × Kit (branch fix/checkout-pix)
 

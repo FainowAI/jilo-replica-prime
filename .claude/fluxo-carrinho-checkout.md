@@ -140,8 +140,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 1. Clique no ícone de carrinho no Header → abre Sheet lateral
 2. Mostra barra de frete grátis (progresso até R$150)
 3. Lista de itens com +/- quantidade e remover
-4. Subtotal
-5. Botão "Ir para o Carrinho" → navega para `/carrinho`
+4. Resumo: Subtotal (bruto) → linha(s) de desconto de kit (`cartDiscountAllocations`) → frete → **"Total estimado" = subtotal − desconto de kit**. Espelha o cálculo do `/carrinho` (`subtotal − kitDiscountTotal`); o drawer NÃO inclui frete no total (mostrado à parte como "Grátis"/"Calculado no carrinho"). O valor do botão "Finalizar Compra" usa o mesmo total com desconto.
+5. Botão "Finalizar Compra" → navega para `/carrinho`
 
 ### Página /carrinho
 1. Breadcrumb: Página Inicial > Meu Carrinho
@@ -230,14 +230,15 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 ## Roteiro de QA do checkout
 
-> Cenários de regressão para o desconto PIX × Kit (Sprint 5.2; PIX atualizado para 5% sempre em R61/R19). Caso de referência: **7 pratos**, subtotal **R$ 188,30**, Kit 7 **−10%** (−R$ 18,83) ⇒ base R$ 169,47; PIX5 **−5%** ⇒ preview R$ 161,00 (economia R$ 8,47).
+> Cenários de regressão para o desconto PIX × Kit (Sprint 5.2; PIX atualizado para 5% sempre em R61/R19). Escala de Kit oficial = 5/10/15/20 (confirmada via Shopify Admin API, Junho 2026 — ver `fluxo-kits.md`). Caso de referência: **7 pratos**, subtotal **R$ 188,30**, Kit 7 **−5%** (−R$ 9,42) ⇒ base R$ 178,88; PIX5 **−5%** ⇒ preview R$ 169,94 (economia R$ 8,94).
 
-- **Sem PIX (7 itens):** linha "Kit 7 – 10% off" = −R$ 18,83; sem linha "PIX5"; TOTAL = R$ 169,47.
-- **Com PIX (7 itens):** "Total com PIX: R$ 161,00 (5% off — economia de R$ 8,47)"; sem 3 casas decimais; TOTAL grande continua R$ 169,47 (não muda ao selecionar PIX); "Cupom PIX5 Aplicado ✓".
+- **Sem PIX (7 itens):** linha "Kit 7 – 5% off" = −R$ 9,42; sem linha "PIX5"; TOTAL = R$ 178,88.
+- **Com PIX (7 itens):** "Total com PIX: R$ 169,94 (5% off — economia de R$ 8,94)"; sem 3 casas decimais; TOTAL grande continua R$ 178,88 (não muda ao selecionar PIX); "Cupom PIX5 Aplicado ✓".
 - **1–6 itens + PIX:** cupom = PIX5 (5%), base = subtotal cheio (Kit = 0); preview = subtotal × 0,95, 2 casas.
-- **Cupom manual + 7 itens:** cupom manual só como "Aplicado ✓" (não entra no TOTAL); linha "Kit 7 – 10% off" segue; TOTAL = subtotal − Kit.
-- **CartDrawer:** linha de desconto mostra o Kit (ex.: "Kit 7 – 10% off −R$ 18,83") — nunca "PIX5"/"PIX3". Se aparecer cupom PIX no drawer, o filtro da R62 não foi aplicado.
+- **Cupom manual + 7 itens:** cupom manual só como "Aplicado ✓" (não entra no TOTAL); linha "Kit 7 – 5% off" segue; TOTAL = subtotal − Kit.
+- **CartDrawer:** linha de desconto mostra o Kit (ex.: "Kit 7 – 5% off −R$ 9,42") — nunca "PIX5"/"PIX3". Se aparecer cupom PIX no drawer, o filtro da R62 não foi aplicado.
+- **CartDrawer (total com desconto, fix Junho/2026):** o "Total estimado" e o valor no botão "Finalizar Compra" = **subtotal − desconto de kit** (ex.: 7 pratos R$ 139,86 − R$ 6,93 = **R$ 132,93**), espelhando o `/carrinho`. Se o drawer exibir o subtotal cheio MESMO com a linha de desconto presente, o total parou de aplicar `kitDiscountTotal` (era o bug original: a linha aparecia mas não era subtraída do total).
 - **Reload (D4):** com 7 itens + PIX previamente selecionado, recarregar a página: `cartDiscountAllocations` é recalculado (não vem do localStorage); não deve "piscar" valor velho de PIX; `reconcileDiscountsOnLoad` remove o PIX grudento.
 - **Consistência matemática:** em qualquer cenário com PIX, `pixFinalValue + pixDiscount` = base (subtotal − Kit), sem diferença de centavo.
 - **Hard-block intacto (R59):** selecionar PIX em cart de 1–6 (frete pago) e em 7+ (com Kit) — o botão "Ir para o Checkout" libera normalmente quando endereço/quantidade/frete estão OK (o hard-block usa `shopifyHasShippingLine`, não subtotais).
-- **Cenário Fiscal (invariante R63):** o **total do checkout Shopify == total prometido no carrinho** (preview PIX), tolerância ± centavos. O imposto deve aparecer como **INCLUSO**, nunca somado ao total (market "Brasil" = `INCLUDES_TAXES_IN_PRICE`). Caso de referência: 7 pratos, Kit 7 −10%, PIX5 −5% → total **R$ 161,00**. Se o checkout somar imposto por cima (total > preview), suspeitar de reversão para `ADD_TAXES_AT_CHECKOUT` no market (ver R63).
+- **Cenário Fiscal (invariante R63):** o **total do checkout Shopify == total prometido no carrinho** (preview PIX), tolerância ± centavos. O imposto deve aparecer como **INCLUSO**, nunca somado ao total (market "Brasil" = `INCLUDES_TAXES_IN_PRICE`). Caso de referência: 7 pratos, Kit 7 −5%, PIX5 −5% → total **R$ 169,94**. Se o checkout somar imposto por cima (total > preview), suspeitar de reversão para `ADD_TAXES_AT_CHECKOUT` no market (ver R63).

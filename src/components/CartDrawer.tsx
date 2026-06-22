@@ -19,6 +19,14 @@ export const CartDrawer = () => {
     (sum, item) => sum + parseFloat(item.price.amount) * item.quantity,
     0
   );
+  // Desconto de kit agregado — mesmo cálculo do /carrinho (Carrinho.tsx): soma
+  // TODAS as cartDiscountAllocations e subtrai do subtotal cru. O "Total estimado"
+  // do drawer NÃO inclui frete (exibido à parte como "Grátis"/"Calculado no carrinho").
+  const kitDiscountTotal = cartDiscountAllocations.reduce(
+    (sum, alloc) => sum + parseFloat(alloc.discountedAmount.amount),
+    0
+  );
+  const totalWithDiscount = subtotal - kitDiscountTotal;
   const isFree = isFreeShipping(totalNonShippingItems);
   const itemsRemaining = SHIPPING_FREE_THRESHOLD - totalNonShippingItems;
 
@@ -194,16 +202,16 @@ export const CartDrawer = () => {
                   <span className="text-sm text-[#1a1a1a]">Subtotal ({totalItems} {totalItems === 1 ? 'prato' : 'pratos'})</span>
                   <span className="text-sm font-semibold text-[#1a1a1a]">R$ {subtotal.toFixed(2)}</span>
                 </div>
-                {cartDiscountAllocations.length > 0 && (
-                  <div className="flex justify-between items-center">
+                {cartDiscountAllocations.length > 0 && cartDiscountAllocations.map((alloc, i) => (
+                  <div key={i} className="flex justify-between items-center">
                     <span className="text-xs text-[#1e3a1e] font-sans font-medium">
-                      {cartDiscountAllocations[0].title || cartDiscountAllocations[0].code || "Desconto de kit"}
+                      {alloc.title || alloc.code || "Desconto de kit"}
                     </span>
                     <span className="text-xs font-semibold text-[#1e3a1e]">
-                      -R$ {parseFloat(cartDiscountAllocations[0].discountedAmount.amount).toFixed(2).replace(".", ",")}
+                      -R$ {parseFloat(alloc.discountedAmount.amount).toFixed(2).replace(".", ",")}
                     </span>
                   </div>
-                )}
+                ))}
                 <div className="flex justify-between items-center">
                   <span className="text-[13px] text-[#9b9b9b]">Frete</span>
                   <span className="text-[13px] font-semibold text-[#1e3a1e]">
@@ -218,7 +226,7 @@ export const CartDrawer = () => {
               {/* Total */}
               <div className="flex justify-between items-center mb-3">
                 <span className="text-base font-bold text-[#1a1a1a]">Total estimado</span>
-                <span className="text-base font-bold text-[#1a1a1a]">R$ {subtotal.toFixed(2)}</span>
+                <span className="text-base font-bold text-[#1a1a1a]">R$ {totalWithDiscount.toFixed(2)}</span>
               </div>
 
               <PixCallout variant="card" className="mb-3" />
@@ -235,7 +243,7 @@ export const CartDrawer = () => {
                   <>
                     <span>Finalizar Compra</span>
                     <span className="opacity-60">→</span>
-                    <span>R$ {subtotal.toFixed(2)}</span>
+                    <span>R$ {totalWithDiscount.toFixed(2)}</span>
                   </>
                 )}
               </button>

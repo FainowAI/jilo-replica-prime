@@ -21,10 +21,10 @@ const KIT_META: Record<string, { name: string; emoji: string; bgColor: string; p
 };
 
 const KIT_SIZES = [
-  { qty: 7, discount: 10, label: "Kit de 7" },
-  { qty: 14, discount: 15, label: "Kit de 14" },
-  { qty: 21, discount: 20, label: "Kit de 21" },
-  { qty: 28, discount: 25, label: "Kit de 28" },
+  { qty: 7, discount: 5, label: "Kit de 7" },
+  { qty: 14, discount: 10, label: "Kit de 14" },
+  { qty: 21, discount: 15, label: "Kit de 21" },
+  { qty: 28, discount: 20, label: "Kit de 28" },
 ];
 
 function formatPrice(amount: number) {
