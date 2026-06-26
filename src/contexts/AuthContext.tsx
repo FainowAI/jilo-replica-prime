@@ -27,10 +27,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     // Escuta mudanças
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+
+      // Sprint A (EAP visibilidade de dados — A.1.2): dispara o customer-sync no
+      // signup E no login. Idempotente por shopify_customer_id (a edge retorna
+      // "already_synced" se o customer já existe). Deferido com setTimeout p/ não
+      // rodar chamada async dentro do callback do onAuthStateChange (evita deadlock
+      // conhecido do supabase-js). Fail-soft: erro nunca impacta a UX.
+      // [Sprint B / PostHog — EAP Seção 6]: adicionar AQUI, no mesmo bloco,
+      //   posthog.identify(session.user.id) no SIGNED_IN e posthog.reset() no SIGNED_OUT.
+      if (event === "SIGNED_IN") {
+        setTimeout(() => {
+          supabase.functions
+            .invoke("shopify-customer-sync")
+            .catch((err) => console.warn("[customer-sync] dispatch falhou (não bloqueia UX):", err));
+        }, 0);
+      }
     });
 
     return () => subscription.unsubscribe();

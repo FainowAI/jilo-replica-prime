@@ -1,7 +1,33 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-22 (fixes de desconto de kit: (1) frontend anunciava 10/15/20/25 vs Shopify 5/10/15/20 — alinhado; (2) CartDrawer não subtraía o desconto do total — corrigido; (4.1) regra de arredondamento definida (mantém valor real do Shopify); (4.2) "a partir de" da home passou a usar o maior desconto (kit 28, ×0.80). + Endereço de coleta Uber Direct corrigido p/ o do CNPJ (secret, setado pelo usuário). Branch `main`)
+2026-06-26 (Sprint A da EAP Visibilidade de Dados — Captação Shopify. Branch `main`. Ver sessão abaixo.)
+
+## Sessão 2026-06-26 — Sprint A (EAP Visibilidade de Dados): Captação Shopify
+
+Executada a **Sprint A** de `.claude/docs/eap_visibilidade_dados.md` (cliente + endereço + pedidos), com foco em segurança/LGPD, via `feature-builder` (3 subagentes em paralelo para edição + deploys/backfill no main). MCP Shopify autenticado no Claude Desktop usado para backfill (loja "Jilo Marmitas", `jnutg9-u2`).
+
+**Decisões do gate (usuário):** webhooks via edge function com trigger pelo usuário; `order_items` incluído; backfill feito agora.
+
+**O que mudou (código, tudo deployado e verificado):**
+- **A.1.1** `supabase/functions/shopify-customer-sync/index.ts` — passou a anexar o **endereço default nativo** ao customer via mutation SEPARADA `customerAddressCreate` (`CustomerInput` não tem campo `addresses` na API 2025-10). FAIL-SOFT: erro de endereço nunca bloqueia o sync. Endereço vem da tabela `addresses` (default), não das colunas `profiles.*` (que estão vazias). Bairro → `address2`; `provinceCode`=UF; `countryCode`=BR. **CPF nunca é enviado** (D2/LGPD). Fallback de nome via `user_metadata.full_name` quando o profile ainda está vazio (signup). Deploy v25 (verify_jwt: true).
+- **A.1.2** `src/contexts/AuthContext.tsx` — dispara `shopify-customer-sync` no evento `SIGNED_IN` (signup E login), deferido com `setTimeout(…,0)` p/ evitar deadlock do `onAuthStateChange`. Idempotente (a edge retorna `already_synced`). Comentário marca onde a Sprint B (PostHog) entra no mesmo handler (EAP Seção 6).
+- **A.2.2** `supabase/functions/shopify-webhook-receiver/index.ts` — `orders/paid` virou **upsert defensivo** (`extractOrderData(payload)` + campos de pagamento): se `paid` chegar antes de `create`, a linha é criada em vez de perdida.
+- **A.2.3** mesmo arquivo — popula `order_items` normalizado (`extractOrderItems`/`syncOrderItems`, delete-then-insert por `order_id`) no `orders/create` e no `orders/paid`, filtrando a variant fantasma de frete. Deploy v26 (verify_jwt: false).
+- **A.2.1** `supabase/functions/register-shopify-webhooks/index.ts` (**NOVO**) — registra idempotentemente os webhooks `ORDERS_CREATE/PAID/FULFILLED` apontando p/ o receiver, usando o **app custom** (OAuth client_credentials inline) p/ o HMAC bater com `SHOPIFY_WEBHOOK_SECRET`. Guard: `Authorization: Bearer <SERVICE_ROLE_KEY>`. Deploy v1 (verify_jwt: false). **Disparo é manual (usuário)** — ver pendência.
+
+**Backfill (A.3.3):** os 6 profiles órfãos agora têm `shopify_customer_id` (6/6). 4 customers criados via MCP (Julia/Fainow/Darlison/Luiz); 2 (marbergertony/enzosimoes) **já existiam do checkout** — receberam as tags `jilo-customer`/`source:supabase` e já tinham endereço. Endereço nativo anexado aos 3 novos com endereço no Supabase (Julia não tem; os 2 existentes mantiveram o endereço do checkout).
+
+**Descoberta importante (HMAC):** o MCP Shopify do Claude Desktop roda sob o app **"Shopify Claude Connector App"** (apiKey `bff99d…`), DIFERENTE do app custom. Registrar webhooks por ele assinaria o HMAC com o segredo errado → 401 no receiver. Por isso A.2.1 usa o app custom. (O Connector App também roda uma API mais antiga — rejeitou o arg `identifier` do `customerCreate`.)
+
+**Verificação:** `tsc --noEmit` exit 0 · `vitest` 1/1 · conteúdo deployado conferido byte-a-byte contra o disco (get_edge_function) · `register-shopify-webhooks`/`shopify-webhook-receiver`/`shopify-customer-sync` todos ACTIVE. **Sem migration** (todas as tabelas/colunas já existiam).
+
+### Pendências Sprint A
+- **[USUÁRIO] Disparar o registro dos webhooks** (A.2.1) — ver comando entregue na sessão. Enquanto não rodar, `orders`/`webhook_events` seguem vazias (nenhum pedido é capturado). Após disparar: fazer 1 pedido de teste e confirmar linha em `webhook_events` (processed=true) + `orders` + `order_items` (A.3.1).
+- **[USUÁRIO] Confirmar que `SHOPIFY_WEBHOOK_SECRET` == client secret do app custom** — se divergir, o receiver retorna 401 em todo webhook (mitigação: validar com o pedido de teste).
+- **Backlog (fora do escopo estrito da Sprint A):** (1) endereço adicionado DEPOIS do customer já existir não é re-enviado (sync idempotente por `shopify_customer_id`); (2) o webhook não preenche `orders.user_id` (RLS esconde o pedido do cliente em `/conta/pedidos`) — linkar por `customer_email`→`profiles` numa próxima passada.
+
+
 
 ## Sessão 2026-06-22 — Fix discrepância de desconto dos kits (frontend × Shopify)
 
