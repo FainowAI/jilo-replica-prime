@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCreateAddress, useUpdateAddress } from "@/hooks/useAddresses";
 import type { Tables } from "@/integrations/supabase/types";
+import { analytics } from "@/analytics/events";
 
 interface AddressFormDialogProps {
   open: boolean;
@@ -57,6 +58,7 @@ const AddressFormDialog = ({ open, onOpenChange, address }: AddressFormDialogPro
         toast.success("Endereço atualizado!");
       } else {
         await createAddress.mutateAsync(form);
+        analytics.enderecoCadastrado({ uf: form.state, cidade: form.city });
         toast.success("Endereço adicionado!");
       }
       onOpenChange(false);

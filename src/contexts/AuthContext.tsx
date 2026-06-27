@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { identifyUser, resetAnalytics } from "@/analytics/posthog";
+import { analytics } from "@/analytics/events";
 
 interface AuthContextType {
   user: User | null;
@@ -24,13 +26,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      // PostHog (B.2.1): identifica na restauração de sessão (distinct_id = user.id).
+      if (session?.user) identifyUser(session.user.id);
     });
 
     // Escuta mudanças
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+
+      // Sprint A (EAP visibilidade de dados — A.1.2): dispara o customer-sync no
+      // signup E no login. Idempotente por shopify_customer_id (a edge retorna
+      // "already_synced" se o customer já existe). Deferido com setTimeout p/ não
+      // rodar chamada async dentro do callback do onAuthStateChange (evita deadlock
+      // conhecido do supabase-js). Fail-soft: erro nunca impacta a UX.
+      // PostHog (Sprint B / B.2.1 — EAP Seção 6): identify no SIGNED_IN (distinct_id
+      // = user.id, sem PII) e reset no SIGNED_OUT. Convive com o customer-sync (Sprint A).
+      if (event === "SIGNED_IN") {
+        if (session?.user) identifyUser(session.user.id);
+        setTimeout(() => {
+          supabase.functions
+            .invoke("shopify-customer-sync")
+            .catch((err) => console.warn("[customer-sync] dispatch falhou (não bloqueia UX):", err));
+        }, 0);
+      } else if (event === "SIGNED_OUT") {
+        resetAnalytics();
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -38,6 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) analytics.loginEfetuado(); // B.2.2 — sem PII
     return { error };
   };
 
@@ -50,6 +73,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         emailRedirectTo: `${window.location.origin}/conta`,
       },
     });
+    if (!error) analytics.cadastroConcluido(); // B.2.2 — sem PII
     return { error };
   };
 

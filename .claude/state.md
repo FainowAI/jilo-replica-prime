@@ -1,7 +1,105 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-22 (fixes de desconto de kit: (1) frontend anunciava 10/15/20/25 vs Shopify 5/10/15/20 — alinhado; (2) CartDrawer não subtraía o desconto do total — corrigido; (4.1) regra de arredondamento definida (mantém valor real do Shopify); (4.2) "a partir de" da home passou a usar o maior desconto (kit 28, ×0.80). + Endereço de coleta Uber Direct corrigido p/ o do CNPJ (secret, setado pelo usuário). Branch `main`)
+2026-06-27 (Sprint C da EAP Visibilidade de Dados — GA4 + revisão SEO/Search Console. Branch `feature/visibilidade-dados-sprint-a`. Ver sessão abaixo.)
+
+## ▶ HANDOFF — próxima sessão (começar por aqui)
+
+Sprints A+B+C da EAP Visibilidade de Dados **codadas e buildando**. O que falta é tudo **provisionamento manual do usuário** + QA pós-deploy. Código não tem pendência de implementação.
+
+**1. Provisionar contas/keys (USUÁRIO — sem isso o analytics/SEO fica inerte):**
+- [x] **GA4 (Sprint C):** propriedade criada, Measurement ID **`G-LS2VBNXZKE`** já no `.env` e inlined no bundle (verificado). ⚠️ **FALTA:** setar `VITE_PUBLIC_GA4_MEASUREMENT_ID=G-LS2VBNXZKE` **no hosting (Lovable)** — sem isso o build de prod não enxerga. No Data Stream do GA4, desligar pageview do Enhanced Measurement (já temos `RouteChangeTracker`, senão conta em dobro).
+- [ ] **Google Search Console:** verificar `https://jilomarmitas.com` (atalho: via GA4, 1 clique, se o GA já estiver no ar) OU colar o token no meta `google-site-verification` de `index.html` (hoje `PENDENTE_*`). Depois, **submeter `sitemap.xml`**.
+- [ ] **Shopify Admin token:** o `SHOPIFY_ADMIN_TOKEN` do `.env` está **inválido (401)** — gerar um novo e atualizar `.env` + hosting. Destrava o **sitemap completo** (26 produtos + kits) e o `npm run seed`. ⚠️ Conferir loja canônica: `generate-seo-files.ts` tem `jnutg9-u2` hardcoded vs `.env` `jilo-marmitas`.
+- [ ] **PostHog MCP:** token novo já validado e gravado no `.mcp.json` (rodar `/mcp` se precisar reconectar). PostHog do app já valida (project key `phc_rDBm…`, projeto 487943).
+
+**2. QA pós-provisionamento (rodar SÓ em produção, domínio `jilomarmitas.com` — gate prod-only):**
+- [ ] **PostHog (B.3):** eventos no painel Activity; jornada anônimo→identificado conecta no login.
+- [ ] **GA4 (C.3):** Realtime mostra pageview por rota (C.3.1); DebugView confirma os eventos-chave (C.3.2).
+- [ ] **SEO:** após token Shopify válido, conferir que `sitemap.xml` lista produtos/kits; Search Console sem erros de cobertura.
+
+**3. Encerramento da fase (Z.1):** docs `.claude/` já atualizados nesta fase (requirements R70–R77, `fluxo-analytics.md`, este `state.md`). Quando o QA passar, considerar `codebase-cleanup` se sobrar código órfão.
+
+**4. Git:** branch `feature/visibilidade-dados-sprint-a` tem mudanças **não commitadas** (Sprint C + correções SEO + wizard PostHog anterior). Nada commitado ainda — sugerir commit(s) seguindo Git Flow (nunca em `main`/`staging`) quando o usuário pedir.
+
+## Sessão 2026-06-27 — Sprint C (EAP Visibilidade de Dados): GA4 (aquisição & canais)
+
+Executada a **Sprint C** de `.claude/docs/eap_visibilidade_dados.md` via `feature-builder`, mesma branch. Frontend puro — **sem banco, sem dependência nova** (gtag direto via `<script>`, sem GTM — D6). Reusa o scaffolding da Sprint B (gate `analyticsEnabled` + `maskUrl`), sequencial na sessão principal (escopo pequeno, arquivos interdependentes).
+
+**Decisões do gate (usuário):** sanitização de nome de evento p/ o GA4 em snake_case sem acento (necessidade técnica do GA4; PostHog mantém o nome PT-BR) — **confirmada**. Measurement ID será criado depois (código inerte até lá, igual à Sprint B).
+
+**O que mudou (tudo verificado):**
+- **C.1.2** `src/analytics/ga4.ts` (NOVO) — `initGA4()` injeta o gtag prod-only e `config` com `send_page_view:false`; `trackGA4`/`pageviewGA4`. Gate `ga4Enabled = analyticsEnabled && !!VITE_PUBLIC_GA4_MEASUREMENT_ID`. Reusa `maskUrl` (exportado de `posthog.ts`). Sanitiza nome de evento.
+- **C.1.3** `src/analytics/RouteChangeTracker.tsx` (NOVO) — emite `page_view` no GA4 a cada rota (`useLocation`); montado dentro do `<BrowserRouter>` em `App.tsx`. PostHog continua capturando `$pageview` sozinho.
+- **C.2.1** `src/analytics/track.ts` (NOVO) — dispatcher único; `events.ts` passou a importar `track` dele → os eventos do dicionário vão p/ PostHog **e** GA4 (fan-out). 1 linha alterada em `events.ts`.
+- **C.2.2** masking reusado (mesmo `maskUrl`) no `pageviewGA4` — sem duplicar.
+- `src/main.tsx` — `initGA4()` ao lado do `initAnalytics()`. `.env` — `VITE_PUBLIC_GA4_MEASUREMENT_ID=` (vazio/inerte).
+
+**Segurança/LGPD:** mesma superfície da Sprint B — gate prod-only herdado, URLs mascaradas no GA4, eventos sem PII. Sem RLS/RBAC (frontend puro) — `security-auditor` não despachado, declarado.
+
+**Verificação:** `npm run build` ✓ (2230 módulos, sem erro de TS/Vite). Regras novas: `requirements.md` R75–R77. `fluxo-analytics.md` estendido (GA4).
+
+### Pendências Sprint C
+- **[USUÁRIO] C.1.1** — criar propriedade GA4 + Web Data Stream e setar `VITE_PUBLIC_GA4_MEASUREMENT_ID` (`G-XXXXXXX`) no `.env` e no hosting de produção. Até lá o GA4 fica inerte (no-op).
+- **QA (C.3) pós-provisionamento:** Realtime do GA4 mostra pageview por rota (C.3.1); DebugView confirma os eventos-chave (C.3.2).
+- **Encerramento (Z.1):** com Sprints A+B+C feitas, a fase está pronta para o fechamento de documentação (já adiantado nesta sessão e nas anteriores).
+
+### Adendo SEO / Google Search Console (mesma sessão)
+Revisão da infra de SEO a pedido do usuário. Achados + correções:
+- **`package.json`** — script `seo` passou a carregar o `.env`: `tsx --env-file-if-exists=.env scripts/generate-seo-files.ts`. Antes, o `tsx` não lia o `.env`, então `SHOPIFY_ADMIN_TOKEN` ficava indefinido e o `generate-seo-files.ts` caía no fallback de rotas estáticas → sitemap com só **8 URLs** (home + cardapio + kit-livre + 5 collections), **sem os 26 produtos nem os kits**. Com a flag, o token é lido e o sitemap inclui produtos/kits — **assim que houver token válido**.
+- **`index.html`** — meta `google-site-verification` saiu de comentário para tag ativa com placeholder `PENDENTE_COLAR_TOKEN_DO_GOOGLE_SEARCH_CONSOLE`. O Google ignora placeholder (sem erro). Verificação alternativa: via GA4 (mesma conta Google) sem precisar do meta.
+- **🔴 Descoberta:** o `SHOPIFY_ADMIN_TOKEN` do `.env` (`shpat_53fc…`) está **inválido (HTTP 401)** nas duas lojas (`jnutg9-u2` e `jilo-marmitas`). Por isso o sitemap segue com 8 URLs mesmo após a correção. Bloqueia: sitemap completo (SEO) e o `npm run seed`/scripts Admin. **Pendência [USUÁRIO]:** gerar um Admin API token novo no Shopify e atualizar o `.env` (e o build env do hosting).
+- ⚠️ Nota: o `generate-seo-files.ts` tem a loja **hardcoded** `jnutg9-u2.myshopify.com` (linha 8), divergente do `.env` (`jilo-marmitas.myshopify.com`). Confirmar a loja canônica ao trocar o token.
+
+### Pendências SEO / Google
+- **[USUÁRIO]** Verificar o domínio no **Google Search Console** (`https://jilomarmitas.com`) e colar o token no meta de `index.html` — OU verificar via GA4.
+- **[USUÁRIO]** Submeter `https://jilomarmitas.com/sitemap.xml` no Search Console após verificar.
+- **[USUÁRIO]** Gerar Admin token Shopify válido p/ o sitemap pegar os produtos/kits.
+
+## Sessão 2026-06-27 — Sprint B (EAP Visibilidade de Dados): PostHog (instrumentação de produto)
+
+Executada a **Sprint B** de `.claude/docs/eap_visibilidade_dados.md` via `feature-builder`, na branch `feature/visibilidade-dados-sprint-a` (mesma branch acumula todas as sprints da fase). Frontend puro — **sem banco/migration**. Fundação + AuthContext feitos na sessão principal; instrumentação dos call-sites por 2 `feature-coder` em paralelo (file-disjuntos).
+
+**Decisões do gate (usuário):** domínio prod = `jilomarmitas.com`; env vars fiadas no código, usuário preenche depois (analytics inerte até lá).
+
+**O que mudou (tudo verificado):**
+- **B.1 Fundação:** `posthog-js` + `@posthog/react` instalados. `src/analytics/posthog.ts` (init + gate prod-only `analyticsEnabled` + masking de PII via `before_send` + helpers `track`/`identifyUser`/`resetAnalytics`). `src/analytics/events.ts` (8 eventos tipados, sem PII). `src/main.tsx` (`initAnalytics()` + `<PostHogProvider client={posthog}>`).
+- **B.2 Identify + eventos:** `AuthContext.tsx` — `identify(user.id)` no SIGNED_IN + restauração de sessão, `reset()` no SIGNED_OUT, eventos `login efetuado`/`cadastro concluído` (resolveu o comentário de coordenação da Seção 6). Instrumentação dos 8 eventos nos chokepoints: `cartStore` (item adicionado + kit montado), `Carrinho` (carrinho aberto + checkout iniciado), `CartDrawer` (carrinho aberto), `Product` (produto visualizado + checkout buy-now), `useAddresses` (endereço cadastrado).
+
+**Segurança/LGPD:** gate prod-only (`!!KEY && PROD && hostname ∈ jilomarmitas.com`); identify só por `user.id` (sem email/CPF); masking de `/conta/pedidos/:id` e UUIDs no `before_send`; eventos sem PII; key via env (não hardcoded). Sem superfície de RLS/RBAC (frontend puro) — `security-auditor` não despachado, declarado.
+
+**Verificação:** `tsc --noEmit` exit 0 · `npx vite build` ✓ (2227 módulos) · `vitest` 1/1. Regras novas: `requirements.md` R70–R74. Novo doc: `fluxo-analytics.md` (registrado no CLAUDE.md).
+
+### Pendências Sprint B
+- **[USUÁRIO] B.1.1** — criar o projeto PostHog e setar `VITE_PUBLIC_POSTHOG_KEY` + `VITE_PUBLIC_POSTHOG_HOST` no hosting de produção. Até lá o analytics fica inerte (no-op).
+- **QA (B.3) pós-provisionamento:** confirmar eventos no painel PostHog (Activity) em prod (B.3.1) e jornada anônimo→identificado conectando no login (B.3.2). Validar que dev/preview NÃO emitem (gate).
+- **Sprint C (GA4)** entra depois, reusando este scaffolding (gate + masking + dicionário de eventos).
+
+## Sessão 2026-06-26 — Sprint A (EAP Visibilidade de Dados): Captação Shopify
+
+Executada a **Sprint A** de `.claude/docs/eap_visibilidade_dados.md` (cliente + endereço + pedidos), com foco em segurança/LGPD, via `feature-builder` (3 subagentes em paralelo para edição + deploys/backfill no main). MCP Shopify autenticado no Claude Desktop usado para backfill (loja "Jilo Marmitas", `jnutg9-u2`).
+
+**Decisões do gate (usuário):** webhooks via edge function com trigger pelo usuário; `order_items` incluído; backfill feito agora.
+
+**O que mudou (código, tudo deployado e verificado):**
+- **A.1.1** `supabase/functions/shopify-customer-sync/index.ts` — passou a anexar o **endereço default nativo** ao customer via mutation SEPARADA `customerAddressCreate` (`CustomerInput` não tem campo `addresses` na API 2025-10). FAIL-SOFT: erro de endereço nunca bloqueia o sync. Endereço vem da tabela `addresses` (default), não das colunas `profiles.*` (que estão vazias). Bairro → `address2`; `provinceCode`=UF; `countryCode`=BR. **CPF nunca é enviado** (D2/LGPD). Fallback de nome via `user_metadata.full_name` quando o profile ainda está vazio (signup). Deploy v25 (verify_jwt: true).
+- **A.1.2** `src/contexts/AuthContext.tsx` — dispara `shopify-customer-sync` no evento `SIGNED_IN` (signup E login), deferido com `setTimeout(…,0)` p/ evitar deadlock do `onAuthStateChange`. Idempotente (a edge retorna `already_synced`). Comentário marca onde a Sprint B (PostHog) entra no mesmo handler (EAP Seção 6).
+- **A.2.2** `supabase/functions/shopify-webhook-receiver/index.ts` — `orders/paid` virou **upsert defensivo** (`extractOrderData(payload)` + campos de pagamento): se `paid` chegar antes de `create`, a linha é criada em vez de perdida.
+- **A.2.3** mesmo arquivo — popula `order_items` normalizado (`extractOrderItems`/`syncOrderItems`, delete-then-insert por `order_id`) no `orders/create` e no `orders/paid`, filtrando a variant fantasma de frete. Deploy v26 (verify_jwt: false).
+- **A.2.1** `supabase/functions/register-shopify-webhooks/index.ts` (**NOVO**) — registra idempotentemente os webhooks `ORDERS_CREATE/PAID/FULFILLED` apontando p/ o receiver, usando o **app custom** (OAuth client_credentials inline) p/ o HMAC bater com `SHOPIFY_WEBHOOK_SECRET`. Guard: `Authorization: Bearer <SERVICE_ROLE_KEY>`. Deploy v1 (verify_jwt: false). **Disparo é manual (usuário)** — ver pendência.
+
+**Backfill (A.3.3):** os 6 profiles órfãos agora têm `shopify_customer_id` (6/6). 4 customers criados via MCP (Julia/Fainow/Darlison/Luiz); 2 (marbergertony/enzosimoes) **já existiam do checkout** — receberam as tags `jilo-customer`/`source:supabase` e já tinham endereço. Endereço nativo anexado aos 3 novos com endereço no Supabase (Julia não tem; os 2 existentes mantiveram o endereço do checkout).
+
+**Descoberta importante (HMAC):** o MCP Shopify do Claude Desktop roda sob o app **"Shopify Claude Connector App"** (apiKey `bff99d…`), DIFERENTE do app custom. Registrar webhooks por ele assinaria o HMAC com o segredo errado → 401 no receiver. Por isso A.2.1 usa o app custom. (O Connector App também roda uma API mais antiga — rejeitou o arg `identifier` do `customerCreate`.)
+
+**Verificação:** `tsc --noEmit` exit 0 · `vitest` 1/1 · conteúdo deployado conferido byte-a-byte contra o disco (get_edge_function) · `register-shopify-webhooks`/`shopify-webhook-receiver`/`shopify-customer-sync` todos ACTIVE. **Sem migration** (todas as tabelas/colunas já existiam).
+
+### Pendências Sprint A
+- **[USUÁRIO] Disparar o registro dos webhooks** (A.2.1) — ver comando entregue na sessão. Enquanto não rodar, `orders`/`webhook_events` seguem vazias (nenhum pedido é capturado). Após disparar: fazer 1 pedido de teste e confirmar linha em `webhook_events` (processed=true) + `orders` + `order_items` (A.3.1).
+- **[USUÁRIO] Confirmar que `SHOPIFY_WEBHOOK_SECRET` == client secret do app custom** — se divergir, o receiver retorna 401 em todo webhook (mitigação: validar com o pedido de teste).
+- **Backlog (fora do escopo estrito da Sprint A):** (1) endereço adicionado DEPOIS do customer já existir não é re-enviado (sync idempotente por `shopify_customer_id`); (2) o webhook não preenche `orders.user_id` (RLS esconde o pedido do cliente em `/conta/pedidos`) — linkar por `customer_email`→`profiles` numa próxima passada.
+
+
 
 ## Sessão 2026-06-22 — Fix discrepância de desconto dos kits (frontend × Shopify)
 

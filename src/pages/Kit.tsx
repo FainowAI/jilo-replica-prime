@@ -12,6 +12,7 @@ import BenefitsSummary from "@/components/BenefitsSummary";
 import FreeBadge from "@/components/FreeBadge";
 import PixCallout from "@/components/PixCallout";
 import { toast } from "sonner";
+import { analytics } from "@/analytics/events";
 
 const KIT_META: Record<string, { name: string; emoji: string; bgColor: string; positioning: string }> = {
   "kit-leveza": { name: "Kit Leveza", emoji: "🍗", bgColor: "#1e3a1e", positioning: "Sabor do dia a dia, leve e reconfortante" },
@@ -89,6 +90,7 @@ export default function Kit() {
       }
 
       await refreshCartDetails();
+      analytics.kitTematicoAdicionado({ slug: slug!, nome: meta!.name, tamanho: kitSize.qty, desconto: kitSize.discount });
       toast.success(`${meta?.name || "Kit"} adicionado ao carrinho!`);
       navigate("/carrinho");
     } catch (error) {

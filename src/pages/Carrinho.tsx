@@ -20,6 +20,7 @@ import { isValidKitQuantity } from "@/config/kitQuantity";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 import SEO from "@/components/SEO";
 import KitQuantityNotice from "@/components/KitQuantityNotice";
+import { analytics } from "@/analytics/events";
 
 const Carrinho = () => {
   const {
@@ -121,6 +122,12 @@ const Carrinho = () => {
     refreshCartDetails();
   }, [discountCodes, refreshCartDetails]);
 
+  // Evento de analytics: página do carrinho aberta (dispara uma vez no mount)
+  useEffect(() => {
+    analytics.carrinhoAberto({ itens: totalNonShippingItems, subtotal });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (freightSyncingWhilePaid) {
       console.warn(
@@ -164,6 +171,7 @@ const Carrinho = () => {
     try {
       const result = await applyDiscountCode(code);
       if (result.success && result.applicable) {
+        analytics.cupomAplicado({ codigo: code });
         setCouponCode("");
         toast.success(`Cupom ${code} aplicado!`);
       } else if (result.success && !result.applicable) {
@@ -215,6 +223,11 @@ const Carrinho = () => {
     }
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
+      analytics.checkoutIniciado({
+        itens: totalNonShippingItems,
+        frete: free ? "gratis" : "pago",
+        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
+      });
       window.open(appendReturnToCheckoutUrl(checkoutUrl), "_blank");
     }
   };

@@ -42,6 +42,7 @@ E-commerce da marca Jilo (DaJu Alimentação) — marmitas artesanais congeladas
 - `.claude/fluxo-perfil-usuario.md` — Perfil de usuário no Supabase
 - `.claude/fluxo-kits.md` — Kits temáticos e Kit Livre, descontos progressivos
 - `.claude/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
+- `.claude/fluxo-analytics.md` — PostHog (produto): gate prod-only, eventos do funil, masking de PII
 
 ## Regra de atualização
 Sempre que uma sessão do Claude Code modificar um fluxo documentado, ela DEVE atualizar o arquivo `.claude/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.claude/fluxo-[nome].md` e registrar aqui.
