@@ -171,6 +171,7 @@ const Carrinho = () => {
     try {
       const result = await applyDiscountCode(code);
       if (result.success && result.applicable) {
+        analytics.cupomAplicado({ codigo: code });
         setCouponCode("");
         toast.success(`Cupom ${code} aplicado!`);
       } else if (result.success && !result.applicable) {

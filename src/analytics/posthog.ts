@@ -38,7 +38,7 @@ export const analyticsEnabled: boolean =
 const UUID_RE =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
-function maskUrl(url: unknown): unknown {
+export function maskUrl(url: unknown): unknown {
   if (typeof url !== "string") return url;
   return url
     .replace(/\/conta\/pedidos\/[^/?#]+/gi, "/conta/pedidos/:id")

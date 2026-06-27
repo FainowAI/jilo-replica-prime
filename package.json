@@ -14,7 +14,7 @@
     "seed": "tsx scripts/seed-products.ts",
     "seed:collections": "tsx scripts/create-collections.ts",
     "setup:shipping": "tsx scripts/setup-shipping-variant.ts",
-    "seo": "tsx scripts/generate-seo-files.ts",
+    "seo": "tsx --env-file-if-exists=.env scripts/generate-seo-files.ts",
     "prebuild": "npm run seo"
   },
   "dependencies": {

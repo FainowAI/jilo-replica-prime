@@ -8,7 +8,7 @@
  * Pageview e cliques são capturados automaticamente (autocapture + defaults SPA);
  * esta lista é só dos eventos de NEGÓCIO que merecem nome próprio para o funil.
  */
-import { track } from "./posthog";
+import { track } from "./track";
 
 export const analytics = {
   /** Abre a página de produto. */
@@ -40,6 +40,18 @@ export const analytics = {
   loginEfetuado: () => track("login efetuado"),
 
   /** Cria um endereço. UF/cidade não são PII identificável isolada; sem rua/CEP. */
-  enderecoCadastrado: (p: { uf: string; cidade: string; deliverable: boolean }) =>
+  enderecoCadastrado: (p: { uf: string; cidade: string; deliverable?: boolean }) =>
     track("endereço cadastrado", p),
+
+  /** Adiciona um kit temático (Leveza, Força, Sabor, Verde) ao carrinho. */
+  kitTematicoAdicionado: (p: { slug: string; nome: string; tamanho: number; desconto: number }) =>
+    track("kit temático adicionado", p),
+
+  /** Confirma e adiciona um Kit Livre (montagem manual) ao carrinho. */
+  kitLivreAdicionado: (p: { tamanho: number; desconto: number }) =>
+    track("kit livre adicionado", p),
+
+  /** Cupom de desconto aplicado com sucesso no carrinho. */
+  cupomAplicado: (p: { codigo: string }) =>
+    track("cupom aplicado", p),
 };
