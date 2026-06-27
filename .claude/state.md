@@ -1,7 +1,26 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-26 (Sprint A da EAP Visibilidade de Dados — Captação Shopify. Branch `main`. Ver sessão abaixo.)
+2026-06-27 (Sprint B da EAP Visibilidade de Dados — PostHog. Branch `feature/visibilidade-dados-sprint-a`. Ver sessão abaixo.)
+
+## Sessão 2026-06-27 — Sprint B (EAP Visibilidade de Dados): PostHog (instrumentação de produto)
+
+Executada a **Sprint B** de `.claude/docs/eap_visibilidade_dados.md` via `feature-builder`, na branch `feature/visibilidade-dados-sprint-a` (mesma branch acumula todas as sprints da fase). Frontend puro — **sem banco/migration**. Fundação + AuthContext feitos na sessão principal; instrumentação dos call-sites por 2 `feature-coder` em paralelo (file-disjuntos).
+
+**Decisões do gate (usuário):** domínio prod = `jilomarmitas.com`; env vars fiadas no código, usuário preenche depois (analytics inerte até lá).
+
+**O que mudou (tudo verificado):**
+- **B.1 Fundação:** `posthog-js` + `@posthog/react` instalados. `src/analytics/posthog.ts` (init + gate prod-only `analyticsEnabled` + masking de PII via `before_send` + helpers `track`/`identifyUser`/`resetAnalytics`). `src/analytics/events.ts` (8 eventos tipados, sem PII). `src/main.tsx` (`initAnalytics()` + `<PostHogProvider client={posthog}>`).
+- **B.2 Identify + eventos:** `AuthContext.tsx` — `identify(user.id)` no SIGNED_IN + restauração de sessão, `reset()` no SIGNED_OUT, eventos `login efetuado`/`cadastro concluído` (resolveu o comentário de coordenação da Seção 6). Instrumentação dos 8 eventos nos chokepoints: `cartStore` (item adicionado + kit montado), `Carrinho` (carrinho aberto + checkout iniciado), `CartDrawer` (carrinho aberto), `Product` (produto visualizado + checkout buy-now), `useAddresses` (endereço cadastrado).
+
+**Segurança/LGPD:** gate prod-only (`!!KEY && PROD && hostname ∈ jilomarmitas.com`); identify só por `user.id` (sem email/CPF); masking de `/conta/pedidos/:id` e UUIDs no `before_send`; eventos sem PII; key via env (não hardcoded). Sem superfície de RLS/RBAC (frontend puro) — `security-auditor` não despachado, declarado.
+
+**Verificação:** `tsc --noEmit` exit 0 · `npx vite build` ✓ (2227 módulos) · `vitest` 1/1. Regras novas: `requirements.md` R70–R74. Novo doc: `fluxo-analytics.md` (registrado no CLAUDE.md).
+
+### Pendências Sprint B
+- **[USUÁRIO] B.1.1** — criar o projeto PostHog e setar `VITE_PUBLIC_POSTHOG_KEY` + `VITE_PUBLIC_POSTHOG_HOST` no hosting de produção. Até lá o analytics fica inerte (no-op).
+- **QA (B.3) pós-provisionamento:** confirmar eventos no painel PostHog (Activity) em prod (B.3.1) e jornada anônimo→identificado conectando no login (B.3.2). Validar que dev/preview NÃO emitem (gate).
+- **Sprint C (GA4)** entra depois, reusando este scaffolding (gate + masking + dicionário de eventos).
 
 ## Sessão 2026-06-26 — Sprint A (EAP Visibilidade de Dados): Captação Shopify
 

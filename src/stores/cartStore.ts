@@ -11,8 +11,9 @@ import {
   removeDiscountCodesFromCart,
   fetchCartFull,
 } from '@/lib/shopify';
-import { isShippingVariant } from '@/config/shipping';
+import { isShippingVariant, SHIPPING_FREE_THRESHOLD } from '@/config/shipping';
 import { PIX_COUPON_CODES } from '@/config/pixCoupons';
+import { analytics } from '@/analytics/events';
 
 export interface CartItem {
   lineId: string | null;
@@ -71,6 +72,10 @@ export const useCartStore = create<CartStore>()(
       addItem: async (item) => {
         const { items, cartId, clearCart } = get();
         const existingItem = items.find(i => i.variantId === item.variantId);
+
+        const nonShippingTotal = (its: CartItem[]) =>
+          its.filter(i => !isShippingVariant(i.variantId)).reduce((s, i) => s + i.quantity, 0);
+        const totalAntes = nonShippingTotal(items);
 
         // ─── REGRA R50: variant fantasma de frete é singleton ────────────────
         // Se a variant fantasma já existe no cart, NÃO somamos quantity (que é
@@ -208,6 +213,17 @@ export const useCartStore = create<CartStore>()(
             } else if (result.cartNotFound) clearCart();
           }
           await get().refreshCartDetails();
+          if (!isShippingVariant(item.variantId)) {
+            analytics.itemAdicionado({
+              handle: item.product.node.handle,
+              grupo: item.product.node.productType || item.product.node.tags?.[0] || null,
+              qtd: item.quantity,
+            });
+            const totalDepois = nonShippingTotal(get().items);
+            if (totalDepois > 0 && totalDepois % SHIPPING_FREE_THRESHOLD === 0 && totalAntes % SHIPPING_FREE_THRESHOLD !== 0) {
+              analytics.kitMontado({ tamanho: totalDepois });
+            }
+          }
         } catch (error) {
           console.error('Failed to add item:', error);
         } finally {

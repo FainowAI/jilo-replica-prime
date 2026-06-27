@@ -2,6 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import type { TablesInsert, TablesUpdate } from "@/integrations/supabase/types";
+import { analytics } from "@/analytics/events";
+import { isAreaDeliverable } from "@/lib/cepValidator";
 
 export const useAddresses = () => {
   const { user } = useAuth();
@@ -38,9 +40,14 @@ export const useCreateAddress = () => {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["addresses"] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+      analytics.enderecoCadastrado({
+        uf: data.state,
+        cidade: data.city,
+        deliverable: isAreaDeliverable(data.state, data.city),
+      });
     },
   });
 };

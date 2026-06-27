@@ -7,6 +7,7 @@ import PixCallout from "@/components/PixCallout";
 import KitQuantityNotice from "@/components/KitQuantityNotice";
 import { isFreeShipping, SHIPPING_FREE_THRESHOLD, DELIVERY_PROMISE_LABEL } from "@/config/shipping";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
+import { analytics } from "@/analytics/events";
 
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,6 +33,7 @@ export const CartDrawer = () => {
 
   useEffect(() => {
     if (isOpen) {
+      analytics.carrinhoAberto({ itens: totalNonShippingItems, subtotal });
       syncCart();
       reconcileDiscountsOnLoad();
     }

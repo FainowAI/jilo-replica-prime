@@ -141,3 +141,15 @@
 - **R68.** O `shopify-webhook-receiver` é resiliente à **ordem de chegada** dos webhooks: `orders/paid` faz **upsert defensivo** (`extractOrderData(payload)` + campos de pagamento/entrega, `onConflict: shopify_order_id`) — se `paid` chegar antes de `create`, a linha em `orders` é criada em vez de perdida. A captura de pedido continua exclusiva do service_role (R14).
 
 - **R69.** O `shopify-webhook-receiver` popula a tabela normalizada **`order_items`** (consumida por `/conta/pedidos/:id`) a partir do `payload.line_items`, tanto no `orders/create` quanto no `orders/paid` (`syncOrderItems`: delete-then-insert por `order_id`, idempotente). A **variant fantasma de frete** (`__internal_shipping`, R39) é excluída dos itens; `properties` do Shopify (array `[{name,value}]`) são normalizadas para objeto jsonb; `quantity > 0` (respeita `order_items_quantity_check`). O `orders.line_items` jsonb (legado) segue sendo gravado em paralelo.
+
+## Analytics de produto — Sprint B / PostHog (EAP Visibilidade de Dados, 2026-06-27)
+
+- **R70.** Analytics (PostHog) é **prod-only** (D5). `analyticsEnabled = !!VITE_PUBLIC_POSTHOG_KEY && import.meta.env.PROD && hostname ∈ jilomarmitas.com` (`SITE_HOSTNAME`). Em dev/preview/sem-key, TODOS os helpers (`track`/`identifyUser`/`resetAnalytics`) viram **no-op** — nada é enviado. Único ponto de decisão: `src/analytics/posthog.ts`. A Sprint C (GA4) DEVE reusar esse gate, não duplicar.
+
+- **R71.** Configuração via env vars `VITE_PUBLIC_POSTHOG_KEY` (Project API Key) e `VITE_PUBLIC_POSTHOG_HOST` — setadas no hosting de produção, **nunca commitadas**. A Project API Key é pública por design (client-side), mas ainda assim vai por env, nunca hardcoded. Provisionar o projeto PostHog (B.1.1) é passo manual; sem a key o analytics fica inerte.
+
+- **R72.** **PII no analytics é proibida** (D5 / LGPD). `posthog.identify` usa SOMENTE `user.id` (UUID) — nunca email/CPF/telefone/nome como person property. URLs são mascaradas no `before_send` (`/conta/pedidos/:id` e qualquer UUID em `$current_url`/`$pathname`/`$referrer`). Eventos de negócio não carregam PII (ver R73). `person_profiles: 'always'` (D4).
+
+- **R73.** Os **8 eventos-chave** do funil (`src/analytics/events.ts`, nomes PT-BR `[objeto] [verbo]`, compartilhados com GA4): `produto visualizado` (handle, grupo, preco), `item adicionado` (handle, grupo, qtd), `carrinho aberto` (itens, subtotal), `kit montado` (tamanho), `checkout iniciado` (itens, frete, metodoEntrega), `cadastro concluído`, `login efetuado`, `endereço cadastrado` (uf, cidade, deliverable). `grupo = product.productType || product.tags?.[0] || null`. `item adicionado`/`kit montado` disparam no chokepoint `cartStore.addItem` (excluindo a variant fantasma de frete, R39); `kit montado` só ao CRUZAR um múltiplo positivo de 7. Pageview/cliques são autocapturados (defaults SPA do posthog-js). Detalhe em `fluxo-analytics.md`.
+
+- **R74.** `identify`/`reset` vivem no `AuthContext.tsx` (EAP Seção 6): `identify(user.id)` no SIGNED_IN e na restauração de sessão; `reset()` no SIGNED_OUT. Convivem no mesmo handler com o disparo do `customer-sync` da Sprint A (R64) — não separar sem coordenar.
