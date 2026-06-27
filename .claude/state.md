@@ -8,7 +8,7 @@
 Sprints A+B+C da EAP Visibilidade de Dados **codadas e buildando**. O que falta é tudo **provisionamento manual do usuário** + QA pós-deploy. Código não tem pendência de implementação.
 
 **1. Provisionar contas/keys (USUÁRIO — sem isso o analytics/SEO fica inerte):**
-- [ ] **GA4 (Sprint C):** criar propriedade no Google Analytics + Web Data Stream → pegar o **Measurement ID `G-XXXXXXX`**. Setar em `.env` (`VITE_PUBLIC_GA4_MEASUREMENT_ID=`) **e no hosting (Lovable)**. No Data Stream, desligar pageview do Enhanced Measurement (já temos `RouteChangeTracker`).
+- [x] **GA4 (Sprint C):** propriedade criada, Measurement ID **`G-LS2VBNXZKE`** já no `.env` e inlined no bundle (verificado). ⚠️ **FALTA:** setar `VITE_PUBLIC_GA4_MEASUREMENT_ID=G-LS2VBNXZKE` **no hosting (Lovable)** — sem isso o build de prod não enxerga. No Data Stream do GA4, desligar pageview do Enhanced Measurement (já temos `RouteChangeTracker`, senão conta em dobro).
 - [ ] **Google Search Console:** verificar `https://jilomarmitas.com` (atalho: via GA4, 1 clique, se o GA já estiver no ar) OU colar o token no meta `google-site-verification` de `index.html` (hoje `PENDENTE_*`). Depois, **submeter `sitemap.xml`**.
 - [ ] **Shopify Admin token:** o `SHOPIFY_ADMIN_TOKEN` do `.env` está **inválido (401)** — gerar um novo e atualizar `.env` + hosting. Destrava o **sitemap completo** (26 produtos + kits) e o `npm run seed`. ⚠️ Conferir loja canônica: `generate-seo-files.ts` tem `jnutg9-u2` hardcoded vs `.env` `jilo-marmitas`.
 - [ ] **PostHog MCP:** token novo já validado e gravado no `.mcp.json` (rodar `/mcp` se precisar reconectar). PostHog do app já valida (project key `phc_rDBm…`, projeto 487943).
