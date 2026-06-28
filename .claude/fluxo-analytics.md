@@ -22,8 +22,9 @@ Instrumentação de produto via PostHog (`posthog-js` + `@posthog/react`), **só
 | `src/pages/Product.tsx` | `produto visualizado` (load) + `checkout iniciado` (Buy Now). |
 | `src/hooks/useAddresses.ts` | `endereço cadastrado` (`useCreateAddress.onSuccess`). |
 
-## Configuração (env — passo MANUAL B.1.1)
-Definir no hosting de produção (NÃO commitar):
+## Configuração (env)
+> **Atualização 2026-06-28:** as `VITE_*` vivem no **`.env` commitado na raiz** (build-time do Lovable/Vite), **não** nos Secrets do Supabase. São públicas por design (entram no bundle de qualquer forma). Ver "Lição de configuração" abaixo e R78.
+
 | Env var | Exemplo | Notas |
 |---------|---------|-------|
 | `VITE_PUBLIC_POSTHOG_KEY` | `phc_...` | Project API Key (pública por design; ainda assim via env). |
@@ -70,3 +71,17 @@ Sem a key, `analyticsEnabled = false` e todos os helpers viram **no-op** — nad
 - **Mesmos eventos do PostHog** (D6): o `track.ts` faz fan-out. O GA4 não aceita espaço/acento em nome de evento → `trackGA4` **sanitiza só no envio** (`produto visualizado` → `produto_visualizado`, `cadastro concluído` → `cadastro_concluido`). PostHog mantém o nome PT-BR original.
 - **Sem dependência nova** (EAP Seção 6): gtag é `<script>`, não lib. `package.json` intocado na Sprint C.
 - **QA (C.3) pós-provisionamento:** Realtime do GA4 mostra pageview por rota (C.3.1); DebugView confirma os eventos-chave (C.3.2).
+
+## Lição de configuração — canal `.env` vs Secrets do Supabase (2026-06-28)
+O analytics não disparava em produção apesar do código estar correto. **Causa raiz medida:** o bundle de prod **não continha `phc_`** — a `VITE_PUBLIC_POSTHOG_KEY` chegava ao build como `undefined`. As variáveis `VITE_*` estavam cadastradas nos **Secrets do Supabase**, que alimentam **apenas Edge Functions** — **nunca** o build do frontend (Vite). Além disso, não existia `.env` versionado e o `.gitignore` bloqueava `.env`.
+
+**Regra (R78) — dois cofres, nunca misturar:**
+- **`VITE_*` (públicas, build-time)** → `.env` **commitado** na raiz. O Lovable/Vite lê daí e embute no bundle. Inclui `VITE_PUBLIC_POSTHOG_KEY`/`_HOST`, `VITE_PUBLIC_GA4_MEASUREMENT_ID`, `VITE_SITE_URL`, `VITE_SHOPIFY_SHIPPING_VARIANT_ID`, `VITE_SUPABASE_*` (anon key respeita RLS). São públicas por design — vão pro bundle de qualquer forma.
+- **Segredos reais (sem prefixo `VITE_`)** → **EXCLUSIVAMENTE** nos Secrets do Supabase: `SHOPIFY_CLIENT_ID/SECRET`, `SHOPIFY_ADMIN_TOKEN`, `SHOPIFY_STORE_DOMAIN`, `UBER_*`, `JILO_PICKUP_*`. **Jamais** no `.env` commitado.
+- O `.gitignore` permite `.env` e `.env.example`, e bloqueia `.env*.local`.
+- Sintoma de diagnóstico: se o Lovable rejeitar uma variável `VITE_` no Secrets ("VITE_ prefixed variables… should be defined in .env files"), é confirmação de que ela está no cofre errado.
+
+**Validação que fecha o caso:** `phc_` presente no bundle de produção + `window.posthog.__loaded === true` em `jilomarmitas.com` + `$pageview`/`page_view` chegando a PostHog e GA4.
+
+## 🔴 Pendência de segurança — rotacionar tokens (registrada 2026-06-28)
+`SHOPIFY_ADMIN_TOKEN`, `SHOPIFY_CLIENT_SECRET` e `UBER_CLIENT_SECRET` apareceram em **texto puro fora do cofre** (estavam misturados no `.env` local antigo, junto das `VITE_*`). Por precaução, **rotacionar os três** e atualizar apenas os Secrets do Supabase. Decisão do usuário: adiar (foco no analytics primeiro) — **não esquecer**.

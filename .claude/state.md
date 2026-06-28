@@ -1,7 +1,24 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-28 (correção de segurança de RLS: policies `"Service role full access on orders"` e `"Service role only on webhook_events"` estavam sem cláusula `TO` → recaíam sobre PUBLIC com `USING(true)`, expondo `orders`/`webhook_events` à anon key. Corrigido + regra permanente de RLS adicionada ao CLAUDE.md. Branch `main`)
+2026-06-28 (Analytics destravado. Causa raiz: variáveis `VITE_` estavam nos Secrets do Supabase (canal errado) → bundle de prod saía sem a key do PostHog. Criado `.env` commitado com as públicas, ajustado `.gitignore`. PostHog + GA4 validados em produção. Branch `main`)
+
+## Sessão 2026-06-28 — Analytics destravado (variáveis VITE_ no cofre errado)
+
+**Reporte/diagnóstico:** PostHog e GA4 corretamente implementados no código (`src/analytics/*`), mas nenhum evento chegava ao painel. Causa raiz medida: o bundle de produção **não continha `phc_`** — a `VITE_PUBLIC_POSTHOG_KEY` chegou ao build como `undefined`. As variáveis `VITE_*` de analytics estavam cadastradas nos **Secrets do Supabase** (que só alimentam Edge Functions, **nunca** o build do Vite), não existia `.env` versionado no repo, e o `.gitignore` bloqueava `.env`/`.env.*`. O código estava certo — problema 100% de **configuração de ambiente** (variável pública no cofre errado). Sem alteração de regra de negócio.
+
+**Correção (3 arquivos, sem tocar em código de app):**
+- `.gitignore` — bloco env reescrito: passa a **permitir `.env`** (`!.env`) e mantém `.env.local`/`.env.*.local` ignorados.
+- `.env` (raiz, commitado) — criado só com as **8 variáveis `VITE_*` públicas** (Supabase anon/URL/project-id, `VITE_SITE_URL`, shipping variant ID, PostHog key/host, GA4 ID). **Segredos reais removidos** (estavam misturados no `.env` local antigo: `SHOPIFY_*`, `UBER_*`, `JILO_PICKUP_*`) — backup local no scratchpad.
+- `.env.example` — criado documentando as variáveis esperadas.
+
+**Passos manuais (usuário):** remover as `VITE_*` dos Secrets do Supabase (M2); republish/rebuild no Lovable (M3).
+
+**Verificação (V1):** `phc_rDBmhU39` presente no bundle de produção; `window.posthog.__loaded === true` em `jilomarmitas.com`; `$pageview` chegando ao PostHog + `page_view` no Tempo real do GA4. **PostHog + GA4 validados em produção.**
+
+**🔴 Pendência de segurança (registrada, adiada pelo usuário):** `SHOPIFY_ADMIN_TOKEN`, `SHOPIFY_CLIENT_SECRET` e `UBER_CLIENT_SECRET` apareceram em texto puro fora do cofre → **rotacionar os três** por precaução.
+
+**Docs:** `requirements.md` ganhou **R78** (cofres de env separados); `fluxo-analytics.md` atualizado (canal `.env` vs Secrets + lição de configuração); este `state.md`.
 
 ## Sessão 2026-06-28 — Fix vazamento de RLS (orders, webhook_events) + regra permanente
 
