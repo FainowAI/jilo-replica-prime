@@ -33,7 +33,11 @@ declare global {
 /** Empilha no dataLayer no formato que o gtag.js consome (queue antes/depois do load). */
 function gtag(...args: unknown[]): void {
   window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push(args);
+  // gtag.js SÓ executa entradas do dataLayer que sejam um objeto `arguments`
+  // (array-like); um Array literal (`args`) é ignorado em silêncio e nada chega
+  // ao GA4. Empilhamos `arguments` como o snippet oficial do Google.
+  // eslint-disable-next-line prefer-rest-params
+  window.dataLayer.push(arguments);
 }
 
 /** GA4: nome de evento só com [a-z0-9_], começando por letra (sem acento/espaço). */
