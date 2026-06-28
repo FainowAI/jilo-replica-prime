@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { useCartSync } from "@/hooks/useCartSync";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { RouteChangeTracker } from "@/analytics/RouteChangeTracker";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
@@ -28,6 +29,7 @@ const AppContent = () => {
   useCartSync();
   return (
     <BrowserRouter>
+      <RouteChangeTracker />
       <AuthProvider>
         <Routes>
           <Route path="/" element={<Index />} />

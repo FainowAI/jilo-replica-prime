@@ -21,6 +21,7 @@ import FreeBadge from "@/components/FreeBadge";
 import PixCallout from "@/components/PixCallout";
 import SEO from "@/components/SEO";
 import { toast } from "sonner";
+import { analytics } from "@/analytics/events";
 
 const formatPrice = (amount: string) => {
   return `R$ ${parseFloat(amount).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -100,6 +101,13 @@ export default function Product() {
       setSelectedVariantId(productData.variants.edges[0].node.id);
     }
   }, [productData]);
+
+  useEffect(() => {
+    if (!productData) return;
+    const grupo: string | null = productData.productType || productData.tags?.[0] || null;
+    const preco: number | null = Number(productData.priceRange?.minVariantPrice?.amount) || null;
+    analytics.produtoVisualizado({ handle: handle!, grupo, preco });
+  }, [productData, handle]);
 
   if (productLoading) {
     return (
@@ -190,6 +198,7 @@ export default function Product() {
 
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
+      analytics.checkoutIniciado({ itens: 1, frete: "pago", metodoEntrega: null });
       window.location.href = appendReturnToCheckoutUrl(checkoutUrl);
     } else {
       toast.error("Erro ao redirecionar para checkout");

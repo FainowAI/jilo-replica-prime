@@ -34,6 +34,15 @@ const CUSTOMER_UPSERT_MUTATION = `
   }
 `;
 
+const CUSTOMER_ADDRESS_CREATE_MUTATION = `
+  mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!) {
+    customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: true) {
+      address { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 interface ShopifyCustomerResponse {
   data?: {
     customerCreate?: {
@@ -136,7 +145,8 @@ serve(async (req) => {
       });
     }
 
-    // Se já sincronizado, retorna o ID existente
+    // Se já sincronizado, retorna o ID existente (antes de qualquer outra query —
+    // este caminho roda em todo SIGNED_IN via A.1.2, então mantém-se barato).
     if (profile?.shopify_customer_id) {
       return new Response(
         JSON.stringify({
@@ -147,8 +157,21 @@ serve(async (req) => {
       );
     }
 
+    // Endereço default (tabela separada `addresses`). FAIL-SOFT: erro aqui é ignorado.
+    // Só é necessário no caminho de criação do customer.
+    const { data: defaultAddress } = await serviceClient
+      .from("addresses")
+      .select("recipient_name, cep, street, number, complement, neighborhood, city, state")
+      .eq("user_id", user.id)
+      .eq("is_default", true)
+      .maybeSingle();
+
     // 3. Chamar Shopify customerCreate com upsert por email
-    const { firstName, lastName } = splitName(profile?.full_name);
+    // No signup o trigger cria profile vazio; usa o nome do JWT (user_metadata) como fallback.
+    const fullNameForShopify = (profile?.full_name && profile.full_name.trim())
+      ? profile.full_name
+      : (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null);
+    const { firstName, lastName } = splitName(fullNameForShopify);
 
     const shopifyPayload = {
       query: CUSTOMER_UPSERT_MUTATION,
@@ -205,6 +228,56 @@ serve(async (req) => {
         JSON.stringify({ error: "No customer ID returned from Shopify" }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // A.1.1 (EAP visibilidade de dados): anexa endereço default nativo ao customer.
+    // FAIL-SOFT: endereço é incremental; qualquer erro aqui NÃO impede o sync.
+    // CPF NUNCA é enviado (sem campo nativo no Shopify — decisão D2 da EAP / LGPD).
+    try {
+      if (defaultAddress) {
+        const address1 = [defaultAddress.street, defaultAddress.number]
+          .map((s) => (s ?? "").trim()).filter(Boolean).join(", ");
+        const address2 = [defaultAddress.complement, defaultAddress.neighborhood]
+          .map((s) => (s ?? "").trim()).filter(Boolean).join(" - ") || null;
+        const city = (defaultAddress.city ?? "").trim() || null;
+        const provinceCode = (defaultAddress.state ?? "").trim().toUpperCase() || null;
+        const zip = (defaultAddress.cep ?? "").trim() || null;
+
+        // Só tenta se tiver o mínimo (rua e CEP). Caso contrário, pula sem erro.
+        if (address1 && zip) {
+          const addressPayload = {
+            query: CUSTOMER_ADDRESS_CREATE_MUTATION,
+            variables: {
+              customerId: shopifyCustomerId,
+              address: {
+                address1,
+                address2,
+                city,
+                provinceCode,
+                zip,
+                countryCode: "BR",
+                firstName,
+                lastName,
+              },
+            },
+          };
+          const addrRes = await callShopifyAdmin(addressPayload);
+          if (addrRes.ok) {
+            const addrData = await addrRes.json();
+            const addrErrors = addrData?.data?.customerAddressCreate?.userErrors ?? [];
+            if (addrErrors.length > 0) {
+              // NÃO logar o endereço (PII). Apenas os campos com erro de validação.
+              console.warn("[shopify-customer-sync] address attach userErrors (ignorado):",
+                JSON.stringify(addrErrors.map((e: { field?: string[] }) => e.field)));
+            }
+          } else {
+            console.warn("[shopify-customer-sync] address attach HTTP error (ignorado):", addrRes.status);
+          }
+        }
+      }
+    } catch (addrErr) {
+      // Fail-soft total: nunca propaga. NÃO logar PII.
+      console.warn("[shopify-customer-sync] address attach threw (ignorado)");
     }
 
     // 4. Atualizar profile com o shopify_customer_id

@@ -14,11 +14,12 @@
     "seed": "tsx scripts/seed-products.ts",
     "seed:collections": "tsx scripts/create-collections.ts",
     "setup:shipping": "tsx scripts/setup-shipping-variant.ts",
-    "seo": "tsx scripts/generate-seo-files.ts",
+    "seo": "tsx --env-file-if-exists=.env scripts/generate-seo-files.ts",
     "prebuild": "npm run seo"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
+    "@posthog/react": "^1.10.3",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",
@@ -57,6 +58,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
+    "posthog-js": "^1.395.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",

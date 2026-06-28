@@ -110,6 +110,50 @@ function findShippingFeeCents(lineItems: any[]): number {
   return unitCents * (shippingItem.quantity ?? 1);
 }
 
+function extractOrderItems(payload: any): any[] {
+  const shippingNumericId = getShippingVariantNumericId();
+  const lineItems = payload.line_items ?? [];
+  return lineItems
+    .filter((item: any) => {
+      if (!shippingNumericId) return true;
+      return String(item.variant_id) !== shippingNumericId; // exclui a variant fantasma de frete
+    })
+    .map((item: any) => {
+      const qty = item.quantity ?? 1;
+      const unitCents = Math.round(parseFloat(item.price ?? "0") * 100);
+      // properties do Shopify vêm como array [{name,value}] — normaliza p/ objeto jsonb
+      const props = Array.isArray(item.properties)
+        ? item.properties.reduce((acc: Record<string, unknown>, p: any) => {
+            if (p && typeof p.name === "string") acc[p.name] = p.value;
+            return acc;
+          }, {})
+        : {};
+      return {
+        shopify_line_item_id: item.id?.toString() ?? null,
+        shopify_variant_id: item.variant_id?.toString() ?? null,
+        shopify_product_id: item.product_id?.toString() ?? null,
+        product_handle: null, // REST order payload não traz handle
+        product_title: item.title || "Item",
+        variant_title: item.variant_title ?? null,
+        quantity: qty,
+        unit_price_cents: Math.max(0, unitCents),
+        line_total_cents: Math.max(0, unitCents * qty),
+        properties: props,
+      };
+    })
+    .filter((row: any) => row.quantity > 0); // order_items_quantity_check exige quantity > 0
+}
+
+async function syncOrderItems(orderId: string, payload: any): Promise<void> {
+  const items = extractOrderItems(payload).map((it) => ({ ...it, order_id: orderId }));
+  // limpa itens antigos desse pedido antes de reinserir (idempotência)
+  await supabase.from("order_items").delete().eq("order_id", orderId);
+  if (items.length > 0) {
+    const { error } = await supabase.from("order_items").insert(items);
+    if (error) console.error("Failed to insert order_items:", error);
+  }
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -160,11 +204,15 @@ serve(async (req) => {
     // Process by topic
     if (topic === "orders/create") {
       const orderData = extractOrderData(payload);
-      await supabase.from("orders").upsert(orderData, {
-        onConflict: "shopify_order_id",
-      });
+      const { data: createdOrder } = await supabase
+        .from("orders")
+        .upsert(orderData, { onConflict: "shopify_order_id" })
+        .select("id")
+        .maybeSingle();
+      if (createdOrder?.id) {
+        await syncOrderItems(createdOrder.id, payload);
+      }
     } else if (topic === "orders/paid") {
-      const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;
       const lineItems = payload.line_items ?? [];
 
       const totalNonShippingItems = calculateNonShippingItemsTotal(lineItems);
@@ -182,22 +230,31 @@ serve(async (req) => {
         : deliveryMethod === "lalamove"  ? "lalamove_pending"
         : "jilo_pending"; // jilo_own
 
+      const baseOrderData = extractOrderData(payload);
       const { data: updatedOrder, error: updateErr } = await supabase
         .from("orders")
-        .update({
-          payment_status: "paid",
-          status: "paid",
-          delivery_method: deliveryMethod,
-          uber_quote_id,
-          shipping_fee_cents: shippingFeeCents,
-          delivery_status: initialDeliveryStatus,
-        })
-        .eq("shopify_order_id", shopifyOrderId)
+        .upsert(
+          {
+            ...baseOrderData,
+            payment_status: "paid",
+            status: "paid",
+            delivery_method: deliveryMethod,
+            uber_quote_id,
+            shipping_fee_cents: shippingFeeCents,
+            delivery_status: initialDeliveryStatus,
+          },
+          { onConflict: "shopify_order_id" }
+        )
         .select("id")
         .maybeSingle();
 
       if (updateErr) {
         console.error("Failed to update order on paid event:", updateErr);
+      }
+
+      // Sincroniza order_items (cobre o caso de paid criar a linha antes de create chegar)
+      if (updatedOrder?.id) {
+        await syncOrderItems(updatedOrder.id, payload);
       }
 
       // Dispatch Uber se aplicável (fire-and-forget — webhook tem timeout curto)

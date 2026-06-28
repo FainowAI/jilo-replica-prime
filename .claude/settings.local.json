@@ -52,6 +52,23 @@
       "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: $\\($c.Source\\)\"; & supabase --version } else { \"supabase NOT on PATH\" }; \"--- scoop ---\"; $s = Get-Command scoop -ErrorAction SilentlyContinue; if \\($s\\) { \"scoop present\" } else { \"no scoop\" })",
       "mcp__supabase-jilo__list_tables",
       "mcp__supabase-jilo__get_advisors"
+      "mcp__claude_ai_Shopify__graphql_schema",
+      "Read(//c/Users/Antônio/.claude/**)",
+      "mcp__claude_ai_Shopify__validate_graphql_codeblocks",
+      "mcp__claude_ai_Shopify__graphql_mutation",
+      "Bash(mkdir -p __TRACKED_VAR__/iteration-1)",
+      "Bash(cp -r feature-builder __TRACKED_VAR__/skill-snapshot)",
+      "Bash(rm -f __TRACKED_VAR__/skill-snapshot/references/subagent-orchestration.md)",
+      "Bash(python \"C:\\\\Users\\\\ANTNIO~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Ant-nio-Desktop-fainow-projects-jilo-projects-jilo-replica-prime\\\\4f58c1f4-3ff4-4d34-9301-a3997daeb566\\\\scratchpad\\\\gen_eval_files.py\")",
+      "Bash(kill 27332)",
+      "Bash(claude --version)",
+      "Bash(cd *)",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(ls -la .env*)",
+      "Bash(find . -maxdepth 2 -name \".env*\" -not -path \"*/node_modules/*\")",
+      "WebFetch(domain:posthog.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(npx tsx *)"
     ]
   },
   "enableAllProjectMcpServers": true,

@@ -14,6 +14,7 @@ import PixCallout from "@/components/PixCallout";
 import SEO from "@/components/SEO";
 import { KIT_STEP, getKitQuantityGuidance } from "@/config/kitQuantity";
 import { toast } from "sonner";
+import { analytics } from "@/analytics/events";
 
 const CATEGORY_ORDER = ["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"];
 const CATEGORY_ICONS: Record<string, string> = {
@@ -136,6 +137,7 @@ export default function KitLivre() {
       }
 
       await refreshCartDetails();
+      analytics.kitLivreAdicionado({ tamanho: totalSelected, desconto: discount });
       toast.success(`Kit Livre de ${totalSelected} pratos adicionado!`);
       setSelectedItems(new Map());
       navigate("/carrinho");
