@@ -1,7 +1,24 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-06-22 (fixes de desconto de kit: (1) frontend anunciava 10/15/20/25 vs Shopify 5/10/15/20 — alinhado; (2) CartDrawer não subtraía o desconto do total — corrigido; (4.1) regra de arredondamento definida (mantém valor real do Shopify); (4.2) "a partir de" da home passou a usar o maior desconto (kit 28, ×0.80). + Endereço de coleta Uber Direct corrigido p/ o do CNPJ (secret, setado pelo usuário). Branch `main`)
+2026-06-28 (correção de segurança de RLS: policies `"Service role full access on orders"` e `"Service role only on webhook_events"` estavam sem cláusula `TO` → recaíam sobre PUBLIC com `USING(true)`, expondo `orders`/`webhook_events` à anon key. Corrigido + regra permanente de RLS adicionada ao CLAUDE.md. Branch `main`)
+
+## Sessão 2026-06-28 — Fix vazamento de RLS (orders, webhook_events) + regra permanente
+
+**Reporte:** tabelas `orders`, `profiles`, `addresses` retornavam `200` com a anon key — suspeita de vazamento.
+
+**Diagnóstico:** `profiles`/`addresses` NÃO vazavam — `200 []` (array vazio) é o comportamento correto do RLS (PostgREST não retorna 403). O vazamento real estava em `orders` e `webhook_events`: as policies criadas na migration `20260408_create_orders_tables.sql` foram declaradas **sem `TO role`**, então o Postgres as aplicou ao role `PUBLIC` com `USING(true)`/`WITH CHECK(true)` — qualquer requisição com a anon key tinha leitura/escrita total. Tabelas estavam vazias (0 linhas), por isso o sintoma era `200 []`, mas exporiam tudo assim que populadas. O `service_role` (edge functions) ignora RLS por BYPASSRLS, então as policies nunca foram necessárias para ele.
+
+**Correção (migration `20260628000000_fix_rls_orders_webhook_events.sql`, aplicada via apply_migration):**
+- `orders`: dropada a policy pública; recriada SELECT-own escopada a `authenticated`.
+- `webhook_events`: dropada a policy pública; deny explícito para `anon`/`authenticated`.
+- `profiles`: 3 policies endurecidas de `PUBLIC` → `authenticated` (+ `WITH CHECK` no UPDATE).
+
+**Verificação:** `set local role anon` → `orders/webhook_events/profiles/addresses` retornam 0 linhas. `get_advisors(security)` não reporta mais RLS disabled/policy pública nessas tabelas. Edge functions intactas (todas usam `SUPABASE_SERVICE_ROLE_KEY`).
+
+**Docs:** `CLAUDE.md` ganhou seção "Segurança de RLS" (regra permanente); `fluxo-infraestrutura.md` com tabela de policies atualizada + nota da correção.
+
+**Follow-up (pré-existente, fora do escopo, reportado pelo advisor):** funções com `search_path` mutável; `handle_new_user` e `rls_auto_enable` são `SECURITY DEFINER` executáveis por anon via RPC; proteção de senha vazada (HaveIBeenPwned) desativada no Auth.
 
 ## Sessão 2026-06-22 — Fix discrepância de desconto dos kits (frontend × Shopify)
 

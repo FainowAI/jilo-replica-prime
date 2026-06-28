@@ -49,10 +49,10 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 |--------|-----------|-------------------|-----|
 | `profiles` | Perfil do usuário (endereço para entrega) | id (UUID, FK auth.users), full_name, phone, cpf, cep, address, address_number, address_complement, neighborhood, city, state, created_at, updated_at, **shopify_customer_id** (Sprint 1), **default_shipping_address_id** (Sprint 1, FK addresses) | Sim — SELECT/UPDATE/INSERT own |
 | `addresses` | Multi-endereços por usuário. Trigger garante que só existe 1 `is_default=true` por `user_id` via índice parcial único | id (UUID), user_id (FK auth.users), label, recipient_name, cep, street, number, complement, neighborhood, city, state (2 chars upper), is_default (bool), created_at, updated_at | Sim — SELECT/UPDATE/INSERT/DELETE own |
-| `orders` | Espelho de pedidos Shopify para tracking interno, webhooks e entregas | id (UUID), shopify_order_id, shopify_order_number, user_id, customer_email, status, payment_status, subtotal_cents, shipping_cents, total_cents, shipping_address (jsonb), **delivery_method**, **uber_quote_id**, **uber_delivery_id**, **uber_tracking_url**, **shipping_fee_cents**, **delivery_status**, created_at, updated_at | Sim — SELECT own + service_role full access |
+| `orders` | Espelho de pedidos Shopify para tracking interno, webhooks e entregas | id (UUID), shopify_order_id, shopify_order_number, user_id, customer_email, status, payment_status, subtotal_cents, shipping_cents, total_cents, shipping_address (jsonb), **delivery_method**, **uber_quote_id**, **uber_delivery_id**, **uber_tracking_url**, **shipping_fee_cents**, **delivery_status**, created_at, updated_at | Sim — SELECT own (authenticated); escritas só via service_role (bypass) |
 | `order_items` | Itens normalizados do pedido (substitui o `line_items` JSONB legado em `orders`) | id (UUID), order_id (FK orders), shopify_line_item_id, shopify_product_id, shopify_variant_id, product_title, variant_title, product_handle, quantity, unit_price_cents, line_total_cents, properties (jsonb), created_at | Sim — SELECT via JOIN com orders |
 | `order_status_history` | Timeline de status do pedido. Alimentada exclusivamente pelo trigger `orders_log_status_change` a cada update de `orders.status` | id (UUID), order_id (FK orders), from_status, to_status, source, note, changed_at | Sim — SELECT via JOIN com orders |
-| `webhook_events` | Log idempotente de webhooks recebidos | id (UUID), source, event_type, external_id, payload (jsonb), processed, processed_at, error, created_at | Sim — service_role only |
+| `webhook_events` | Log idempotente de webhooks recebidos | id (UUID), source, event_type, external_id, payload (jsonb), processed, processed_at, error, created_at | Sim — deny anon/authenticated; acesso só via service_role |
 
 ### Foreign Keys
 | Origem | Destino | Tipo |
@@ -63,11 +63,23 @@ Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de
 | order_status_history.order_id | public.orders.id | FK para o pedido espelhado |
 
 ### RLS Policies
-| Tabela | Policy | Ação | Condição |
-|--------|--------|------|----------|
-| profiles | Users can view own profile | SELECT | auth.uid() = id |
-| profiles | Users can update own profile | UPDATE | auth.uid() = id |
-| profiles | Users can insert own profile | INSERT | auth.uid() = id |
+Todas as policies de dados de usuário são escopadas ao role `authenticated` (cláusula `TO authenticated`) com `auth.uid()` casando a coluna de dono. O `service_role` (edge functions) ignora RLS por BYPASSRLS — não precisa de policy. **Nunca** use policy `USING(true)` para `PUBLIC`/`anon`. Detalhes e regra permanente no `CLAUDE.md` → "Segurança de RLS".
+
+| Tabela | Policy | Role | Ação | Condição |
+|--------|--------|------|------|----------|
+| profiles | Users can view own profile | authenticated | SELECT | auth.uid() = id |
+| profiles | Users can update own profile | authenticated | UPDATE | auth.uid() = id (USING + WITH CHECK) |
+| profiles | Users can insert own profile | authenticated | INSERT | auth.uid() = id |
+| addresses | addresses_select/insert/update/delete_own | authenticated | SELECT/INSERT/UPDATE/DELETE | auth.uid() = user_id |
+| orders | Users can view own orders | authenticated | SELECT | auth.uid() = user_id |
+| order_items | order_items_select_via_order | authenticated | SELECT | order_id pertence a order do usuário |
+| order_items | order_items_service_role_all | service_role | ALL | true |
+| order_status_history | order_status_history_select_via_order | authenticated | SELECT | order_id pertence a order do usuário |
+| order_status_history | order_status_history_service_role_all | service_role | ALL | true |
+| webhook_events | Deny anon and authenticated | anon, authenticated | ALL | false (acesso só via service_role) |
+| shopify_admin_tokens | deny_all_anon / deny_all_authenticated | anon, authenticated | ALL | false (acesso só via service_role) |
+
+> ⚠️ **Correção de segurança 2026-06-28** (migration `20260628000000_fix_rls_orders_webhook_events.sql`): as policies originais `"Service role full access on orders"` e `"Service role only on webhook_events"` foram criadas **sem cláusula `TO`**, recaindo sobre `PUBLIC` com `USING(true)` — qualquer requisição com a anon key tinha acesso total de leitura/escrita a `orders` e `webhook_events`. Foram removidas e substituídas pelas policies da tabela acima. As escritas dessas tabelas continuam exclusivas das edge functions via `service_role`.
 
 ### Functions e Triggers
 | Função | Trigger | Descrição |

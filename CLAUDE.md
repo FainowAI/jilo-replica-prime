@@ -46,12 +46,23 @@ E-commerce da marca Jilo (DaJu Alimentação) — marmitas artesanais congeladas
 ## Regra de atualização
 Sempre que uma sessão do Claude Code modificar um fluxo documentado, ela DEVE atualizar o arquivo `.claude/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.claude/fluxo-[nome].md` e registrar aqui.
 
+## Segurança de RLS (REGRA PERMANENTE — sempre aplicar)
+Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuário (PII) e DEVE estar protegida por RLS. Ao criar ou alterar qualquer tabela/policy:
+
+1. **Sempre** habilitar RLS: `ALTER TABLE public.<t> ENABLE ROW LEVEL SECURITY;`. Sem policy + RLS ativa = deny-all (correto). RLS desativada = vazamento total.
+2. **Sempre** declarar o role com `TO` em cada policy. Uma policy **sem `TO` recai sobre `PUBLIC`** (inclui `anon`) — foi exatamente isso que vazou `orders` e `webhook_events` (`USING(true)` sem `TO` → acesso público total). Use `TO authenticated` para dados de usuário; nunca deixe `anon` com `USING(true)`.
+3. **NUNCA** crie policy `USING(true)`/`WITH CHECK(true)` para `PUBLIC`/`anon`/`authenticated`. O `service_role` **ignora RLS** (BYPASSRLS) — edge functions com `SUPABASE_SERVICE_ROLE_KEY` já têm acesso total **sem precisar de policy**. Logo, "dar acesso ao service_role" via policy é desnecessário e tipicamente abre a tabela para todos por engano.
+4. Dados de usuário (`profiles`, `orders`, `addresses`, `order_items`, `order_status_history`): policies escopadas a `authenticated` com `auth.uid() = <coluna_dono>` (direto ou via JOIN).
+5. Tabelas só de backend (`webhook_events`, `shopify_admin_tokens`): sem acesso a `anon`/`authenticated` — deny explícito (`USING(false)`) e acesso só via service_role.
+6. **Lembre-se:** uma resposta `200 []` (array vazio) com a anon key é o comportamento CORRETO e seguro do RLS — o PostgREST não retorna 403, retorna lista vazia. Vazamento de verdade é `200` retornando **linhas**. Para auditar, simule: `set local role anon; select count(*) from public.<t>;` deve dar 0 para tabelas de usuário.
+7. Após qualquer migration que mexa em tabelas/policies, rode `get_advisors(type: security)` e confira que nenhuma tabela ficou exposta.
+
 ## Gotchas globais
 - O catálogo NÃO está no Supabase — está no Shopify. Qualquer mudança em produtos é feita via Shopify Admin ou scripts de seed.
 - O Storefront Access Token está hardcoded em `src/lib/shopify.ts` — é um token público (Storefront), mas deve ser movido para .env em produção.
 - O carrinho sincroniza com Shopify Cart API — se o cart expirar no Shopify, o store local limpa automaticamente (`cartNotFound` handler).
 - Pix com 5% de desconto é calculado no frontend (multiplicação por 0.95) — NÃO é um desconto real no Shopify.
-- A tabela `profiles` no Supabase tem RLS ativa — cada usuário só vê/edita o próprio perfil.
+- A tabela `profiles` no Supabase tem RLS ativa — cada usuário só vê/edita o próprio perfil (policies escopadas a `authenticated`). Veja a seção "Segurança de RLS".
 - O projeto foi criado no Lovable — não altere a estrutura de pastas sem necessidade.
 - O cupom BEMVINDO10 é hardcoded no frontend (desconto fixo R$10) — não há validação server-side.
 - O frete grátis é ativado para compras acima de R$150 — lógica no frontend, não no Shopify.

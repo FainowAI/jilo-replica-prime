@@ -49,7 +49,9 @@
       "Bash(npx vitest *)",
       "WebFetch(domain:nominatim.openstreetmap.org)",
       "Bash(supabase secrets *)",
-      "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: $\\($c.Source\\)\"; & supabase --version } else { \"supabase NOT on PATH\" }; \"--- scoop ---\"; $s = Get-Command scoop -ErrorAction SilentlyContinue; if \\($s\\) { \"scoop present\" } else { \"no scoop\" })"
+      "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: $\\($c.Source\\)\"; & supabase --version } else { \"supabase NOT on PATH\" }; \"--- scoop ---\"; $s = Get-Command scoop -ErrorAction SilentlyContinue; if \\($s\\) { \"scoop present\" } else { \"no scoop\" })",
+      "mcp__supabase-jilo__list_tables",
+      "mcp__supabase-jilo__get_advisors"
     ]
   },
   "enableAllProjectMcpServers": true,
