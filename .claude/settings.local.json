@@ -51,7 +51,7 @@
       "Bash(supabase secrets *)",
       "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: $\\($c.Source\\)\"; & supabase --version } else { \"supabase NOT on PATH\" }; \"--- scoop ---\"; $s = Get-Command scoop -ErrorAction SilentlyContinue; if \\($s\\) { \"scoop present\" } else { \"no scoop\" })",
       "mcp__supabase-jilo__list_tables",
-      "mcp__supabase-jilo__get_advisors"
+      "mcp__supabase-jilo__get_advisors",
       "mcp__claude_ai_Shopify__graphql_schema",
       "Read(//c/Users/Antônio/.claude/**)",
       "mcp__claude_ai_Shopify__validate_graphql_codeblocks",
