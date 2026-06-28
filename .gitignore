@@ -24,8 +24,11 @@ dist-ssr
 *.sw?
 
 # Environment variables
-.env
-.env.*
+# .env contém apenas variáveis VITE_ (públicas, embutidas no bundle) — commitado de propósito
+# para o build-time do Lovable/Vite. Segredos reais NUNCA vão aqui (ficam nos Secrets do Supabase).
+.env.local
+.env.*.local
+!.env
 !.env.example
 
 #MCPs
