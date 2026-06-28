@@ -68,7 +68,8 @@
       "Bash(find . -maxdepth 2 -name \".env*\" -not -path \"*/node_modules/*\")",
       "WebFetch(domain:posthog.com)",
       "WebFetch(domain:github.com)",
-      "Bash(npx tsx *)"
+      "Bash(npx tsx *)",
+      "Bash(sort -t R -k2 -n)"
     ]
   },
   "enableAllProjectMcpServers": true,
