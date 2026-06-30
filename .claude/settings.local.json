@@ -72,7 +72,8 @@
       "Bash(sort -t R -k2 -n)",
       "WebFetch(domain:developers.google.com)",
       "mcp__claude_ai_Shopify__search_docs_chunks",
-      "Bash(where deno *)"
+      "Bash(where deno *)",
+      "Bash(deno --version)"
     ]
   },
   "enableAllProjectMcpServers": true,
