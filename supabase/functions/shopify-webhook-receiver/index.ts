@@ -2,12 +2,15 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
 import { SHIPPING_FREE_THRESHOLD } from "../_shared/shipping-constants.ts";
+import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
 
 const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") ?? "";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SHOPIFY_WEBHOOK_SECRET = Deno.env.get("SHOPIFY_WEBHOOK_SECRET")!;
+const SHOPIFY_STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN")!;
+const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -207,6 +210,91 @@ async function syncOrderItems(orderId: string, payload: any): Promise<void> {
   }
 }
 
+/**
+ * Faz POST GraphQL para Shopify Admin API com retry automático em 401.
+ * Token revogado server-side dispara force refresh + retry uma vez.
+ */
+async function callShopifyAdmin(payload: object, isRetry = false): Promise<Response> {
+  const token = isRetry
+    ? await forceRefreshShopifyAdminToken()
+    : await getShopifyAdminToken();
+
+  const res = await fetch(
+    `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": token,
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (res.status === 401 && !isRetry) {
+    console.warn("[shopify-webhook-receiver] Got 401, forcing token refresh and retrying");
+    return callShopifyAdmin(payload, true);
+  }
+
+  return res;
+}
+
+const ORDER_UPDATE_MUTATION = `
+  mutation orderUpdate($input: OrderInput!) {
+    orderUpdate(input: $input) {
+      order { id }
+      userErrors { field message }
+    }
+  }
+`;
+
+// Preenche o campo nativo "Endereço de entrega" do pedido no Admin Shopify quando
+// o endereço veio do Supabase (Path B — produtos requiresShipping:false não coletam
+// endereço no checkout). FAIL-SOFT: nunca lança, nunca loga PII.
+async function setShopifyOrderShippingAddress(
+  orderGid: string,
+  addr: Record<string, unknown>
+): Promise<void> {
+  if (!orderGid || !addr) return;
+
+  try {
+    const shippingAddress: Record<string, unknown> = {
+      firstName: addr.first_name ?? null,
+      lastName: addr.last_name ?? null,
+      address1: addr.address1 ?? null,
+      city: addr.city ?? null,
+      provinceCode: addr.province_code ?? null,
+      zip: addr.zip ?? null,
+      countryCode: addr.country_code ?? null,
+    };
+    if (addr.address2) shippingAddress.address2 = addr.address2;
+
+    const res = await callShopifyAdmin({
+      query: ORDER_UPDATE_MUTATION,
+      variables: { input: { id: orderGid, shippingAddress } },
+    });
+
+    if (!res.ok) {
+      console.error("[shopify-webhook-receiver] orderUpdate HTTP error:", res.status);
+      return;
+    }
+
+    const data = await res.json();
+    const userErrors = data?.data?.orderUpdate?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      console.error(
+        "[shopify-webhook-receiver] orderUpdate userErrors:",
+        JSON.stringify(userErrors.map((e: { field?: string[] }) => e.field))
+      );
+      return;
+    }
+
+    console.log("[shopify-webhook-receiver] orderUpdate shippingAddress: sucesso");
+  } catch (err) {
+    console.error("[shopify-webhook-receiver] setShopifyOrderShippingAddress threw");
+  }
+}
+
 serve(async (req) => {
   if (req.method !== "POST") {
     return new Response("Method not allowed", { status: 405 });
@@ -309,6 +397,15 @@ serve(async (req) => {
 
       if (updateErr) {
         console.error("Failed to update order on paid event:", updateErr);
+      }
+
+      // Endereço resolvido via Supabase (Path B) não aparece nativamente no pedido
+      // Shopify — preenche via Admin API orderUpdate. Fail-soft, não bloqueia o fluxo.
+      if (!payload.shipping_address && baseOrderData.shipping_address) {
+        await setShopifyOrderShippingAddress(
+          baseOrderData.shopify_order_id,
+          baseOrderData.shipping_address as Record<string, unknown>
+        );
       }
 
       // Sincroniza order_items (cobre o caso de paid criar a linha antes de create chegar)

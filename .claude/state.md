@@ -5,6 +5,22 @@
 
 2026-06-28 (Analytics destravado. Causa raiz: variáveis `VITE_` estavam nos Secrets do Supabase (canal errado) → bundle de prod saía sem a key do PostHog. Criado `.env` commitado com as públicas, ajustado `.gitignore`. PostHog + GA4 validados em produção. Branch `main`)
 
+## Sessão 2026-06-30 — Endereço no Admin da Shopify (campo nativo via orderUpdate)
+
+**Pedido do usuário:** o endereço PRECISA aparecer no **Admin da Shopify** (não só no nosso banco), idealmente "via metafield". Manter Uber + variante fantasma + requiresShipping=false.
+
+**⚠️ Gate de regra de negócio:** colocar endereço (PII) em **metafield** viola **R65/LGPD** + decisão D5 da `eap_metafields_op.md` ("CPF, e-mail, telefone, nome, endereço jamais em metafield/tag"). **Solução melhor e compliant:** gravar no **campo NATIVO `shippingAddress` do pedido** via Admin `orderUpdate` — campo nativo é o lugar correto p/ PII de endereço (onde o billing já fica), NÃO é metafield. Validado ao vivo (orderUpdate no #1009 → apareceu no Admin).
+
+**Implementação (1 feature-coder, ponytail) — `shopify-webhook-receiver/index.ts`:**
+- Importa `getShopifyAdminToken`/`forceRefreshShopifyAdminToken` do `_shared` + consts `SHOPIFY_STORE_DOMAIN`/`SHOPIFY_API_VERSION`.
+- Helper `callShopifyAdmin` (réplica do padrão de `customer-sync`, retry em 401) + `ORDER_UPDATE_MUTATION` + `setShopifyOrderShippingAddress(orderGid, addr)` (mapeia o endereço resolvido → `MailingAddressInput` Admin: `provinceCode`/`countryCode`; fail-soft; sem log de PII).
+- No `orders/paid`, após o upsert: `if (!payload.shipping_address && baseOrderData.shipping_address) setShopifyOrderShippingAddress(shopify_order_id, ...)`. Só quando o endereço veio do Supabase.
+- **Deploy: v34** (3 arquivos bundlados: index + `_shared/shipping-constants.ts` + `_shared/shopify-admin-auth.ts`; `verify_jwt:false`).
+
+**Verificação ponta-a-ponta (automática):** pedido #1010 (draft com `selected_address_id` → paid) → webhook v34 → `order.shippingAddress` NATIVO na Shopify preenchido ("Rua 15 de Novembro, 50 / São José dos Campos / SP"). ✅ Aparece no Admin.
+
+**Nota:** NÃO usa metafield (R65). NÃO precisa de ação manual na Shopify (campo nativo não exige definition nem shipping rate). Reusa OAuth Admin client_credentials (mesmo dos webhooks).
+
 ## Sessão 2026-06-30 — Path B: endereço resolvido no webhook (CAUSA RAIZ real)
 
 **Reporte:** mesmo após o fix de cart (`cartDeliveryAddressesAdd`), pedido real `#1008` ainda vinha sem endereço (`shippingAddress: null`).
