@@ -111,7 +111,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 **R48.** Cart attribute `selected_address_id` é gravado junto com `delivery_method`, `uber_quote_id` e `return_url` no `handleCheckout` (rastreabilidade no Shopify Admin + Bling). Fail-silent (R26).
 
-**R48.1 (correção 2026-06-30).** Além do attribute, o endereço selecionado COMPLETO é enviado à Shopify via `cartBuyerIdentityUpdate` (`deliveryAddressPreferences`, helper `setCartDeliveryAddress` em `src/lib/shopify.ts`) — prefill do checkout → o pedido nasce com `shipping_address` nativo. Antes só o UUID ia (note_attribute) e o pedido ficava sem endereço de entrega. Fail-soft, nos mesmos dois pontos do R48.
+**R48.1 (correção 2026-06-30).** Além do attribute, o endereço selecionado COMPLETO é **anexado** ao cart via `cartDeliveryAddressesAdd` (`selected: true`, helper `setCartDeliveryAddress` em `src/lib/shopify.ts`) → vira a delivery address do cart → o pedido nasce com `shipping_address` nativo. Antes só o UUID ia (note_attribute) e o pedido ficava sem endereço de entrega. Fail-soft, nos mesmos dois pontos do R48. ⚠️ `cartDeliveryAddressesAdd` usa `provinceCode`/`countryCode` (códigos), não `province`/`country` texto. A 1ª tentativa via `deliveryAddressPreferences` (cartBuyerIdentityUpdate) foi descartada — é só prefill, não populava o pedido.
 
 20. **`isAreaDeliverable` — novo fluxo de validação de área (Sprint 4.3)**: O fluxo antigo era: CEP do usuário → ViaCEP → whitelist. O novo fluxo é: endereço cadastrado no banco → `isAreaDeliverable(address.state, address.city)` → whitelist. A interface `CepValidationResult` permanece inalterada — apenas a fonte dos dados mudou.
 
@@ -173,7 +173,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 3. Endereços não-entregáveis aparecem por último com badge "Não entregamos aqui" e radio disabled
 4. Pode clicar em "Cadastrar novo endereço" pra abrir o `<AddressFormDialog />`
 5. Mudar seleção dispara re-quote automaticamente via `useShippingQuote` (queryKey muda)
-6. No checkout, `selected_address_id` é gravado como cart attribute **e** o endereço completo é enviado via `cartBuyerIdentityUpdate` (prefill do `shipping_address` na Shopify) — R48.1
+6. No checkout, `selected_address_id` é gravado como cart attribute **e** o endereço completo é anexado via `cartDeliveryAddressesAdd` (`selected:true` → vira o `shipping_address` do pedido) — R48.1
 
 ### Comprar agora (na página de produto)
 1. addItem + pega checkoutUrl + `window.open` para Shopify

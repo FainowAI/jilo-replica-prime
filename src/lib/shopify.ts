@@ -628,11 +628,12 @@ export async function setCartAttributes(
   return { success: true };
 }
 
-const CART_BUYER_IDENTITY_UPDATE_MUTATION = `
-  mutation cartBuyerIdentityUpdate($cartId: ID!, $buyerIdentity: CartBuyerIdentityInput!) {
-    cartBuyerIdentityUpdate(cartId: $cartId, buyerIdentity: $buyerIdentity) {
+const CART_DELIVERY_ADDRESSES_ADD_MUTATION = `
+  mutation cartDeliveryAddressesAdd($cartId: ID!, $addresses: [CartSelectableAddressInput!]!) {
+    cartDeliveryAddressesAdd(cartId: $cartId, addresses: $addresses) {
       cart { id }
       userErrors { field message }
+      warnings { code message }
     }
   }
 `;
@@ -655,10 +656,11 @@ function splitRecipientName(fullName: string | null | undefined): { firstName: s
   return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
 }
 
-// Envia o endereço selecionado como prefill do checkout (deliveryAddressPreferences via
-// cartBuyerIdentityUpdate) — vira o shipping_address do pedido na Shopify. O attribute
-// selected_address_id (setCartAttributes) continua sendo gravado à parte para sync futuro.
+// Anexa o endereço selecionado de fato ao cart (cartDeliveryAddressesAdd, selected: true)
+// — vira o shipping_address do pedido na Shopify. O attribute selected_address_id
+// (setCartAttributes) continua sendo gravado à parte para sync futuro.
 // ponytail: phone fica de fora (tabela addresses não tem telefone; upgrade: profile.phone se o Uber precisar dele).
+// ponytail: cartDeliveryAddressesReplace não existe na API 2025-07; checkout 2x pode duplicar endereço no cart, mas o último selected:true vence no checkout.
 export async function setCartDeliveryAddress(
   cartId: string,
   address: CartDeliveryAddressInput
@@ -673,28 +675,29 @@ export async function setCartDeliveryAddress(
     .filter(Boolean)
     .join(" - ") || undefined;
 
-  const data = await storefrontApiRequest(CART_BUYER_IDENTITY_UPDATE_MUTATION, {
+  const data = await storefrontApiRequest(CART_DELIVERY_ADDRESSES_ADD_MUTATION, {
     cartId,
-    buyerIdentity: {
-      countryCode: "BR",
-      deliveryAddressPreferences: [
-        {
+    addresses: [
+      {
+        selected: true,
+        oneTimeUse: false,
+        validationStrategy: "COUNTRY_CODE_ONLY",
+        address: {
           deliveryAddress: {
             firstName,
             lastName,
             address1,
             address2,
             city: address.city,
-            province: address.state,
+            provinceCode: address.state.trim().toUpperCase(),
             zip: address.cep,
-            country: "BR",
+            countryCode: "BR",
           },
-          deliveryAddressValidationStrategy: "COUNTRY_CODE_ONLY",
         },
-      ],
-    },
+      },
+    ],
   });
-  const userErrors = data?.data?.cartBuyerIdentityUpdate?.userErrors || [];
+  const userErrors = data?.data?.cartDeliveryAddressesAdd?.userErrors || [];
   if (userErrors.length > 0) {
     console.error("setCartDeliveryAddress errors:", userErrors);
     return { success: false };
