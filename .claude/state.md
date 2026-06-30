@@ -5,6 +5,25 @@
 
 2026-06-28 (Analytics destravado. Causa raiz: variáveis `VITE_` estavam nos Secrets do Supabase (canal errado) → bundle de prod saía sem a key do PostHog. Criado `.env` commitado com as públicas, ajustado `.gitignore`. PostHog + GA4 validados em produção. Branch `main`)
 
+## Sessão 2026-06-30 — Path B: endereço resolvido no webhook (CAUSA RAIZ real)
+
+**Reporte:** mesmo após o fix de cart (`cartDeliveryAddressesAdd`), pedido real `#1008` ainda vinha sem endereço (`shippingAddress: null`).
+
+**CAUSA RAIZ REAL (mais profunda que a API de cart):** os produtos da loja são **`requiresShipping: false`** (confirmado: 25 de 26 variants + o variant "Frete Uber Direct"; única exceção "Estrogonofe de Proteína de Soja"=true). Quando o carrinho só tem itens sem envio, **a Shopify NÃO coleta endereço no checkout** (`shippingAddress`/`shippingLine` sempre null) e **ignora** qualquer `cartDeliveryAddressesAdd`/`deliveryAddressPreferences`. O `seed-products.ts` nunca seta `requires_shipping`. ⚠️ Isso também fazia o **`uber-create-delivery` abortar** (ele exige `order.shipping_address.address1`/`city`).
+
+**Decisão (gate de arquitetura, escolha do usuário):** **Path B** — manter o modelo Uber + variant fantasma (não mexer no frete nativo da Shopify) e **resolver o endereço no backend** a partir do `selected_address_id`. (Path A = ligar requiresShipping + shipping rate nativo, descartado por ora.)
+
+**Implementação (1 feature-coder, ponytail) — `supabase/functions/shopify-webhook-receiver/index.ts`:**
+- Novos helpers `extractSelectedAddressId(payload)` + `resolveShippingAddress(payload)`: se `payload.shipping_address` for null, lê o `selected_address_id` dos note_attributes, busca na tabela `addresses` (service_role) e monta o JSONB no shape que o `uber-create-delivery` consome (`address1/address2/city/province/province_code/zip/country/country_code/first_name/last_name/name/phone`). Sem log de PII.
+- Fiação nos handlers `orders/create` e `orders/paid`: `if (!orderData.shipping_address) orderData.shipping_address = await resolveShippingAddress(payload)` ANTES do upsert (garante que o dispatch Uber subsequente leia o endereço do banco).
+- **Deployado: v32** (`verify_jwt:false` preservado — usa HMAC).
+
+**Verificação ponta-a-ponta (dado real):** draft com `selected_address_id=6798834d-...` → pedido **#1009 PAID** → `orders.shipping_address` populado: "Rua 15 de Novembro, 50 / Centro / São José dos Campos / SP / 12249-027 / Antônio Oliveira". ✅
+
+**⚠️ Consequência p/ a UI/admin:** o endereço fica no NOSSO `orders.shipping_address` (alimenta Uber + painel próprio), **NÃO no Admin da Shopify** (a Shopify nunca o coletou). Se um dia quiserem o endereço no Admin Shopify, é o Path A (requiresShipping=true + shipping rate).
+
+**Pendência — fix de cart virou INERTE:** com requiresShipping=false, o `setCartDeliveryAddress` (`cartDeliveryAddressesAdd`) no frontend é no-op (Shopify ignora). Decidir: remover (limpeza) ou manter como future-proof p/ Path A. Hoje só o `selected_address_id` (note_attribute) importa para o Path B.
+
 ## Sessão 2026-06-30 — Fix: endereço de entrega não chegava à Shopify
 
 **Reporte (pedido real #1006+):** pedido no Admin mostrava "Nenhum endereço de entrega informado"; só chegavam note_attributes `selected_address_id`, `delivery_method`, `return_url`. Billing aparecia (vem do pagamento/CPF), shipping não.

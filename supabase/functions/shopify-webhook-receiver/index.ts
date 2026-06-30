@@ -89,6 +89,59 @@ function extractDeliveryAttributes(payload: any): {
   };
 }
 
+function extractSelectedAddressId(payload: any): string | null {
+  const noteAttributes = payload.note_attributes ?? [];
+  const attr = noteAttributes.find(
+    (a: { name: string; value: string }) => a.name === "selected_address_id"
+  );
+  return attr?.value ?? null;
+}
+
+// Path B: produtos requiresShipping:false → Shopify não coleta endereço no checkout.
+// O endereço real vem do Supabase via selected_address_id (note_attribute).
+async function resolveShippingAddress(payload: any): Promise<Record<string, unknown> | null> {
+  if (payload.shipping_address) return payload.shipping_address;
+
+  const selectedAddressId = extractSelectedAddressId(payload);
+  if (!selectedAddressId) return null;
+
+  const { data: addr } = await supabase
+    .from("addresses")
+    .select("recipient_name, cep, street, number, complement, neighborhood, city, state")
+    .eq("id", selectedAddressId)
+    .maybeSingle();
+
+  if (!addr) {
+    console.log("resolveShippingAddress: selected_address_id não encontrado em addresses");
+    return null;
+  }
+
+  const recipientName = (addr.recipient_name ?? "").trim();
+  const spaceIdx = recipientName.indexOf(" ");
+  const firstName = recipientName ? (spaceIdx === -1 ? recipientName : recipientName.slice(0, spaceIdx)) : null;
+  const lastName = recipientName && spaceIdx !== -1 ? recipientName.slice(spaceIdx + 1).trim() : null;
+
+  console.log("resolveShippingAddress: endereço resolvido a partir do Supabase");
+
+  return {
+    address1: [addr.street, addr.number].filter(Boolean).join(", "),
+    address2: [addr.complement, addr.neighborhood]
+      .map((s: string | null) => s?.trim())
+      .filter(Boolean)
+      .join(" - "),
+    city: addr.city,
+    province: addr.state.trim().toUpperCase(),
+    province_code: addr.state.trim().toUpperCase(),
+    zip: addr.cep,
+    country: "Brazil",
+    country_code: "BR",
+    first_name: firstName,
+    last_name: lastName,
+    name: addr.recipient_name,
+    phone: null, // ponytail: phone do destino fica null; upgrade: join em profiles.phone por user_id se o Uber precisar.
+  };
+}
+
 function calculateNonShippingItemsTotal(lineItems: any[]): number {
   const shippingNumericId = getShippingVariantNumericId();
   return lineItems
@@ -204,6 +257,9 @@ serve(async (req) => {
     // Process by topic
     if (topic === "orders/create") {
       const orderData = extractOrderData(payload);
+      if (!orderData.shipping_address) {
+        orderData.shipping_address = await resolveShippingAddress(payload);
+      }
       const { data: createdOrder } = await supabase
         .from("orders")
         .upsert(orderData, { onConflict: "shopify_order_id" })
@@ -231,6 +287,9 @@ serve(async (req) => {
         : "jilo_pending"; // jilo_own
 
       const baseOrderData = extractOrderData(payload);
+      if (!baseOrderData.shipping_address) {
+        baseOrderData.shipping_address = await resolveShippingAddress(payload);
+      }
       const { data: updatedOrder, error: updateErr } = await supabase
         .from("orders")
         .upsert(
