@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, setCartDeliveryAddress, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
+import { useAddresses } from "@/hooks/useAddresses";
 import { SITE_URL } from "@/config/site";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
@@ -53,6 +54,7 @@ const Carrinho = () => {
   const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
   const [activeShippingFeeCents, setActiveShippingFeeCents] = useState(0);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const { data: addresses } = useAddresses();
 
   const totalNonShippingItems = useNonShippingTotalItems();
   const isQuantityValid = isValidKitQuantity(totalNonShippingItems);
@@ -220,6 +222,10 @@ const Carrinho = () => {
       }
       // Fail-silent: se a chamada falhar, segue o checkout (R26)
       await setCartAttributes(cartId, attrs);
+      const selectedAddress = addresses?.find((a) => a.id === selectedAddressId);
+      if (selectedAddress) {
+        await setCartDeliveryAddress(cartId, selectedAddress).catch(() => {});
+      }
     }
     const checkoutUrl = getCheckoutUrl();
     if (checkoutUrl) {
@@ -256,6 +262,10 @@ const Carrinho = () => {
             attrs.push({ key: "selected_address_id", value: selectedAddressId });
           }
           await setCartAttributes(cartId, attrs);
+          const selectedAddress = addresses?.find((a) => a.id === selectedAddressId);
+          if (selectedAddress) {
+            await setCartDeliveryAddress(cartId, selectedAddress).catch(() => {});
+          }
         }
         const checkoutUrl = getCheckoutUrl();
         if (checkoutUrl) {
@@ -263,7 +273,7 @@ const Carrinho = () => {
         }
       })();
     }
-  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId]);
+  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId, addresses]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;

@@ -3,6 +3,21 @@
 ## Visão geral
 E-commerce da marca Jilo (DaJu Alimentação) — marmitas artesanais congeladas. Frontend em React + TypeScript hospedado no Lovable, catálogo e checkout via Shopify Storefront API, dados de usuário no Supabase.
 
+## Desenvolvimento orientado a sub-agentes (REGRA PERMANENTE — sempre aplicar)
+Este projeto prioriza **sub-agent driven development**. Para qualquer tarefa de implementação não-trivial (feature, aba, campo, migration, correção de bug, mudança de regra/cálculo/permissão), **orquestre sub-agentes em vez de fazer tudo no contexto principal**. A skill `/feature-builder` é o ponto de entrada padrão e já descreve os sub-agentes e o fluxo (planeja → aprova → executa pelo método ponytail).
+
+Sub-agentes disponíveis (via Agent tool) e quando despachar:
+- **code-explorer** — mapear código existente numa área grande/desconhecida antes de editar (read-only).
+- **data-architect** — desenhar schema/tipos/RLS e blueprint de migração, inspecionando o banco real via MCP (não aplica migration).
+- **feature-coder** — implementar tracks de código independentes em paralelo, dentro de escopo definido.
+- **security-auditor** — auditar RLS/RBAC/PII/segurança após mudanças sensíveis.
+
+Como aplicar:
+1. **Default é despachar, não fazer inline.** Se a tarefa toca mais de um arquivo/área ou tem fases (mapear → desenhar → codar → auditar), use sub-agentes. Trabalho inline só para edições mecânicas triviais e perguntas conceituais.
+2. **Paralelize tracks independentes** — múltiplos `feature-coder` na mesma mensagem para rodarem concorrentemente; nunca serialize o que pode ser paralelo.
+3. **Cada sub-agente recebe um brief autocontido** — arquivos-alvo, padrões a seguir, regras de negócio já validadas e o que NÃO tocar. Sub-agente não inventa regra de negócio.
+4. **Prefira `/feature-builder`** para iniciar qualquer execução de EAP/feature — ela já dispara o gate de regras de negócio e a orquestração.
+
 ## Stack
 - React 18 + TypeScript strict + Vite + Tailwind CSS + shadcn/ui
 - State: Zustand (carrinho) + TanStack Query (dados de API)

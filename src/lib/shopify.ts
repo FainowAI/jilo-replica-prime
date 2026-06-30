@@ -628,6 +628,80 @@ export async function setCartAttributes(
   return { success: true };
 }
 
+const CART_BUYER_IDENTITY_UPDATE_MUTATION = `
+  mutation cartBuyerIdentityUpdate($cartId: ID!, $buyerIdentity: CartBuyerIdentityInput!) {
+    cartBuyerIdentityUpdate(cartId: $cartId, buyerIdentity: $buyerIdentity) {
+      cart { id }
+      userErrors { field message }
+    }
+  }
+`;
+
+interface CartDeliveryAddressInput {
+  recipient_name: string | null;
+  cep: string;
+  street: string;
+  number: string;
+  complement: string | null;
+  neighborhood: string;
+  city: string;
+  state: string;
+}
+
+function splitRecipientName(fullName: string | null | undefined): { firstName: string | null; lastName: string | null } {
+  if (!fullName || !fullName.trim()) return { firstName: null, lastName: null };
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) return { firstName: parts[0], lastName: null };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+// Envia o endereço selecionado como prefill do checkout (deliveryAddressPreferences via
+// cartBuyerIdentityUpdate) — vira o shipping_address do pedido na Shopify. O attribute
+// selected_address_id (setCartAttributes) continua sendo gravado à parte para sync futuro.
+// ponytail: phone fica de fora (tabela addresses não tem telefone; upgrade: profile.phone se o Uber precisar dele).
+export async function setCartDeliveryAddress(
+  cartId: string,
+  address: CartDeliveryAddressInput
+): Promise<{ success: boolean }> {
+  if (!address.street || !address.cep) {
+    return { success: false };
+  }
+  const { firstName, lastName } = splitRecipientName(address.recipient_name);
+  const address1 = [address.street, address.number].filter(Boolean).join(", ");
+  const address2 = [address.complement, address.neighborhood]
+    .map((s) => s?.trim())
+    .filter(Boolean)
+    .join(" - ") || undefined;
+
+  const data = await storefrontApiRequest(CART_BUYER_IDENTITY_UPDATE_MUTATION, {
+    cartId,
+    buyerIdentity: {
+      countryCode: "BR",
+      deliveryAddressPreferences: [
+        {
+          deliveryAddress: {
+            firstName,
+            lastName,
+            address1,
+            address2,
+            city: address.city,
+            province: address.state,
+            zip: address.cep,
+            country: "BR",
+          },
+          deliveryAddressValidationStrategy: "COUNTRY_CODE_ONLY",
+        },
+      ],
+    },
+  });
+  const userErrors = data?.data?.cartBuyerIdentityUpdate?.userErrors || [];
+  if (userErrors.length > 0) {
+    console.error("setCartDeliveryAddress errors:", userErrors);
+    return { success: false };
+  }
+  return { success: true };
+}
+
 export async function fetchCartFull(cartId: string) {
   const data = await storefrontApiRequest(CART_FULL_QUERY, { id: cartId });
   return data?.data?.cart;

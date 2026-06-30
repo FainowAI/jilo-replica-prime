@@ -111,6 +111,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 **R48.** Cart attribute `selected_address_id` é gravado junto com `delivery_method`, `uber_quote_id` e `return_url` no `handleCheckout` (rastreabilidade no Shopify Admin + Bling). Fail-silent (R26).
 
+**R48.1 (correção 2026-06-30).** Além do attribute, o endereço selecionado COMPLETO é enviado à Shopify via `cartBuyerIdentityUpdate` (`deliveryAddressPreferences`, helper `setCartDeliveryAddress` em `src/lib/shopify.ts`) — prefill do checkout → o pedido nasce com `shipping_address` nativo. Antes só o UUID ia (note_attribute) e o pedido ficava sem endereço de entrega. Fail-soft, nos mesmos dois pontos do R48.
+
 20. **`isAreaDeliverable` — novo fluxo de validação de área (Sprint 4.3)**: O fluxo antigo era: CEP do usuário → ViaCEP → whitelist. O novo fluxo é: endereço cadastrado no banco → `isAreaDeliverable(address.state, address.city)` → whitelist. A interface `CepValidationResult` permanece inalterada — apenas a fonte dos dados mudou.
 
 21. **Gate de quantidade (Sprint 5.1, R56)**: A partir de `KIT_STEP` marmitas, o checkout exige múltiplos exatos de `KIT_STEP`. A fonte única é `src/config/kitQuantity.ts`, que deriva `KIT_STEP` de `SHIPPING_FREE_THRESHOLD` e expõe `isValidKitQuantity`/`getKitQuantityGuidance`. Em `/carrinho`, `canCheckout` tem 4 condições independentes: endereço entregável, frete resolvido, quantidade válida e `freightStateOk` (estado da linha de frete no Shopify Cart — R59, substitui o antigo `totalMatchesShopify`). Quando a quantidade está inválida, o botão mostra "Complete seu kit de 7". `<KitQuantityNotice />` aparece a partir de `KIT_STEP`: positivo em múltiplos válidos, alerta em quantidades inválidas, sempre com CTA para `/kit-livre`.
@@ -171,7 +173,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 3. Endereços não-entregáveis aparecem por último com badge "Não entregamos aqui" e radio disabled
 4. Pode clicar em "Cadastrar novo endereço" pra abrir o `<AddressFormDialog />`
 5. Mudar seleção dispara re-quote automaticamente via `useShippingQuote` (queryKey muda)
-6. No checkout, `selected_address_id` é gravado como cart attribute
+6. No checkout, `selected_address_id` é gravado como cart attribute **e** o endereço completo é enviado via `cartBuyerIdentityUpdate` (prefill do `shipping_address` na Shopify) — R48.1
 
 ### Comprar agora (na página de produto)
 1. addItem + pega checkoutUrl + `window.open` para Shopify
@@ -213,7 +215,7 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 - O `<DeliveryAddressSelector />` constrói um `CepValidationResult` síncrono a partir do endereço cadastrado — não bate na ViaCEP (todos os campos vêm do banco). O helper `isAreaDeliverable(uf, city)` em `cepValidator.ts` é o ponto único de checagem contra a whitelist `DELIVERY_AREAS`.
 - O `<CepChecker />` antigo NÃO foi deletado — pode ser usado em outras páginas (FAQ, cobertura, landing). Mas não use mais em `/carrinho`.
 - Usuários antigos com endereço em `profiles.address/cep/...` mas sem linha em `addresses` são tratados como "sem endereço". Migração desses dados é débito técnico pra sprint futura.
-- Cart attribute `selected_address_id` é metadado adicional — NÃO substitui o `shipping_address` JSONB de `orders` (que continua vindo do payload do webhook `orders/paid`, regra R43).
+- Cart attribute `selected_address_id` é metadado adicional (rastreabilidade/Bling). Desde a correção R48.1 (2026-06-30), o endereço completo TAMBÉM vai à Shopify via `cartBuyerIdentityUpdate` (`deliveryAddressPreferences`), então o `shipping_address` JSONB de `orders` passa a vir preenchido do payload `orders/paid` (R43) — antes vinha vazio porque a Shopify nunca recebia o endereço.
 - **`cartStore.addItem` tem dois caminhos:** (1) marmitas + primeira inserção de variant fantasma → fluxo normal (soma quantity se existir). (2) re-inserção de variant fantasma quando ela já existe → REPLACE atômico (remove no Shopify + add quantity=1 + atualiza array local via `.map` em vez de spread). Se mexer no `addItem`, lembre que o early return após o bloco de REPLACE é o que impede o fluxo normal de executar em sequência e voltar o bug.
 - O cupom PIX é **sempre 5%** (R19, atualizado em R61): o frontend aplica `PIX5` para qualquer quantidade. **`PIX5` é classe `ORDER`** (R61) — empilha com os Kits (classe `PRODUCT`) porque são classes diferentes, com `combinesWith` ligado nos dois lados. ⚠️ Dois descontos de PRODUTO na mesma linha NÃO empilham na Shopify Basic (só com Plus via `productDiscountsWithTagsOnSameCartLine`); por isso o PIX precisa ser ORDER. Não rebaixar o PIX5 para PRODUCT — o `applicable: false` volta. `PIX3` foi DESATIVADO no Shopify Admin e não é mais aplicado; segue em `isPixCoupon` só para reconciliação de resíduo. Não trocar a configuração sem alinhar com regras de margem do Jilo.
 - O `PixCallout` (em Product, CartDrawer, Kit, KitLivre) exibe "5% off" estático — agora **consistente** com o cupom aplicado no carrinho (PIX5 sempre 5%). A antiga inconsistência educativa (vitrine 5% vs. carrinho 3% em ≥7 marmitas) deixou de existir com o fim da regra condicional.

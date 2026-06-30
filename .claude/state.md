@@ -1,7 +1,39 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
+2026-06-30 (Sprint A da EAP Visibilidade de Dados **FECHADO**: webhooks Shopify registrados (`orders/create`+`paid`+`fulfilled`) sob o app customizado + QA validado ponta a ponta (pedido #1005 → `webhook_events`/`orders`/`order_items`). Branch `main`. Ver sessão abaixo.)
+
 2026-06-28 (Analytics destravado. Causa raiz: variáveis `VITE_` estavam nos Secrets do Supabase (canal errado) → bundle de prod saía sem a key do PostHog. Criado `.env` commitado com as públicas, ajustado `.gitignore`. PostHog + GA4 validados em produção. Branch `main`)
+
+## Sessão 2026-06-30 — Fix: endereço de entrega não chegava à Shopify
+
+**Reporte (pedido real #1006+):** pedido no Admin mostrava "Nenhum endereço de entrega informado"; só chegavam note_attributes `selected_address_id`, `delivery_method`, `return_url`. Billing aparecia (vem do pagamento/CPF), shipping não.
+
+**Causa raiz (2 code-explorer despachados):** o checkout gravava só o `selected_address_id` (UUID) como note_attribute via `cartAttributesUpdate`; **nunca enviava endereço estruturado** à Shopify (zero uso de `cartBuyerIdentityUpdate`/`cartDeliveryAddressesAdd`/`buyerIdentity` no projeto). O objeto `Address` completo existia em memória no `DeliveryAddressSelector` (cache do `useAddresses()`) mas não era propagado ao `handleCheckout` (só a string id).
+
+**Correção (1 feature-coder, método ponytail, 2 arquivos):**
+- `src/lib/shopify.ts`: novo `setCartDeliveryAddress(cartId, address)` + `CART_BUYER_IDENTITY_UPDATE_MUTATION` — mapeia `Address`→`MailingAddressInput` (⚠️ Storefront usa `province`/`country` em texto, NÃO `provinceCode`/`countryCode` da Admin) e envia via `deliveryAddressPreferences`. Fail-soft se faltar street/cep.
+- `src/pages/Carrinho.tsx`: reusa `useAddresses()` (queryKey dedupe), resolve o endereço por id e chama `setCartDeliveryAddress` nos 2 pontos de checkout (handleCheckout + effect pós-login), fail-soft (R26). Mantém o `selected_address_id` attribute.
+- Regras: **R48.1** em `requirements.md` + `fluxo-carrinho-checkout.md` atualizado.
+
+**Verificação:** `tsc --noEmit` limpo + `npm run build` ok. **Mutation validada AO VIVO** contra Storefront 2025-07 (cart descartável + token público): `cartBuyerIdentityUpdate` aceito, `userErrors: []`, sem erros GraphQL — confirma que o shape está certo e o fail-soft não mascara bug. **Validação ponta-a-ponta pendente:** 1 checkout real pós-deploy → conferir que `orders.shipping_address`/`customer_name` populam.
+
+**⚠️ Storefront vs Admin MailingAddressInput:** Storefront = `province`/`country` (texto livre, aceita "SP"/"BR"); Admin = `provinceCode`/`countryCode`. Não copiar o padrão da edge `shopify-customer-sync` (que é Admin) para código de Cart frontend.
+
+## Sessão 2026-06-30 — Sprint A (Captação Shopify) ativado + QA validado
+
+**Contexto:** o usuário pediu para "começar a 1ª sprint" da EAP `eap_visibilidade_dados.md`. Reconciliação (Fase 2.6) revelou que **todo o código das Sprints A/B/C já estava mergeado na `main`** (commits `b2e8dd0` A, `ac66a9f` B, `6691699` C; PR #9). Não havia código novo a construir. A metade do **cliente** (A.1) já estava fluindo: **6/6 profiles** com `shopify_customer_id` (EAP dizia 0/6). O único gap real era a metade dos **pedidos**: `webhook_events`/`orders`/`order_items` zerados porque os **webhooks nunca foram registrados** (`webhookSubscriptions` vazio na Shopify).
+
+**Ação (ativação, não construção):**
+- Rodada a edge `register-shopify-webhooks` → criou as 3 subscriptions (`ORDERS_CREATE`/`PAID`/`FULFILLED`) apontando para `…/shopify-webhook-receiver`, sob o **app customizado** (token via `client_credentials`). Re-rodada confirmou idempotência (`existing: [3]`).
+- ⚠️ **GOTCHA DE INFRA (importante p/ próximas sessões):** as edge functions guardadas por `token === SUPABASE_SERVICE_ROLE_KEY` (ex.: `register-shopify-webhooks`) **NÃO aceitam mais o JWT legacy `service_role`** — o projeto tem o **novo sistema de API keys ativo** (existe `sb_publishable_…`), e o runtime das Edge Functions passou a injetar a **secret key nova (`sb_secret_…`)** em `SUPABASE_SERVICE_ROLE_KEY`. O JWT legacy ainda valida no PostgREST/REST, mas falha (401) no guard interno dessas funções. **Para invocá-las use a `sb_secret_…`** (Painel → Settings → API Keys → Reveal).
+- ⚠️ Webhooks na Shopify são **escopados por app**: a query `webhookSubscriptions` pelo conector MCP (outro app) retorna `[]` mesmo com as subscriptions ativas — só o app customizado as enxerga. Isso é o que garante que o **HMAC bate** (Shopify assina com o secret do app criador = `SHOPIFY_WEBHOOK_SECRET`). Validação autoritativa = report da própria `register-shopify-webhooks`.
+
+**QA (A.3.1) — validado ao vivo:** draft order via MCP (1× Filé de Frango Pizzaiolo) → `draftOrderComplete(paymentPending:false)` → pedido **#1005 PAID**. Resultado no banco: `webhook_events`=2 (`orders/create`+`orders/paid`, ambos `processed=true` → **HMAC ok**), `orders`=1 (`status=paid`), `order_items`=1 (qty 1, 1998 cents). `delivery_method=uber_direct`/`pending_dispatch` **sem dispatch Uber** (draft não tem `uber_quote_id` → receiver só logou warning; fail-safe de R36 correto).
+
+**Pendência de limpeza:** pedido de teste **#1005** (tag `QA-TEST`, email `qa-test@jilomarmitas.com`) segue como pago/pendente de fulfillment na Shopify — **arquivar/cancelar** para não poluir métricas. Linhas de teste em `orders`/`order_items`/`webhook_events` permanecem como evidência (decidir se limpa).
+
+**Nota de doc desatualizada (fora do escopo, reportado):** `CLAUDE.md` diz "NÃO há tabelas de produtos/pedidos no Supabase" — a parte de **pedidos** está obsoleta (`orders`/`order_items`/`webhook_events` existem e estão populadas). Produtos seguem só na Shopify (correto). Ajustar quando o usuário quiser.
 
 ## Sessão 2026-06-28 — Analytics destravado (variáveis VITE_ no cofre errado)
 
