@@ -7,6 +7,7 @@ import { useCartSync } from "@/hooks/useCartSync";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { RouteChangeTracker } from "@/analytics/RouteChangeTracker";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import GoogleOneTap from "@/components/GoogleOneTap";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
 import Cardapio from "./pages/Cardapio";
@@ -31,6 +32,7 @@ const AppContent = () => {
     <BrowserRouter>
       <RouteChangeTracker />
       <AuthProvider>
+        <GoogleOneTap />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/produto/:handle" element={<Product />} />

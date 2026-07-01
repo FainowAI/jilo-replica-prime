@@ -73,7 +73,8 @@
       "WebFetch(domain:developers.google.com)",
       "mcp__claude_ai_Shopify__search_docs_chunks",
       "Bash(where deno *)",
-      "Bash(deno --version)"
+      "Bash(deno --version)",
+      "WebFetch(domain:supabase.com)"
     ]
   },
   "enableAllProjectMcpServers": true,
