@@ -30,6 +30,7 @@ O catálogo da Jilo exibe marmitas artesanais organizadas em 4 categorias: Aves 
 | Arquivo | Descrição |
 |---------|-----------|
 | `src/lib/shopify.ts` | Client Shopify — storefrontApiRequest(), queries GraphQL, mutations de cart, tipos ShopifyProduct |
+| `src/hooks/useProductSearch.ts` | Hook de busca de produtos (usado pelo dropdown de resultados do Header) — `normalizeSearch()` (remove acento + lowercase) e `useProductSearch(term, limit)`: busca o catálogo completo 1x via TanStack Query (`queryKey: ["catalog-all-products"]`, `staleTime` 5min) e filtra client-side por título/productType |
 
 ## Tabelas do banco
 Nenhuma. Produtos são gerenciados 100% pelo Shopify.
@@ -38,11 +39,11 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 
 1. **Categorias fixas em ordem**: `CATEGORY_ORDER` no FullMenu define: `["Aves e Suinos", "Bovinos", "Peixes e Massas", "Veganos"]`. Categorias fora dessa lista aparecem no final.
 
-2. **Busca com debounce**: O FullMenu tem busca com debounce de 400ms — `searchInput` é separado do `searchQuery`. A busca filtra por título do produto E por nome da categoria. A filtragem é no frontend APÓS carregar todos os produtos.
+2. **Busca com debounce**: O FullMenu tem busca com debounce de 400ms — `searchInput` é separado do `searchQuery`. A busca filtra por título do produto E por nome da categoria, usando `normalizeSearch` (remove acento + lowercase, de `src/hooks/useProductSearch.ts`) para match tolerante e parcial. A filtragem é no frontend APÓS carregar todos os produtos (o fetch NÃO manda o termo para a query da Shopify — busca o catálogo completo 1x). O `FullMenu` inicializa `searchInput`/`searchQuery` a partir de `?search=` na URL e reage a mudanças desse param (navegação vinda da navbar com o componente já montado).
 
 3. **Ordenação**: 5 opções — Relevância (padrão), Ordem alfabética, Mais vendidos (mesmo que relevância), Menor preço, Maior preço. "Maior desconto" compara `compareAtPrice` com `price`.
 
-4. **Filtro por categoria**: Via search params na URL (`?category=Bovinos`). "Todos" remove o param. Header search redireciona para `/cardapio?search=query`.
+4. **Filtro por categoria**: Via search params na URL (`?category=Bovinos`). "Todos" remove o param. Header search redireciona para `/cardapio?search=query`, que agora é lido pelo FullMenu (ver regra 2). O Header também mostra um dropdown de resultados (até 6 produtos, imagem + título + preço) direto na barra de busca expansível, via `useProductSearch` (`src/hooks/useProductSearch.ts`) — busca client-side sobre o catálogo completo, sem round-trip por tecla.
 
 5. **Tags como badges**: Sistema de badges usa tags do Shopify — `mais-pedido` → "⭐ Mais pedido" (amarelo), `vegano` → "🌱 Vegano" (verde), `low-carb` → "Low Carb", `novo` → "Novo". Prioridade é a primeira match.
 
@@ -119,7 +120,7 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 - A calculadora de frete na página de produto é placeholder — sem integração
 - O `sku` não existe nos dados — usa últimos 6 chars do ID Shopify como fallback
 - As imagens dependem do CDN Shopify — se a store expirar, as imagens quebram
-- O header search redireciona para `/cardapio?search=query` mas FullMenu lê `searchParams` para category, não para search — a busca funciona via estado local do componente
+- O header search redireciona para `/cardapio?search=query` e o FullMenu lê `?search=` para inicializar/sincronizar a busca local (via `useEffect` reagindo a `searchParams.get("search")`).
 - Os metafields só são buscados na query `PRODUCT_BY_HANDLE_QUERY` (página de detalhe). Listagens (FullMenu, Favorites, AllDishes) NÃO carregam metafields — isso é intencional para performance.
 - Se um novo metafield for adicionado no Shopify, a query em `shopify.ts` precisa ser atualizada manualmente para incluí-lo no array `identifiers`.
 - O checkbox "Acesso à API Storefront" DEVE estar ativo no Shopify Admin para cada metafield definition — sem isso a Storefront API retorna null.

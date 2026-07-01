@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { ShoppingBag, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, type ShopifyProduct } from "@/lib/shopify";
+import { normalizeSearch } from "@/hooks/useProductSearch";
 import { useCartStore } from "@/stores/cartStore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { motion, AnimatePresence } from "framer-motion";
@@ -74,9 +75,9 @@ export function FullMenu() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
-    // Search with debounce
-    const [searchInput, setSearchInput] = useState("");
-    const [searchQuery, setSearchQuery] = useState("");
+    // Search with debounce — inicializado a partir de ?search= (vindo da navbar)
+    const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "");
+    const [searchQuery, setSearchQuery] = useState(searchParams.get("search") ?? "");
     const [sortOption, setSortOption] = useState("Relevância");
     const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -87,15 +88,24 @@ export function FullMenu() {
         return () => clearTimeout(debounceRef.current);
     }, [searchInput]);
 
+    // Sincroniza com ?search= quando ele muda com o componente já montado (navegação da navbar)
+    useEffect(() => {
+        const fromUrl = searchParams.get("search") ?? "";
+        setSearchInput(fromUrl);
+        setSearchQuery(fromUrl);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams.get("search")]);
+
     const addItem = useCartStore((s) => s.addItem);
     const isLoading = useCartStore((s) => s.isLoading);
 
+    // ponytail: busca o catálogo completo 1x (sem termo na query da Shopify) — o filtro de busca
+    // roda client-side (searchedCategories) com normalizeSearch, que tolera parcial/sem-acento.
     const fetchProducts = useCallback(async () => {
         setLoading(true);
         setError(false);
         try {
-            const variables: { first: number; query?: string } = { first: 50 };
-            variables.query = excludeInternalShipping(searchQuery || undefined);
+            const variables = { first: 50, query: excludeInternalShipping() };
             const data = await storefrontApiRequest(PRODUCTS_QUERY, variables);
             const products: ShopifyProduct[] = data?.data?.products?.edges || [];
             const groups: Record<string, ShopifyProduct[]> = {};
@@ -110,7 +120,7 @@ export function FullMenu() {
         } finally {
             setLoading(false);
         }
-    }, [searchQuery]);
+    }, []);
 
     useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
@@ -140,11 +150,12 @@ export function FullMenu() {
         ? grouped
         : { [currentCategory]: grouped[currentCategory] || [] };
 
-    // Filtro de Busca
+    // Filtro de Busca — tolerante a acento/case/parcial, mesmo critério do useProductSearch da navbar
+    const normalizedQuery = normalizeSearch(searchQuery);
     const searchedCategories = Object.entries(displayedCategories).reduce((acc, [cat, products]) => {
         const filtered = products.filter(p =>
-            p.node.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            cat.toLowerCase().includes(searchQuery.toLowerCase())
+            normalizeSearch(p.node.title).includes(normalizedQuery) ||
+            normalizeSearch(cat).includes(normalizedQuery)
         );
         if (filtered.length > 0) acc[cat] = filtered;
         return acc;

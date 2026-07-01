@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Menu, Search, User, X, ChevronDown, ArrowRight, LogOut, Package, MapPin, UserCircle2 } from "lucide-react";
+import { Menu, Search, User, X, ChevronDown, ArrowRight, LogOut, Package, MapPin, UserCircle2, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import AuthDialog from "@/components/AuthDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { CartDrawer } from "@/components/CartDrawer";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
+import { useProductSearch } from "@/hooks/useProductSearch";
 
 const navLinks = [
   { label: "Cardápio", href: "/cardapio" },
@@ -21,6 +22,7 @@ const Header = () => {
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { results: searchResults, isLoading: searchLoading } = useProductSearch(searchQuery);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,6 +30,11 @@ const Header = () => {
       navigate(`/cardapio?search=${encodeURIComponent(searchQuery.trim())}`);
       setIsSearchOpen(false);
     }
+  };
+
+  const closeSearch = () => {
+    setIsSearchOpen(false);
+    setSearchQuery("");
   };
 
   return (
@@ -105,7 +112,7 @@ const Header = () => {
           <button
             onClick={() => setIsSearchOpen(!isSearchOpen)}
             aria-label={isSearchOpen ? "Fechar busca" : "Abrir busca"}
-            className="p-2 hover:opacity-70 transition-opacity hidden sm:block"
+            className="p-2 hover:opacity-70 transition-opacity"
           >
             {isSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
           </button>
@@ -157,22 +164,65 @@ const Header = () => {
 
       {/* Expanded Search Bar */}
       {isSearchOpen && (
-        <div className="absolute top-full left-0 w-full bg-white border-t border-black/10 shadow-sm z-50 animate-in slide-in-from-top-2 flex items-center px-4 md:px-[40px] py-[16px] gap-[12px]">
-          <Search className="h-5 w-5 text-black/50" />
-          <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center">
-            <input
-              type="text"
-              placeholder="Buscar pratos, categorias..."
-              className="w-full outline-none text-[15px] font-sans text-[#1a1a1a] placeholder:text-black/50 bg-transparent"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              autoFocus
-            />
-          </form>
-          {searchQuery && (
-            <button onClick={() => setSearchQuery("")} aria-label="Limpar busca" className="p-1 hover:bg-black/5 rounded-full text-black/50 transition-colors">
-              <X className="h-4 w-4" />
-            </button>
+        <div className="absolute top-full left-0 w-full bg-white border-t border-black/10 shadow-sm z-50 animate-in slide-in-from-top-2">
+          <div className="flex items-center px-4 md:px-[40px] py-[16px] gap-[12px]">
+            <Search className="h-5 w-5 text-black/50" />
+            <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center">
+              <input
+                type="text"
+                placeholder="Buscar pratos, categorias..."
+                aria-label="Buscar pratos"
+                className="w-full outline-none text-[15px] font-sans text-[#1a1a1a] placeholder:text-black/50 bg-transparent"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+            </form>
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} aria-label="Limpar busca" className="p-1 hover:bg-black/5 rounded-full text-black/50 transition-colors">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
+          {searchQuery.trim() && (
+            <div className="px-4 md:px-[40px] pb-[16px] max-h-[60vh] overflow-y-auto">
+              {searchLoading ? (
+                <div className="flex items-center justify-center py-6 text-[#1e3a1e]">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                </div>
+              ) : searchResults.length === 0 ? (
+                <p className="text-sm font-sans text-black/50 py-4">Nenhum prato encontrado.</p>
+              ) : (
+                <div className="flex flex-col gap-1 rounded-2xl bg-white">
+                  {searchResults.map((product) => {
+                    const image = product.node.images.edges[0]?.node;
+                    const amount = product.node.priceRange.minVariantPrice.amount;
+                    return (
+                      <Link
+                        key={product.node.id}
+                        to={`/produto/${product.node.handle}`}
+                        onClick={closeSearch}
+                        aria-label={`Ver produto ${product.node.title}`}
+                        className="flex items-center gap-3 rounded-xl p-2 hover:bg-[#F3F4F0] transition-colors"
+                      >
+                        <img
+                          src={image?.url || "/placeholder.svg"}
+                          alt={image?.altText || product.node.title}
+                          className="h-12 w-12 rounded-lg object-cover bg-[#f0efeb] shrink-0"
+                        />
+                        <span className="flex-1 text-sm font-sans font-medium text-[#1a1a1a] truncate">
+                          {product.node.title}
+                        </span>
+                        <span className="text-sm font-sans font-semibold text-[#1e3a1e] whitespace-nowrap">
+                          R$ {Number(amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
