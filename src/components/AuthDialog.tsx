@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
 
 interface AuthDialogProps {
   open: boolean;
@@ -57,6 +58,15 @@ const AuthDialog = ({ open, onOpenChange, initialMode = "login" }: AuthDialogPro
             {mode === "login" ? "Entrar na Jilo" : "Criar conta"}
           </DialogTitle>
         </DialogHeader>
+
+        <div className="flex justify-center mt-4">
+          <GoogleSignInButton text={mode === "login" ? "signin_with" : "signup_with"} />
+        </div>
+        <div className="flex items-center gap-3 my-4">
+          <span className="h-px flex-1 bg-[#e8e8e4]" />
+          <span className="text-xs text-[#9b9b9b] font-sans">ou</span>
+          <span className="h-px flex-1 bg-[#e8e8e4]" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           {mode === "signup" && (

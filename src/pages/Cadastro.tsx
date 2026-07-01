@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
+import GoogleSignInButton from "@/components/GoogleSignInButton";
 
 const Cadastro = () => {
   const [fullName, setFullName] = useState("");
@@ -43,6 +44,15 @@ const Cadastro = () => {
       <main className="container mx-auto px-4 py-16 max-w-md">
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Criar conta</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">Acompanhe seus pedidos e salve seus endereços</p>
+
+        <div className="flex justify-center mb-4">
+          <GoogleSignInButton text="signup_with" />
+        </div>
+        <div className="flex items-center gap-3 mb-4 max-w-md mx-auto">
+          <span className="h-px flex-1 bg-[#e8e8e4]" />
+          <span className="text-xs text-[#9b9b9b] font-sans">ou</span>
+          <span className="h-px flex-1 bg-[#e8e8e4]" />
+        </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-[#e8e8e4] p-6 space-y-4">
           <div>
