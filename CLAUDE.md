@@ -38,6 +38,7 @@ Como aplicar:
 |------|--------|-----------|
 | `/` | Index | Homepage com hero, favoritos, cardápio, kits, depoimentos, FAQ |
 | `/cardapio` | Cardapio | Catálogo completo com filtro por categoria, busca e ordenação |
+| `/kits` | Kits | Hub dedicado de kits — hero de engajamento, desconto progressivo e grade (reusa WeeklyKits) |
 | `/produto/:handle` | Product | Página de produto com galeria, variantes, add to cart, composição |
 | `/colecao/:categoria` | Collection | Lista de produtos por collection (categoria) |
 | `/carrinho` | Carrinho | Página de carrinho completa com resumo, cupom, frete, sugestões |

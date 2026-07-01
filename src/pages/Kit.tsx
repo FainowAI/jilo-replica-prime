@@ -111,7 +111,7 @@ export default function Kit() {
           <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-4">Kit não encontrado</h1>
           <p className="text-[#9b9b9b] mb-8 font-sans">O kit que você procura não existe.</p>
           <Link
-            to="/#kits"
+            to="/kits"
             className="inline-flex items-center gap-2 px-8 py-3 bg-[#1e3a1e] text-white rounded-[14px] text-sm font-bold hover:bg-[#1e3a1e]/90 transition-colors"
           >
             Ver kits disponíveis
@@ -133,7 +133,7 @@ export default function Kit() {
           <nav className="flex items-center gap-1.5 text-sm text-white/60 mb-6 lg:mb-8 font-sans">
             <Link to="/" className="hover:text-white/90 transition-colors">Página Inicial</Link>
             <ChevronRight className="h-3.5 w-3.5" />
-            <Link to="/#kits" className="hover:text-white/90 transition-colors">Kits</Link>
+            <Link to="/kits" className="hover:text-white/90 transition-colors">Kits</Link>
             <ChevronRight className="h-3.5 w-3.5" />
             <span className="text-white font-medium">{meta.name}</span>
           </nav>

@@ -10,6 +10,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 ### Páginas
 | Arquivo | Rota | Descrição |
 |---------|------|-----------|
+| `src/pages/Kits.tsx` | `/kits` | **Hub de kits** — página dedicada e engajadora (funil de conversão). Hero verde: eyebrow dourado + headline serif + pills de benefício (Lucide, sem emoji) + CTAs "Montar meu Kit Livre" → `/kit-livre` e "Ver kits prontos" → âncora `#grade-kits`. Faixa de desconto progressivo (7/14/21/28 → 5/10/15/20%) com o tier de 28 destacado como "Melhor valor". Seção `<WeeklyKits />` reusada como grade. CTA de fechamento (band verde) reforçando `/kit-livre` + `/cardapio`. Acabamento premium seguindo a paleta da marca; hover/focus 150–300ms, `motion-reduce` respeitado, contraste AA. Composição pura — não recria cards nem fetch de preço. |
 | `src/pages/Kit.tsx` | `/kit/:slug` | Kit temático — busca Collection do Shopify, seletor de tamanho (7/14/21/28), grid de pratos, sidebar com preço estimado, adiciona kit ao carrinho |
 | `src/pages/KitLivre.tsx` | `/kit-livre` | Kit livre — montagem personalizada com pratos de qualquer categoria, seletor +/- por card, validação de múltiplo de 7 |
 
@@ -23,8 +24,12 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 ### Rotas (em App.tsx)
 | Rota | Componente |
 |------|-----------|
+| `/kits` | Kits (hub — registrada antes de `/kit/:slug`) |
 | `/kit/:slug` | Kit |
 | `/kit-livre` | KitLivre |
+
+### Navegação para kits (repointada — Jul/2026)
+Antes, "Montar meu Kit" e vários CTAs levavam à âncora `/#kits` (seção da home). Agora **todos apontam para a página dedicada `/kits`**: item "Kits" no `navLinks` do `Header.tsx` (desktop + mobile Sheet), os CTAs "Montar meu Kit" do Header, o `Hero.tsx`, o `Philosophy.tsx` e os breadcrumbs de `Kit.tsx`/`KitLivre.tsx`. A seção `<WeeklyKits id="kits">` continua existindo na home (o `/#kits` ainda rolaria até ela lá), mas o funil oficial é `/kits`.
 
 ## Collections no Shopify
 | Handle | Nome | productType mapeado |

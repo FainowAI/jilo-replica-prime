@@ -33,7 +33,7 @@ const Philosophy = () => {
           </p>
 
           <a
-            href="/#kits"
+            href="/kits"
             className="inline-flex items-center gap-2 text-[#1e3a1e] font-semibold text-[14px] font-sans hover:gap-3 transition-all underline decoration-solid decoration-[#1e3a1e] underline-offset-4"
           >
             Montar meu Kit <ArrowRight className="h-4 w-4" />

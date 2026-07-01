@@ -165,7 +165,7 @@ export default function KitLivre() {
           <nav className="flex items-center gap-1.5 text-sm text-[#1e3a1e]/60 mb-5 lg:mb-6 font-sans">
             <Link to="/" className="hover:text-[#1e3a1e] transition-colors">Página Inicial</Link>
             <ChevronRight className="h-3.5 w-3.5" />
-            <Link to="/#kits" className="hover:text-[#1e3a1e] transition-colors">Kits</Link>
+            <Link to="/kits" className="hover:text-[#1e3a1e] transition-colors">Kits</Link>
             <ChevronRight className="h-3.5 w-3.5" />
             <span className="text-[#1e3a1e] font-medium">Kit Livre</span>
           </nav>
