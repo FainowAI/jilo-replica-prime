@@ -113,6 +113,7 @@ Nenhuma. Produtos são gerenciados 100% pelo Shopify.
 | Shopify Storefront API | GraphQL | /api/2025-07/graphql.json | Busca produtos, produto por handle |
 
 ## Gotchas e armadilhas
+- **Imposto no checkout (Jul/2026):** havia uma alíquota **"VAT" 17%** para o Brasil em *Configurações → Impostos e tarifas* que era **somada** no checkout (`taxesIncluded=false` + produtos `taxable=true`). Suprimida marcando **todas as 26 marmitas como `taxable=false`** via Admin API. ⚠️ (1) a alíquota "VAT 17%" **ainda existe** no painel — a raiz só some removendo-a lá (a Admin API não edita alíquotas); (2) **produto novo nasce `taxable=true`** por padrão no Shopify — ao cadastrar marmita nova, marque `taxable=false` (ou remova a alíquota no painel), senão o imposto volta só naquele item.
 - O `PRODUCTS_QUERY` busca até 50 produtos — precisa de paginação cursor-based se crescer
 - A busca do FullMenu filtra no frontend APÓS carregar todos os produtos — não usa a query da API para filtrar
 - O `productType` do Shopify é a categoria — se errar no Shopify Admin, o produto fica na categoria errada
