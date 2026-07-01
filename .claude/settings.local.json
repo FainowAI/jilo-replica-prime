@@ -75,7 +75,9 @@
       "Bash(where deno *)",
       "Bash(deno --version)",
       "WebFetch(domain:supabase.com)",
-      "Bash(echo \"---EXIT:$?---\")"
+      "Bash(echo \"---EXIT:$?---\")",
+      "mcp__claude_ai_Shopify__list-customers",
+      "Bash(npx --yes deno check supabase/functions/customer-orders/index.ts)"
     ]
   },
   "enableAllProjectMcpServers": true,

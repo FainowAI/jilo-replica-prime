@@ -1,5 +1,5 @@
 import { Check, Circle } from "lucide-react";
-import type { Tables } from "@/integrations/supabase/types";
+import type { CustomerOrderHistoryEntry } from "@/hooks/useOrders";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Aguardando pagamento",
@@ -15,7 +15,7 @@ const formatDateTime = (iso: string) => new Date(iso).toLocaleString("pt-BR", {
   day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit"
 });
 
-const OrderStatusTimeline = ({ history }: { history: Tables<"order_status_history">[] }) => {
+const OrderStatusTimeline = ({ history }: { history: CustomerOrderHistoryEntry[] }) => {
   if (!history.length) {
     return <p className="text-sm text-[#9b9b9b] font-sans">Sem histórico disponível</p>;
   }

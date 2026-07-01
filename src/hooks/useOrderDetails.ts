@@ -1,30 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useOrders } from "./useOrders";
 
+// ponytail: derive from useOrders() cache instead of a separate fetch —
+// customer-orders already returns items + history per order, no extra request needed.
 export const useOrderDetails = (orderId: string | undefined) => {
-  return useQuery({
-    queryKey: ["order", orderId],
-    enabled: !!orderId,
-    queryFn: async () => {
-      if (!orderId) return null;
-
-      const [orderRes, itemsRes, historyRes] = await Promise.all([
-        supabase.from("orders").select("*").eq("id", orderId).maybeSingle(),
-        supabase.from("order_items").select("*").eq("order_id", orderId).order("created_at"),
-        supabase.from("order_status_history").select("*").eq("order_id", orderId).order("changed_at"),
-      ]);
-
-      if (orderRes.error) throw orderRes.error;
-      if (itemsRes.error) throw itemsRes.error;
-      if (historyRes.error) throw historyRes.error;
-
-      if (!orderRes.data) return null;
-
-      return {
-        order: orderRes.data,
-        items: itemsRes.data ?? [],
-        history: historyRes.data ?? [],
-      };
-    },
-  });
+  const { data: orders, isLoading } = useOrders();
+  const order = orders?.find((o) => o.id === orderId) ?? null;
+  const data = order ? { order, items: order.items, history: order.history } : null;
+  return { data, isLoading };
 };

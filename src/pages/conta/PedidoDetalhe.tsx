@@ -7,17 +7,6 @@ import OrderStatusTimeline from "@/components/conta/OrderStatusTimeline";
 const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateString("pt-BR") : "—";
 const formatCents = (cents: number) => `R$ ${(cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
-interface ShippingAddress {
-  recipient_name?: string;
-  street?: string;
-  number?: string;
-  complement?: string;
-  neighborhood?: string;
-  city?: string;
-  state?: string;
-  cep?: string;
-}
-
 const PedidoDetalhe = () => {
   const { id } = useParams();
   const { data, isLoading } = useOrderDetails(id);
@@ -42,7 +31,7 @@ const PedidoDetalhe = () => {
   }
 
   const { order, items, history } = data;
-  const shipping = (order.shipping_address ?? {}) as ShippingAddress;
+  const shipping = order.shipping_address;
 
   return (
     <div className="space-y-4">
@@ -123,6 +112,13 @@ const PedidoDetalhe = () => {
               {shipping.neighborhood && <p className="text-[#9b9b9b]">{shipping.neighborhood}, {shipping.city} — {shipping.state}</p>}
               {shipping.cep && <p className="text-[#9b9b9b]">CEP {shipping.cep}</p>}
             </div>
+          )}
+
+          {order.tracking_url && (
+            <a href={order.tracking_url} target="_blank" rel="noreferrer"
+              className="block text-center h-10 leading-10 bg-[#1e3a1e] text-white rounded-xl font-bold text-sm font-sans hover:bg-[#1e3a1e]/90 transition-colors">
+              Rastrear entrega
+            </a>
           )}
         </div>
       </div>
