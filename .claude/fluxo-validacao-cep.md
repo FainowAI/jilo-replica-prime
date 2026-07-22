@@ -19,6 +19,7 @@ Validação de CEP via API ViaCEP para comunicar ao usuário se a região é ate
 | Arquivo | Como usa |
 |---------|---------|
 | `src/pages/Carrinho.tsx` | CepChecker no resumo do pedido. Estado `deliveryCheck` + `canCheckout`. Se CEP verificado e não atendido → botão checkout desabilitado com "Região não atendida" |
+| `src/components/conta/AddressFormDialog.tsx` | Usa `validateCep()` + `formatCep()` para autopreencher rua/bairro/cidade/UF ao digitar CEP de 8 dígitos (não valida cobertura, só preenche). Spinner inline durante a consulta |
 
 ## API externa
 

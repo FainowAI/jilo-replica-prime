@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useCreateAddress, useUpdateAddress } from "@/hooks/useAddresses";
 import type { Tables } from "@/integrations/supabase/types";
 import { analytics } from "@/analytics/events";
+import { validateCep, formatCep } from "@/lib/cepValidator";
 
 interface AddressFormDialogProps {
   open: boolean;
@@ -18,8 +19,32 @@ const AddressFormDialog = ({ open, onOpenChange, address }: AddressFormDialogPro
     complement: "", neighborhood: "", city: "", state: "SP", is_default: false,
   });
 
+  const [cepLoading, setCepLoading] = useState(false);
+
   const createAddress = useCreateAddress();
   const updateAddress = useUpdateAddress();
+
+  // Autopreenche rua/bairro/cidade/UF ao digitar um CEP de 8 dígitos (reusa ViaCEP).
+  const handleCepChange = async (raw: string) => {
+    const masked = formatCep(raw);
+    setForm((f) => ({ ...f, cep: masked }));
+    if (masked.replace(/\D/g, "").length !== 8) return;
+
+    setCepLoading(true);
+    const result = await validateCep(masked);
+    setCepLoading(false);
+    if (!result.cepInfo) return; // CEP inválido/erro: usuário preenche manual, sem toast intrusivo
+
+    const { logradouro, bairro, localidade, uf } = result.cepInfo;
+    setForm((f) => ({
+      ...f,
+      // ViaCEP omite logradouro/bairro em CEPs de cidade inteira — só sobrescreve se veio preenchido
+      street: logradouro || f.street,
+      neighborhood: bairro || f.neighborhood,
+      city: localidade || f.city,
+      state: uf || f.state,
+    }));
+  };
 
   useEffect(() => {
     if (address) {
@@ -96,9 +121,12 @@ const AddressFormDialog = ({ open, onOpenChange, address }: AddressFormDialogPro
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-semibold text-[#6b6b6b] font-sans block mb-1">CEP</label>
-              <input type="text" value={form.cep} onChange={(e) => setForm({ ...form, cep: e.target.value })} required
-                placeholder="00000-000"
-                className="w-full px-3 py-2 border border-[#e8e8e4] rounded-lg text-sm font-sans focus:outline-none focus:border-[#1e3a1e]" />
+              <div className="relative">
+                <input type="text" inputMode="numeric" value={form.cep} onChange={(e) => handleCepChange(e.target.value)} required
+                  placeholder="00000-000" maxLength={9}
+                  className="w-full px-3 py-2 border border-[#e8e8e4] rounded-lg text-sm font-sans focus:outline-none focus:border-[#1e3a1e]" />
+                {cepLoading && <Loader2 className="w-4 h-4 animate-spin text-[#1e3a1e] absolute right-2 top-1/2 -translate-y-1/2" />}
+              </div>
             </div>
             <div className="col-span-2">
               <label className="text-xs font-semibold text-[#6b6b6b] font-sans block mb-1">Rua</label>

@@ -111,4 +111,4 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 - Escopo de acesso depende de **confirmação de e-mail obrigatória** (hoje login é OAuth Google, e-mail já verificado). Se habilitarem signup e-mail/senha sem confirmação, revisar (spoofing de e-mail).
 - Validação de CPF não é implementada (campo TEXT livre) — débito técnico
 - A anon key do Supabase continua hardcoded em `client.ts` — débito de segurança
-- Sem integração ViaCEP no formulário de endereço — usuário digita tudo manualmente
+- `AddressFormDialog` autopreenche rua/bairro/cidade/UF ao digitar um CEP de 8 dígitos, via `validateCep()` (ViaCEP) — reusa `cepValidator.ts`. Número/complemento continuam manuais (ViaCEP não os fornece). CEP inválido não bloqueia: usuário preenche manual.
