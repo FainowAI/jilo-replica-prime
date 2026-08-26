@@ -21,7 +21,7 @@ const ChefHatIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 const benefits = [
-  { icon: TruckIcon, label: "Frete Grátis", sub: "Cortesia Jilo em toda região atendida" },
+  { icon: TruckIcon, label: "Frete Grátis", sub: "Entrega grátis em até 48 horas a partir de 7 unidades." },
   { icon: TruckIcon, label: "Entrega em 48h", sub: "Gelado e selado" },
   { icon: ChefHatIcon, label: "Feito artesanalmente", sub: "Sem conservantes" },
 ];

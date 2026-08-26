@@ -42,6 +42,7 @@ Detalhes técnicos:
 - `AuthProvider` DEVE estar dentro do `BrowserRouter`
 - Mensagens do Supabase vêm em inglês — `AuthDialog` traduz "Invalid login credentials"
 - Trigger `handle_new_user` no DB cria profile vazio — nada de manual no frontend
+- O módulo `src/lib/googleAuth.ts` exibe mensagem genérica quando o GSI, a credencial ou o `signInWithIdToken` falham; não registra tokens, e-mail ou outros dados pessoais.
 
 ## Sincronização com Shopify
 Após o primeiro update de perfil de cada usuário, o hook `useUpdateProfile` dispara a edge function `shopify-customer-sync` que cria um customer no Shopify e grava o GID em `profiles.shopify_customer_id`. Ver detalhes em `fluxo-shopify-sync.md`.

@@ -18,7 +18,7 @@ Kits com desconto progressivo por quantidade. 100% controlado pelo Shopify — p
 | Arquivo | Descrição |
 |---------|-----------|
 | `src/components/sections/WeeklyKits.tsx` | Seção "Kits para a Semana" na homepage — 5 cards (4 temáticos + Kit Livre), busca preço mínimo de cada Collection do Shopify |
-| `src/components/FreeBadge.tsx` | Badge "Entrega grátis em até 48h" — reutilizável (sm/md) |
+| `src/components/FreeBadge.tsx` | Badge "Entrega grátis em até 48 horas a partir de 7 unidades." — reutilizável (sm/md) |
 | `src/components/BenefitsSummary.tsx` | Lista de benefícios (desconto de kit, frete grátis, PIX) — usado no Carrinho, Kit e KitLivre |
 
 ### Rotas (em App.tsx)

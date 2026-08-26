@@ -43,7 +43,7 @@ const DELIVERY_AREAS = [
 
 1. **Verificação NÃO obrigatória**: Se `deliveryCheck` é `null` (não verificou), o checkout funciona normalmente.
 
-2. **CEP verificado e atendido** (`isDeliverable: true`): Mensagem verde "Entregamos em {cidade}/{uf}! Frete grátis, entrega em até 48h." Checkout liberado.
+2. **CEP verificado e atendido** (`isDeliverable: true`): Mensagem verde de área atendida. A gratuidade do frete depende do threshold de 7 unidades; a comunicação institucional é "Entrega grátis em até 48 horas a partir de 7 unidades." Checkout liberado.
 
 3. **CEP verificado e NÃO atendido** (`isDeliverable: false`): Mensagem amber "Ainda não entregamos em {cidade}/{uf}." Botão checkout desabilitado com texto "Região não atendida".
 

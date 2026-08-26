@@ -9,7 +9,7 @@ declare global {
         id: {
           initialize: (config: {
             client_id: string;
-            callback: (response: { credential: string }) => void;
+            callback: (response: { credential?: string }) => void;
             nonce: string;
             use_fedcm_for_prompt?: boolean;
           }) => void;
@@ -35,24 +35,48 @@ declare global {
 }
 
 const GSI_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
+const GOOGLE_ERROR_TOAST_ID = "google-auth-error";
+const GOOGLE_CONFIG_ERROR = "O login com Google está temporariamente indisponível. Use seu e-mail para entrar.";
+const GOOGLE_AUTH_ERROR = "Não foi possível entrar com o Google. Tente novamente ou use seu e-mail.";
+
+const reportGoogleError = (message: string, error?: unknown) => {
+  const details = error instanceof Error ? error.name : "unknown";
+  console.warn(`[googleAuth] ${details}`);
+  toast.error(message, { id: GOOGLE_ERROR_TOAST_ID });
+};
 
 /** Carrega o script GSI (idempotente) e resolve quando ele estiver pronto. */
-const loadGsiScript = () =>
-  new Promise<void>((resolve, reject) => {
+let gsiScriptPromise: Promise<void> | null = null;
+
+const loadGsiScript = () => {
+  if (window.google?.accounts?.id) return Promise.resolve();
+  if (gsiScriptPromise) return gsiScriptPromise;
+
+  gsiScriptPromise = new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      if (window.google?.accounts?.id) resolve();
+      else reject(new Error("GSI não ficou disponível após o carregamento"));
+    };
     if (window.google?.accounts?.id) return resolve();
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${GSI_SCRIPT_SRC}"]`);
     if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Falha ao carregar script GSI")));
+      existing.addEventListener("load", finish, { once: true });
+      existing.addEventListener("error", () => reject(new Error("Falha ao carregar script GSI")), { once: true });
       return;
     }
     const script = document.createElement("script");
     script.src = GSI_SCRIPT_SRC;
     script.async = true;
-    script.onload = () => resolve();
+    script.onload = finish;
     script.onerror = () => reject(new Error("Falha ao carregar script GSI"));
     document.head.appendChild(script);
+  }).catch((error) => {
+    gsiScriptPromise = null;
+    throw error;
   });
+
+  return gsiScriptPromise;
+};
 
 /**
  * Inicialização única do Google Identity Services por carga de página.
@@ -65,15 +89,19 @@ const loadGsiScript = () =>
  * (customer-sync + posthog identify).
  */
 let readyPromise: Promise<boolean> | null = null;
+let signInInFlight = false;
 
 const ensureGoogleReady = (): Promise<boolean> => {
   if (readyPromise) return readyPromise;
   readyPromise = (async () => {
     const clientId = import.meta.env.VITE_PUBLIC_GOOGLE_CLIENT_ID as string | undefined;
-    if (!clientId) return false;
+    if (!clientId) {
+      reportGoogleError(GOOGLE_CONFIG_ERROR);
+      return false;
+    }
     try {
       await loadGsiScript();
-      if (!window.google) return false;
+      if (!window.google?.accounts?.id) throw new Error("API do Google indisponível");
 
       // Nonce: bruto p/ o signInWithIdToken, hasheado (SHA-256 hex) p/ o Google.
       const rawNonce = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
@@ -86,23 +114,35 @@ const ensureGoogleReady = (): Promise<boolean> => {
         client_id: clientId,
         nonce: hashedNonce,
         use_fedcm_for_prompt: true,
-        callback: async (response) => {
-          const { error } = await supabase.auth.signInWithIdToken({
-            provider: "google",
-            token: response.credential,
-            nonce: rawNonce,
-          });
-          if (error) {
-            console.warn("[googleAuth] signInWithIdToken falhou (fail-soft):", error);
+        callback: (response) => {
+          if (!response.credential || signInInFlight) {
+            if (!response.credential) reportGoogleError(GOOGLE_AUTH_ERROR, new Error("Credencial ausente"));
             return;
           }
-          analytics.loginEfetuado();
-          toast.success("Login efetuado!");
+          signInInFlight = true;
+          void supabase.auth
+            .signInWithIdToken({
+              provider: "google",
+              token: response.credential,
+              nonce: rawNonce,
+            })
+            .then(({ error }) => {
+              if (error) {
+                reportGoogleError(GOOGLE_AUTH_ERROR, error);
+                return;
+              }
+              analytics.loginEfetuado();
+              toast.success("Login efetuado!");
+            })
+            .catch((error) => reportGoogleError(GOOGLE_AUTH_ERROR, error))
+            .finally(() => {
+              signInInFlight = false;
+            });
         },
       });
       return true;
     } catch (err) {
-      console.warn("[googleAuth] inicialização falhou (fail-soft):", err);
+      reportGoogleError(GOOGLE_CONFIG_ERROR, err);
       readyPromise = null; // permite retry numa próxima tentativa
       return false;
     }
@@ -112,7 +152,11 @@ const ensureGoogleReady = (): Promise<boolean> => {
 
 /** Dispara o prompt nativo do One Tap (canto sup. direito, controlado pelo FedCM). */
 export const promptGoogleOneTap = async () => {
-  if (await ensureGoogleReady()) window.google!.accounts.id.prompt();
+  try {
+    if (await ensureGoogleReady()) window.google!.accounts.id.prompt();
+  } catch (error) {
+    reportGoogleError(GOOGLE_CONFIG_ERROR, error);
+  }
 };
 
 /** Cancela o prompt do One Tap em andamento (cleanup de unmount). */
@@ -122,16 +166,22 @@ type ButtonText = "signin_with" | "continue_with" | "signup_with";
 
 /** Renderiza o botão oficial "Sign in with Google" dentro de `el`. */
 export const renderGoogleButton = async (el: HTMLElement, text: ButtonText = "continue_with") => {
-  if (!(await ensureGoogleReady())) return;
-  el.innerHTML = ""; // evita botão duplicado em re-render / StrictMode
-  window.google!.accounts.id.renderButton(el, {
-    type: "standard",
-    theme: "outline",
-    size: "large",
-    text,
-    shape: "pill",
-    logo_alignment: "left",
-    width: 320, // ponytail: renderButton exige width numérico (máx 400); 320 cobre o modal/formulários
-    locale: "pt-BR",
-  });
+  try {
+    if (!(await ensureGoogleReady()) || !el.isConnected) return false;
+    el.innerHTML = ""; // evita botão duplicado em re-render / StrictMode
+    window.google!.accounts.id.renderButton(el, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      text,
+      shape: "pill",
+      logo_alignment: "left",
+      width: 320, // ponytail: renderButton exige width numérico (máx 400); 320 cobre o modal/formulários
+      locale: "pt-BR",
+    });
+    return true;
+  } catch (error) {
+    reportGoogleError(GOOGLE_CONFIG_ERROR, error);
+    return false;
+  }
 };

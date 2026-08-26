@@ -9,6 +9,7 @@ import { RouteChangeTracker } from "@/analytics/RouteChangeTracker";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import GoogleOneTap from "@/components/GoogleOneTap";
 import GoogleLoginPopup from "@/components/GoogleLoginPopup";
+import WhatsAppFloatingButton from "@/components/WhatsAppFloatingButton";
 import Index from "./pages/Index";
 import Product from "./pages/Product";
 import Cardapio from "./pages/Cardapio";
@@ -36,6 +37,7 @@ const AppContent = () => {
       <AuthProvider>
         <GoogleOneTap />
         <GoogleLoginPopup />
+        <WhatsAppFloatingButton />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/produto/:handle" element={<Product />} />

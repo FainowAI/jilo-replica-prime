@@ -1,7 +1,7 @@
 const BenefitsSummary = ({ className = "" }: { className?: string }) => {
   const benefits = [
     "Desconto de kit aplicado automaticamente",
-    "Frete grátis — entrega em até 48h (cortesia Jilo)",
+    "Entrega grátis em até 48 horas a partir de 7 unidades.",
     "5% adicional pagando com PIX",
   ];
   return (

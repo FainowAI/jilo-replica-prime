@@ -366,7 +366,7 @@ export default function ShippingMethodSelector({
               Entrega Jilo • Frete grátis
             </p>
             <p className="text-xs text-[#1e3a1e]/80 font-sans mt-1">
-              Para 7 ou mais marmitas, a entrega é por nossa conta. Em até 48h.
+              Entrega grátis em até 48 horas a partir de 7 unidades.
             </p>
           </div>
         </div>

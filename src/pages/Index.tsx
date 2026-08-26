@@ -20,7 +20,7 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <SEO
         title="Jilo | Marmitas Artesanais Prontas em 5 min"
-        description="Pratos artesanais congelados, prontos em 5 minutos. Sem conservantes, sem improviso. 26 pratos em 4 grupos. Entrega em 48h na Grande São Paulo."
+        description="Pratos artesanais congelados, prontos em 5 minutos. Sem conservantes, sem improviso. 26 pratos em 4 grupos. Entrega grátis em até 48 horas a partir de 7 unidades. Na região de São José dos Campos."
         path="/"
         jsonLd={faqJsonLd}
       />
