@@ -13,7 +13,7 @@ const FreeBadge = ({ size = "sm", className = "" }: FreeBadgeProps) => {
   return (
     <span className={`inline-flex items-center bg-[#1e3a1e]/10 text-[#1e3a1e] rounded-full font-sans font-semibold ${sizes[size]} ${className}`}>
       <Truck className={size === "sm" ? "h-3 w-3" : "h-3.5 w-3.5"} />
-      Entrega grátis em até 48h
+      Entrega grátis em até 48 horas a partir de 7 unidades.
     </span>
   );
 };

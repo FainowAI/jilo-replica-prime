@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { renderGoogleButton } from "@/lib/googleAuth";
 
 interface Props {
@@ -13,12 +13,30 @@ interface Props {
  */
 export const GoogleSignInButton = ({ text = "continue_with", className }: Props) => {
   const ref = useRef<HTMLDivElement>(null);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
-    if (ref.current) renderGoogleButton(ref.current, text);
+    let mounted = true;
+    setUnavailable(false);
+    if (ref.current) {
+      void renderGoogleButton(ref.current, text).then((rendered) => {
+        if (mounted && !rendered) setUnavailable(true);
+      });
+    }
+    return () => {
+      mounted = false;
+    };
   }, [text]);
 
-  return <div ref={ref} className={className} />;
+  return (
+    <div ref={ref} className={className}>
+      {unavailable && (
+        <span role="status" className="text-sm text-[#6b6b6b]">
+          Login com Google indisponível. Use seu e-mail.
+        </span>
+      )}
+    </div>
+  );
 };
 
 export default GoogleSignInButton;

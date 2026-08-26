@@ -40,7 +40,7 @@
 | WhatsApp oficial | +55 12 98895-0426 (link: https://wa.me/5512988950426) |
 | Ano de copyright corrente | 2026 |
 
-Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de atendimento) e `src/components/sections/FAQ.tsx` (botão "Falar no WhatsApp"). Qualquer alteração deve ser replicada em ambos.
+Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de atendimento), `src/components/sections/FAQ.tsx` (botão "Falar no WhatsApp") e `src/components/WhatsAppFloatingButton.tsx` (botão flutuante global). Qualquer alteração deve ser replicada nos três.
 
 ## Banco de dados (Supabase)
 

@@ -1,6 +1,22 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
+2026-08-26 (Ajustes do PDF executados: WhatsApp flutuante, comunicação de entrega/região, robustez do login/cadastro Google e Instagram no rodapé; Facebook removido.)
+
+## Sessão 2026-08-26 — Ajustes do PDF
+
+**O que foi feito:**
+- Criado `src/components/WhatsAppFloatingButton.tsx`, montado globalmente em `src/App.tsx`, apontando para o atendimento oficial.
+- Atualizada a comunicação para "Entrega grátis em até 48 horas a partir de 7 unidades." nos pontos de anúncio, benefícios, badge, carrinho, seletor e SEO; região exibida como São José dos Campos.
+- Melhorado `src/lib/googleAuth.ts` e `src/components/GoogleSignInButton.tsx`: carregamento compartilhado do GSI, retry após falha, proteção contra desmontagem/callback duplicado e mensagens genéricas ao usuário sem PII.
+- Nenhuma migration ou dependência nova.
+
+**Pendências:**
+- Instagram oficial adicionado ao rodapé; Facebook removido conforme solicitação.
+- Configuração externa do Google (OAuth origins e provider Google no Supabase) precisa ser conferida no ambiente de produção após o deploy.
+
+**Verificação:** `npm run build` passou; `npx tsc -p tsconfig.app.json --noEmit` passou; ESLint dos arquivos alterados passou com 1 aviso preexistente em `ShippingMethodSelector.tsx`; `npm run lint` global continua falhando por problemas preexistentes fora deste ajuste; `npm run test` ficou bloqueado por `Access is denied` ao resolver `vitest.config.ts` no ambiente.
+
 2026-06-30 (Sprint A da EAP Visibilidade de Dados **FECHADO**: webhooks Shopify registrados (`orders/create`+`paid`+`fulfilled`) sob o app customizado + QA validado ponta a ponta (pedido #1005 → `webhook_events`/`orders`/`order_items`). Branch `main`. Ver sessão abaixo.)
 
 2026-06-28 (Analytics destravado. Causa raiz: variáveis `VITE_` estavam nos Secrets do Supabase (canal errado) → bundle de prod saía sem a key do PostHog. Criado `.env` commitado com as públicas, ajustado `.gitignore`. PostHog + GA4 validados em produção. Branch `main`)
