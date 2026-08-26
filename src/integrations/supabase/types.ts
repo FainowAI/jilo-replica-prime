@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -322,6 +322,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      shopify_admin_tokens: {
+        Row: {
+          access_token: string
+          client_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          refreshed_at: string
+          scope: string
+          shop_domain: string
+        }
+        Insert: {
+          access_token: string
+          client_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          refreshed_at?: string
+          scope: string
+          shop_domain: string
+        }
+        Update: {
+          access_token?: string
+          client_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          refreshed_at?: string
+          scope?: string
+          shop_domain?: string
+        }
+        Relationships: []
       }
       webhook_events: {
         Row: {
