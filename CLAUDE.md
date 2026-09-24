@@ -49,7 +49,7 @@ Como aplicar:
 - **Carrinho**: Shopify Cart API via mutations GraphQL, estado local em Zustand + localStorage
 - **Checkout**: Redirect para checkout Shopify (checkoutUrl do cart)
 - **Perfil de usuário**: Supabase auth + tabela `profiles` (endereço, CPF, telefone)
-- **NÃO há tabelas de produtos/pedidos no Supabase** — tudo via Shopify
+- **Catálogo NÃO está no Supabase** — produtos e carrinho vêm da Shopify. Pedidos: a Shopify é a fonte; o webhook `shopify-webhook-receiver` espelha em `orders`/`order_items` para Uber e painel próprio (ver `.claude/fluxo-carrinho-checkout.md`)
 
 ## Documentação de fluxos
 - `.claude/fluxo-infraestrutura.md` — Stack, padrões, banco de dados
@@ -82,5 +82,5 @@ Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuá
 - A tabela `profiles` no Supabase tem RLS ativa — cada usuário só vê/edita o próprio perfil (policies escopadas a `authenticated`). Veja a seção "Segurança de RLS".
 - O projeto foi criado no Lovable — não altere a estrutura de pastas sem necessidade.
 - O cupom BEMVINDO10 é hardcoded no frontend (desconto fixo R$10) — não há validação server-side.
-- O frete grátis é ativado para compras acima de R$150 — lógica no frontend, não no Shopify.
+- Frete grátis a partir de 7 marmitas (R34, `src/config/shipping.ts`); abaixo disso, cotação Uber Direct cobrada por uma variante fantasma no cart. Os produtos DEVEM ficar com `requiresShipping: false` na Shopify (Path B) — se alguém marcar "produto físico" no Admin, o checkout passa a cobrar a taxa nativa "Padrão" (R$ 22) por cima. Foi o que aconteceu em set/2026; ver `.claude/fluxo-carrinho-checkout.md`.
 - O checkout redireciona para Shopify — descontos de cupom e PIX do frontend NÃO são refletidos lá.
