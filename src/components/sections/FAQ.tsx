@@ -49,7 +49,7 @@ const FAQ = () => {
           </Accordion>
           <div className="text-center mt-10">
             <a
-              href="https://wa.me/5512988950426"
+              href="https://wa.me/5512978130583"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-[hsl(142,70%,40%)] text-white px-8 py-3 text-sm font-semibold font-sans hover:opacity-90 transition-opacity"

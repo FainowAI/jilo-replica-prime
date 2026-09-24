@@ -47,7 +47,7 @@ const Footer = () => {
             <h4 className="font-sans font-semibold text-sm mb-4">Atendimento</h4>
             <ul className="space-y-2.5 text-sm text-primary-foreground/60 font-sans">
               <li><a href="#faq" className="hover:text-primary-foreground transition-colors">FAQ</a></li>
-              <li><a href="https://wa.me/5512988950426" target="_blank" rel="noopener noreferrer" className="hover:text-primary-foreground transition-colors">WhatsApp</a></li>
+              <li><a href="https://wa.me/5512978130583" target="_blank" rel="noopener noreferrer" className="hover:text-primary-foreground transition-colors">WhatsApp</a></li>
             </ul>
           </div>
         </div>

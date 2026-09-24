@@ -279,7 +279,7 @@ O cardápio completo está em [${SITE_URL}/cardapio](${SITE_URL}/cardapio). Cada
 
 - **Razão social:** DaJu Alimentação
 - **CNPJ:** 39.659.013/0001-02
-- **WhatsApp:** +55 12 98895-0426 ([wa.me/5512988950426](https://wa.me/5512988950426))
+- **WhatsApp:** +55 12 97813-0583 ([wa.me/5512978130583](https://wa.me/5512978130583))
 - **Frete:** grátis para toda a área de cobertura
 - **Prazo de entrega:** até 48h após a confirmação do pagamento
 
@@ -462,7 +462,7 @@ Cada marmita é uma refeição completa individual para 1 pessoa adulta.
 - **Razão social**: DaJu Alimentação
 - **CNPJ**: 39.659.013/0001-02
 - **Marca**: Jilo
-- **WhatsApp**: +55 12 98895-0426 — [wa.me/5512988950426](https://wa.me/5512988950426)
+- **WhatsApp**: +55 12 97813-0583 — [wa.me/5512978130583](https://wa.me/5512978130583)
 - **Site**: ${SITE_URL}
 
 ## Categorias e produtos (índice de URLs)

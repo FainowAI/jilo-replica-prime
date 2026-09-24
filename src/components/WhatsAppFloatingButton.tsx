@@ -3,7 +3,7 @@ import { MessageCircle } from "lucide-react";
 const WhatsAppFloatingButton = () => {
   return (
     <a
-      href="https://wa.me/5512988950426"
+      href="https://wa.me/5512978130583"
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Falar com a Jilo pelo WhatsApp"
