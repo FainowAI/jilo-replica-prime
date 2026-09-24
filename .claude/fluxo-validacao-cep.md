@@ -68,7 +68,7 @@ Para adicionar uma nova cidade atendida, editar o array `DELIVERY_AREAS` em `src
 { uf: 'RJ', cidades: ['Rio de Janeiro', 'Niterói'] }
 ```
 
-A comparação de cidade é case-insensitive (`toLowerCase()`).
+A comparação de cidade ignora acento, caixa e espaços (`normalizeCity()` em `isAreaDeliverable`).
 
 ## Fluxo do usuário
 
@@ -84,7 +84,7 @@ A comparação de cidade é case-insensitive (`toLowerCase()`).
 ## Gotchas e armadilhas
 
 - ViaCEP é API gratuita sem SLA — se estiver fora do ar, o CepChecker exibe erro mas NÃO bloqueia o checkout
-- A comparação de cidade usa `toLowerCase()` — acentos importam ("São Paulo" ≠ "Sao Paulo"). ViaCEP retorna com acentos corretos.
+- A comparação de cidade em `isAreaDeliverable` ignora acento, caixa e espaços (bug de 24/09/2026: endereço cadastrado como "Sao Jose Dos Campos", sem acento, era recusado com "Não entregamos aqui" mesmo estando na whitelist). O espelho do backend em `supabase/functions/_shared/delivery-areas.ts` (branch `feature/pagamento-vr`) precisa da mesma normalização — não estava coberto por esta correção.
 - O componente CepChecker é reutilizável (aceita `onResult` e `className`) — pode ser usado em Product.tsx ou Kit.tsx no futuro
 - O botão "Verificar" tem `px-3 sm:px-5` para caber em telas de 320px
 - Não há cache de consultas ViaCEP — cada verificação faz uma nova request

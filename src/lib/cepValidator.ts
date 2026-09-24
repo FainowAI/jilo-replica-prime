@@ -26,19 +26,26 @@ const DELIVERY_AREAS = [
   { uf: 'SP', cidades: ['São José dos Campos'] },
 ];
 
+// ponytail: mesma normalização de src/hooks/useProductSearch.ts (copiada, não importada — módulos diferentes).
+function normalizeCity(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 /**
  * Verifica se uma combinação (uf, cidade) está dentro da whitelist DELIVERY_AREAS.
  * Versão síncrona, sem chamada à ViaCEP. Use para validar endereços já cadastrados
  * (em que `state` e `city` vêm direto do banco).
  *
- * Match case-insensitive na cidade. UF é comparado como veio (whitelist usa uppercase
+ * Match na cidade ignora acento, caixa e espaços (bug de 24/09/2026: "Sao Jose Dos
+ * Campos" era recusado). UF é comparado como veio (whitelist usa uppercase
  * e o CHECK do DB força uppercase — vide R11).
  */
 export function isAreaDeliverable(uf: string, city: string): boolean {
   const area = DELIVERY_AREAS.find((a) => a.uf === uf);
   if (!area) return false;
   if (!area.cidades || area.cidades.length === 0) return true;
-  return area.cidades.some((c) => c.toLowerCase() === city.toLowerCase());
+  const normalizedCity = normalizeCity(city);
+  return area.cidades.some((c) => normalizeCity(c) === normalizedCity);
 }
 
 export async function validateCep(cep: string): Promise<CepValidationResult> {
