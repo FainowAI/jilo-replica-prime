@@ -35,4 +35,16 @@ dist-ssr
 .mcp.json
 
 # Claude skills
-.claude/skills/
+.claude/skills/
+# Memória de trabalho efêmera do feature-builder
+.claude/.work/
+
+# Logs locais dos MCPs (WhatsApp/Evolution) — nunca commitar
+wa-logs.txt
+mcp-logs.txt
+
+# Memoria de trabalho efemera do feature-builder
+.claude/.work/
+
+# Playwright MCP (screenshots/logs locais)
+.playwright-mcp/

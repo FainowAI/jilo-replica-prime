@@ -31,6 +31,7 @@ export const analytics = {
     itens: number;
     frete: "gratis" | "pago";
     metodoEntrega?: string | null;
+    metodoPagamento?: string | null;
   }) => track("checkout iniciado", p),
 
   /** Signup concluído com sucesso. Sem propriedades (sem PII). */

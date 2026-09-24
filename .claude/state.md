@@ -1,7 +1,88 @@
 ﻿# Estado do projeto Jilo
 
 ## Última atualização
-2026-08-26 (Ajustes do PDF executados: WhatsApp flutuante, comunicação de entrega/região, robustez do login/cadastro Google e Instagram no rodapé; Facebook removido.)
+2026-09-14 (Pagamento VR: tickets 01 e 02 fechados; **ticket 03 deployado** — `vr-public-key` v1, `vr-checkout` v3, `shopify-webhook-receiver` v37; E2E real passa até a chamada à VR (falha só por falta dos secrets `VR_*`, ticket 00). 53 testes Deno verdes. **Achado crítico corrigido fora da EAP:** receiver aceitava webhook sem assinatura. Nada commitado.)
+
+## Sessão 2026-09-14 (cont.) — Ticket 03 deployado e testado ao vivo até a VR
+
+- MCP `supabase-jilo` reconectou. Deploys: `vr-public-key` v1, `vr-checkout` v1→v2→v3, `shopify-webhook-receiver` v37 (tag `vr` → `payment_method` + HMAC fail-closed).
+- **E2E real** (usuário QA `qa-vr@jilomarmitas.com`, cart de 7 un. + PIX5 = R$ 126,29): 401/403/400/422 conforme o plano; caminho principal chegou à VR e parou por falta de `VR_*` (502 `vr_error`, `vr_transactions.error='vr_bad_response:0'`, draft apagado).
+- **Dois bugs pegos antes de qualquer cobrança** (a asserção "draft.total == valor" funcionou): `appliedDiscount.value` é `Float!`; FIXED_AMOUNT **por linha é por unidade** (6,93 × 7 → draft 84,71). Solução: um único `appliedDiscount` de ordem com a soma das alocações (13,57) — `draftOrderCalculate` bateu exatos 126,29. Detalhe em `.claude/.work/pagamento-vr/plan-03.md` e `_map.md`.
+- **Achado crítico herdado (corrigido):** `shopify-webhook-receiver` aceitava webhook **sem assinatura** quando `SHOPIFY_WEBHOOK_SECRET` estava vazio — um POST forjado criou `orders` `gid://shopify/Order/1` (lixo limpo). v37 devolve 401 sem secret/assinatura, com fallback para `SHOPIFY_CLIENT_SECRET`. **Ação no próximo pedido real:** conferir os logs do receiver; `Invalid HMAC signature` ⇒ definir `SHOPIFY_WEBHOOK_SECRET` com o signing secret de Settings → Notifications → Webhooks (Shopify reenvia por 48 h). Não há webhook real desde 30/06 para validar hoje.
+- Pendências do dono: secrets `VR_ENV=mock` (já pode) e `VR_CLIENT_ID/SECRET/ID_FILIACAO` (ticket 00, Luiz); rotação dos 3 secrets antigos; preview do Lovable não está no CORS do `vr-checkout` (ticket 04 testa no domínio real ou adiciona a origem).
+- Próximo: ticket 04 (frontend) pode começar em paralelo ao 00; aceite final do 03 (cartão do mock aprovado/recusado, `refunded_auto`, idempotência paralela, 429) roda quando as credenciais chegarem.
+
+## Sessão 2026-09-14 — Ticket 03: código integrado e verificado, deploy pendente
+
+Sessão retomada 3 dias depois; os dois `feature-coder` do ticket 03 (tracks A e B, contrato em `.work/pagamento-vr/plan-03.md`) já não existiam — estado confirmado **no disco**, não por relatório. Track A (11/09): `_shared/pix-coupons.ts`, `kit-quantity.ts`, `delivery-areas.ts`, `storefront-cart.ts`, `vr-gates.ts` + 2 testes. Track B (até 12/09): `_shared/shopify-admin-client.ts`, `_shared/shopify-draft-order.ts`, `vr-public-key/index.ts`, `vr-checkout/index.ts` (handler `handleVrCheckout(req, deps)` com deps injetados + `buildDefaultDeps()`) + `vr-checkout/index.test.ts` (15 casos). Não entregue e dispensado: `shopify-draft-order.test.ts` (helper fino; o E2E contra a Shopify é o teste real).
+
+**Verificação (14/09, saída real):** `npx -y deno check` limpo em `_shared/*.ts`, `vr-checkout/{index,index.test}.ts`, `vr-public-key/index.ts`; `npx -y deno test --allow-net --allow-env --allow-read supabase/functions/_shared/ supabase/functions/vr-checkout/` → **52 passed | 0 failed | 1 ignored** (ao vivo da VR). Review do orquestrador: sequência INSERT→draft→assert→pay→complete; 23505 + reconciliação de `authorizing` velha via `getTransaction`; timeout da VR resolvido por consulta; refund automático se o complete falhar; `zod().strict()`; JWT via `auth.getUser()` com header repassado; logs só com etapa + `id_transacao_van`.
+
+**Verificado ao vivo na Storefront (11/09, cart descartável 7× Filé de Frango Pizzaiolo):** desconto de linha (Kit 6.93) e de ordem (PIX5 6.64) são **disjuntos**; `amountPerQuantity` é bruto; `subtotal − total = orderDiscount`. Registrado em `plan-03.md`.
+
+**Pendências do ticket 03:**
+1. **Deploy** de `vr-public-key`, `vr-checkout` (ambos `verify_jwt:false`, auth manual) e `shopify-webhook-receiver` v36 (tag `vr`) via MCP `deploy_edge_function` — arquivos nomeados `supabase/functions/<fn>/index.ts` + `supabase/functions/_shared/*.ts` importados. MCP caiu por timeout ao iniciar a sessão de 14/09; projeto Supabase está no ar (Auth/REST 200).
+2. Smoke pós-deploy sem credenciais VR: 401 sem JWT, 400 body inválido, 422 gates.
+3. E2E completo (draft → cobrança no mock → complete → webhook → `orders.payment_method='vr'`) exige `VR_CLIENT_ID/SECRET/ID_FILIACAO` + `VR_ENV=mock` nos secrets (ticket 00, Luiz). Confirmar no E2E: `purchasingEntity.customerId` aceito pela API version da loja; se a Shopify aplicar o desconto automático "Kit" em cima do `appliedDiscount` fixo (o assert de total pega e não cobra — então trocar para não enviar desconto de linha); `customAttributes` → `note_attributes`.
+4. CORS do `vr-checkout` só libera `https://jilomarmitas.com` + localhost — preview do Lovable precisa ser adicionado se o ticket 04 for testado lá.
+
+## Sessão 2026-09-11 (cont.) — Ticket 02 fechado: `vr_transactions` aplicada e verificada
+
+Depois do restore (~20:07 UTC): Auth 200, PostgREST `[]`/200 com anon (RLS correto), Edge Functions 200. Migration aplicada via `apply_migration` → versão remota **`20260911200746_vr_transactions`** (arquivo local renomeado para o mesmo nome). Verificação ao vivo: RLS ligada; única policy deny-all `to anon, authenticated`; `set local role anon/authenticated → 0`; INSERT de 2 linhas no mesmo `cart_id` → `23505 vr_transactions_one_live_per_cart` (nada persistiu); trigger de `updated_at` confirmado; 0 linhas de teste restantes. `get_advisors(security)`: nenhum achado sobre `vr_transactions`; **WARNs pré-existentes** registrados como débito: `search_path` mutável em `handle_new_user`, `update_updated_at_column`, `ensure_single_default_address`, `sync_profile_default_address`, `log_order_status_change`; `handle_new_user` e `rls_auto_enable` são SECURITY DEFINER executáveis por `anon`/`authenticated` via RPC; leaked-password protection desligada. `types.ts` regenerado pelo MCP (ganhou `shopify_admin_tokens`, `vr_transactions`, `orders.placed_at`). Nota: `webhook_events` tem 0 eventos nos últimos 30 dias (sem pedidos no período + pause).
+
+**Pendências do ticket 02 fora do código (usuário):** secret `VR_ENV=mock` já pode ser criado; `VR_CLIENT_ID`/`VR_CLIENT_SECRET`/`VR_ID_FILIACAO` só após o ticket 00; rotação dos 3 secrets pendentes desde 2026-06-28 antes de adicionar os da VR.
+
+**Próximo frontier:** ticket **03** (`vr-checkout` + `vr-public-key`) está `ready` — código e testes stubados podem ser feitos já; o `curl` ponta a ponta contra o mock exige as credenciais do 00. Deploy do receiver (tag `vr`) vai junto.
+
+## ✅ RESOLVIDO 2026-09-11 (usuário restaurou) — Projeto Supabase pausado (site sem backend)
+
+Evidências: `hofohxvizlmawgkinwwz.supabase.co` **não resolve no DNS** (outros hosts resolvem); MCP `execute_sql`/`list_migrations` → "Connection terminated due to connection timeout" (mesmo sintoma já visto no mapeamento de hoje); `generate_typescript_types` → **"Project must be active and healthy"**; `query_logs` das últimas 24 h → **vazio** (nenhum edge/postgres log). Última sessão de trabalho foi 2026-08-26 → compatível com auto-pause do free tier por inatividade. Enquanto pausado: login, perfil, endereços, "Meus Pedidos", webhooks da Shopify (orders/paid → `orders`/Uber) e cotação Uber **não funcionam** no site. **Ação (usuário):** Dashboard Supabase → projeto → "Restore project"; depois conferir se a Shopify reenviou webhooks perdidos (ou re-registrar) e rodar `get_advisors`.
+
+## Sessão 2026-09-11 (cont.) — Ticket 02 iniciado: `vr_transactions` (bloqueado pelo pause)
+
+**Feito no working tree (sem aplicar):**
+- `supabase/migrations/20260911000000_vr_transactions.sql` — blueprint da EAP §5.3 já com a auditoria: `user_id` nullable `on delete set null`; `id_transacao_van` unique ≤15; `status` CHECK fechado (inclui `refunded_manual`); RLS + **policy única deny-all** `to anon, authenticated`; **unique parcial** `(cart_id) where status in ('authorizing','approved')`; índices `(user_id, created_at desc)` e `(status, created_at desc)`; trigger `update_updated_at_column` (função já existente, mesma de `profiles`). Comentários de tabela/coluna codificam "nunca dado de cartão".
+- `supabase/functions/shopify-webhook-receiver/index.ts` — `payment_method = 'vr'` quando `payload.tags` (CSV) contém `vr`; senão `payment_gateway_names[0]` como antes. **Decisão B1: tag, não note_attribute.** `deno check` limpo. **Não deployado** — vai junto do `vr-checkout` no ticket 03 (um deploy só, com teste ponta a ponta).
+- Ambiente: `deno check` só passa dentro de `supabase/functions/<fn>/` (imports relativos a `../_shared`).
+
+**Quando o projeto voltar:** `apply_migration('vr_transactions', <arquivo>)` → `get_advisors(security)` = `[]` → `pg_policies` só a deny → `set local role anon/authenticated; select count(*)` = 0 → `generate_typescript_types` → `src/integrations/supabase/types.ts`. Secrets: `VR_ENV=mock` pode entrar já; `VR_CLIENT_ID/SECRET/ID_FILIACAO` dependem do ticket 00; rotação dos 3 secrets pendentes (2026-06-28) antes.
+
+## Sessão 2026-09-11 (cont.) — Ticket 01 executado: `_shared/vr-client.ts`
+
+**Pedido:** "Pode executar" após o gate → ticket 01 (único de código pronto; 00 é do Luiz no portal). 1 `feature-coder` despachado com brief autocontido; verificação e review na sessão principal.
+
+**O que foi feito:**
+- `supabase/functions/_shared/vr-client.ts` (novo): OAuth grant-code → access-token com cache em módulo e refresh; `vrFetch` com timeout 30 s, retry único **só** em 401, vocabulário de erro fechado (`vr_timeout`/`vr_unauthorized`/`vr_http_<n>`/`vr_bad_response`, nunca o corpo da VR); `getPublicKey` (cache 10 min); `createPayment` (valor em centavos, 1 parcela, `id_filiacao` do env); `getTransaction`; `refund` idempotente (consulta antes); `classifyReturnCode` (tabela do enum → classe + mensagem PT-BR); `newIdTransacaoVan` (14 chars); `encryptCardData` (RSA-OAEP/SHA-256 via WebCrypto ou PKCS#1 v1.5 via `node:crypto`, aceita chave em PEM, base64-de-PEM ou DER; limite em bytes UTF-8). `VR_ENV ∈ {mock,hml,prod}` com hosts hardcoded, validado por chamada (não no escopo do módulo).
+- `supabase/functions/_shared/vr-client.test.ts` (novo): 20 `Deno.test` com `fetch` stubado + 1 ao vivo (`ignore` sem `VR_CLIENT_ID`).
+- **Review da sessão achou e o coder corrigiu:** refresh recusado pela VR (401/400) deixava o cache preso num `refresh_token` morto até o isolate reiniciar → agora limpa o cache e refaz o grant-code (teste novo).
+- `deno.lock` ganhou `jsr:@std/assert` (esperado). Nada mais tocado.
+- Nota de contrato corrigida em `vr-api-notes.md`: `GET /transacoes/pagamentos/{id}` **existe** na 2.4.0 (o Swagger inclui; a lista do portal omite).
+
+**Verificação (saída real):** `npx -y deno check` limpo nos 2 arquivos; `npx -y deno test --allow-net --allow-env --allow-read supabase/functions/_shared/vr-client.test.ts` → **19 passed | 0 failed | 1 ignored**. (Deno não está instalado na máquina; `npx -y deno` resolve 2.9.6. Supabase CLI também ausente — deploy segue via MCP.)
+
+**Fatos de ambiente:** mock da VR (`api-devportal.vr.com.br/captura/v2`) responde 401 sem credenciais; `POST api.vr.com.br/oauth/grant-code` exige `client_id` **também como header** (Sensedia). Conta da Jilo segue sem APP no portal → teste ao vivo fica para o 06.
+
+**Próximo frontier:** ticket **02** (migration `vr_transactions` + secrets + decisão `payment_method`) está `ready` — exige o MCP `supabase-jilo` respondendo (`execute_sql` caiu por timeout durante o mapeamento; conferir antes). Ticket **00** continua com o Luiz. Pendências para o 06 anotadas no `_map.md`.
+
+## Sessão 2026-09-11 — Plano: VR (Vale Refeição) como meio de pagamento
+
+**Pedido:** plano por etapas/tickets para aceitar VR no site usando o gateway da própria VR (não Getnet). Sessão só de pesquisa e planejamento (feature-builder Fases 0–4; camada de tickets ativada).
+
+**O que foi feito:**
+- Portal `dev.vr.com.br` lido (conta do Luiz, já aprovada). API certa: **Captura 2.4.0** (Adquirência) — pagamento online síncrono com cartão VR criptografado em RSA (`GET /chaves/chave-publica` + `POST /transacoes/pagamentos`), estorno e reserva. **API QR Code é do lado do pagador → descartada.** OAuth 2.0 authorization-code server-to-server (`client_id` + `access_token` em header, 1h). Contrato completo em `.claude/.work/pagamento-vr/vr-api-notes.md`.
+- **Bloqueio externo:** "Minhas Apps" no portal está **vazio** — sem APP não há credenciais. Fluxo: APP HML (OAuth 2.3.0 + Captura 2.4.0) → aprovação VR → sandbox → homologação → APP prod. Pré-condição comercial: `id_filiacao` do EC válido para online (confirmar com fpierro@vr.com.br). Formato exato do `cartao_dados_criptografados` não documentado.
+- 3 `code-explorer` (frontend, backend, regras) → `code-map-*.md` na `.work/`. Achados-chave: `customer-orders` lê a Shopify ao vivo (pedido VR precisa existir na Shopify); `draftOrderCreate`+`draftOrderComplete` já validado (#1005) dispara os webhooks existentes; `PaymentMethodSelector` tem `onMethodChange` sem consumidor; `displayTotal` é só visual; CPF sem validação; marketing já promete "Pague com VA ou VR" sem implementação.
+- **Desenho escolhido:** Shopify Cart continua motor de preço; Edge `vr-checkout` relê o cart no servidor, cobra `totalAmount` na VR e cria draft order pago com `customAttributes` (`selected_address_id`, `delivery_method`, `uber_quote_id`, `payment_method=vr`); webhooks/Uber/"Meus Pedidos" seguem inalterados. Nova tabela `vr_transactions` (sem dado de cartão). Estorno automático se o pedido falhar após aprovação.
+- `security-auditor` despachado sobre o desenho → `.claude/.work/pagamento-vr/security.md`.
+- `.gitignore` ganhou `.claude/.work/` (contrato da memória de trabalho).
+
+**Gate de regras (CONFIRMADO 2026-09-11 pelo dono do produto):** **G1 ajustado — o desconto de 5% do Pix vale também para VR** (cupom `PIX5` aplicado ao escolher VR e garantido pelo `vr-checkout`; Kit e cupom manual valem) · G2 VR só no `/carrinho` · G3 CPF obrigatório (pré-preenche do profile, **não grava de volta** — auditoria M4) · G4 sem cartão salvo · G5 draft order antes de cobrar + estorno automático · G6 remover as outras bandeiras do marketing · G7 bloquear fora de área · G8 refund operacional v1.1 · G9 1 parcela · G10 Luiz opera o portal. Detalhe na EAP §4. O achado A2 da auditoria (`.work/pagamento-vr/security.md`) foi superado pela G1 — adendo no fim do arquivo.
+
+**Auditoria de segurança incorporada (2026-09-11):** 2 críticos (idempotência TOCTOU → unique parcial em `cart_id` + INSERT-first; `authorizing` órfão → timeout sem retry + `GET` por `id_transacao_van`), 5 altos (draft **antes** de cobrar; `ph-no-capture` + CSP; rate limit + breaker global; `VR_ENV` enum + tag `vr-test` sem Uber fora de prod), 6 médios, 5 baixos — todos na EAP §6 e nos critérios dos tickets.
+
+**Próximo frontier:** tickets **00** (portal/comercial — Luiz) e **01** (spike `_shared/vr-client.ts` no mock) podem correr em paralelo; o 03 já não tem bloqueio de gate. Executar com `/feature-builder` → "executa o ticket 01 de pagamento-vr".
+
+**Nota de doc:** `CLAUDE.md` segue dizendo "NÃO há tabelas de pedidos no Supabase" (obsoleto) — corrigir no ticket 07 junto com o `fluxo-pagamento-vr.md`.
 
 ## Sessão 2026-08-26 — Ajustes do PDF
 
