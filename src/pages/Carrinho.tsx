@@ -10,7 +10,9 @@ import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
-import PaymentMethodSelector from "@/components/PaymentMethodSelector";
+import PaymentMethodSelector, { type PaymentMethod } from "@/components/PaymentMethodSelector";
+import VrCardDialog from "@/components/VrCardDialog";
+import type { VrCheckoutInput } from "@/lib/vr/client";
 import DeliveryAddressSelector from "@/components/DeliveryAddressSelector";
 import { type CepValidationResult } from "@/lib/cepValidator";
 import AuthDialog from "@/components/AuthDialog";
@@ -54,6 +56,8 @@ const Carrinho = () => {
   const [activeQuoteId, setActiveQuoteId] = useState<string | null>(null);
   const [activeShippingFeeCents, setActiveShippingFeeCents] = useState(0);
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  const [vrDialogOpen, setVrDialogOpen] = useState(false);
   const { data: addresses } = useAddresses();
 
   const totalNonShippingItems = useNonShippingTotalItems();
@@ -193,10 +197,40 @@ const Carrinho = () => {
     toast.success("Cupom removido");
   };
 
+  // Reusa a mesma derivação de método de entrega usada no checkout Shopify (attrs abaixo).
+  const buildVrCheckoutInput = (): VrCheckoutInput | null => {
+    const cartId = useCartStore.getState().cartId;
+    if (!cartId || !selectedAddressId) return null;
+    const isLalamove = activeQuoteId === "lalamove";
+    const resolvedDeliveryMethod = isLalamove ? "lalamove" : getDeliveryMethod(totalNonShippingItems);
+    return {
+      cartId,
+      selectedAddressId,
+      deliveryMethod: resolvedDeliveryMethod,
+      ...(isLalamove
+        ? { deliveryLabel: LALAMOVE_METHOD_LABEL }
+        : activeQuoteId
+          ? { uberQuoteId: activeQuoteId }
+          : {}),
+    };
+  };
+
+  const vrCheckoutInput = buildVrCheckoutInput();
+
   const handleCheckout = async () => {
     if (!user) {
       setPendingCheckout(true);
       setAuthDialogOpen(true);
+      return;
+    }
+    if (paymentMethod === "vr") {
+      analytics.checkoutIniciado({
+        itens: totalNonShippingItems,
+        frete: free ? "gratis" : "pago",
+        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
+        metodoPagamento: "vr",
+      });
+      setVrDialogOpen(true);
       return;
     }
     const cartId = useCartStore.getState().cartId;
@@ -242,6 +276,10 @@ const Carrinho = () => {
   useEffect(() => {
     if (user && pendingCheckout) {
       setPendingCheckout(false);
+      if (paymentMethod === "vr") {
+        setVrDialogOpen(true);
+        return;
+      }
       (async () => {
         const cartId = useCartStore.getState().cartId;
         if (cartId) {
@@ -273,7 +311,7 @@ const Carrinho = () => {
         }
       })();
     }
-  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId, addresses]);
+  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId, addresses, paymentMethod]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;
@@ -611,13 +649,17 @@ const Carrinho = () => {
 
               {/* Payment Method Selector */}
               <div className="mb-5">
-                <PaymentMethodSelector subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)} totalNonShippingItems={totalNonShippingItems} />
+                <PaymentMethodSelector
+                  subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)}
+                  totalNonShippingItems={totalNonShippingItems}
+                  onMethodChange={setPaymentMethod}
+                />
               </div>
 
               {/* Checkout Button */}
               <button
                 onClick={handleCheckout}
-                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout}
+                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout || vrDialogOpen}
                 aria-busy={
                   isLoading ||
                   isSyncing ||
@@ -658,6 +700,11 @@ const Carrinho = () => {
                 ) : !user ? (
                   <>
                     Entrar para finalizar
+                    <ChevronRight className="h-4 w-4" />
+                  </>
+                ) : paymentMethod === "vr" ? (
+                  <>
+                    Pagar com VR
                     <ChevronRight className="h-4 w-4" />
                   </>
                 ) : (
@@ -778,6 +825,10 @@ const Carrinho = () => {
             </div>
           )}
         </section>
+
+        {vrCheckoutInput && (
+          <VrCardDialog open={vrDialogOpen} onOpenChange={setVrDialogOpen} checkout={vrCheckoutInput} />
+        )}
 
         <AuthDialog
           open={authDialogOpen}

@@ -8,7 +8,12 @@ const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID")
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const SHOPIFY_WEBHOOK_SECRET = Deno.env.get("SHOPIFY_WEBHOOK_SECRET")!;
+// Webhooks registrados por app (register-shopify-webhooks) sao assinados pela Shopify com o
+// CLIENT SECRET do app. SHOPIFY_WEBHOOK_SECRET (se definido) tem precedencia; senao usa o
+// client secret. Achado 2026-09-14: com o secret ausente, o codigo antigo PULAVA o HMAC e
+// aceitava qualquer POST (pedido forjado -> despacho Uber). Agora falha fechado.
+const SHOPIFY_WEBHOOK_SECRET =
+  Deno.env.get("SHOPIFY_WEBHOOK_SECRET") || Deno.env.get("SHOPIFY_CLIENT_SECRET") || "";
 const SHOPIFY_STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN")!;
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 
@@ -47,7 +52,13 @@ function extractOrderData(payload: any) {
   }));
 
   const discountCode = payload.discount_codes?.[0]?.code || null;
-  const paymentMethod = payload.payment_gateway_names?.[0] || null;
+  // Pedido pago fora da Shopify pelo vr-checkout (EAP pagamento-vr) chega como draft order
+  // completado, sem gateway real. A marca confiável é a TAG "vr": tags só entram pela Admin
+  // API (o cliente não forja via Storefront), diferente de note_attributes (auditoria B1).
+  const orderTags = String(payload.tags ?? "")
+    .split(",")
+    .map((t: string) => t.trim().toLowerCase());
+  const paymentMethod = orderTags.includes("vr") ? "vr" : payload.payment_gateway_names?.[0] || null;
 
   return {
     shopify_order_id: payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`,
@@ -304,13 +315,15 @@ serve(async (req) => {
   const hmacHeader = req.headers.get("x-shopify-hmac-sha256") || "";
   const topic = req.headers.get("x-shopify-topic") || "";
 
-  // Validate HMAC
-  if (SHOPIFY_WEBHOOK_SECRET) {
-    const valid = await verifyShopifyHmac(body, hmacHeader);
-    if (!valid) {
-      console.error("Invalid HMAC signature");
-      return new Response("Unauthorized", { status: 401 });
-    }
+  // Validate HMAC — fail-closed: sem secret configurado, recusa tudo.
+  if (!SHOPIFY_WEBHOOK_SECRET) {
+    console.error("[shopify-webhook-receiver] SHOPIFY_WEBHOOK_SECRET/SHOPIFY_CLIENT_SECRET ausentes — recusando webhook");
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const valid = await verifyShopifyHmac(body, hmacHeader);
+  if (!valid) {
+    console.error("Invalid HMAC signature");
+    return new Response("Unauthorized", { status: 401 });
   }
 
   const payload = JSON.parse(body);

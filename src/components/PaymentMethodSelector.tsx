@@ -4,7 +4,10 @@ import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
 import { getPixCouponForCart, isPixCoupon } from "@/config/pixCoupons";
 
-export type PaymentMethod = "pix" | "credit" | "paypal";
+export type PaymentMethod = "pix" | "vr" | "credit" | "paypal";
+
+// VR só aparece com VITE_VR_ENABLED=true (.env) — fica escondido até a homologação na VR.
+const VR_ENABLED = import.meta.env.VITE_VR_ENABLED === "true";
 
 interface PaymentMethodSelectorProps {
   className?: string;
@@ -44,7 +47,7 @@ const PaymentMethodSelector = ({
   const handleSelect = async (method: PaymentMethod) => {
     if (selected === method || applying) return;
 
-    if (method === "pix" && hasOtherCoupon) {
+    if ((method === "pix" || method === "vr") && hasOtherCoupon) {
       const otherCode = discountCodes.find(
         (dc) => dc.applicable && !isPixCoupon(dc.code)
       )?.code;
@@ -56,12 +59,16 @@ const PaymentMethodSelector = ({
 
     setApplying(true);
     try {
-      if (method === "pix") {
+      if (method === "pix" || method === "vr") {
         const couponToApply = activePix.code;
         const result = await applyDiscountCode(couponToApply);
         if (result.success && result.applicable) {
-          setSelected("pix");
-          toast.success(`PIX selecionado — ${activePix.percent}% de desconto aplicado!`);
+          setSelected(method);
+          toast.success(
+            method === "pix"
+              ? `PIX selecionado — ${activePix.percent}% de desconto aplicado!`
+              : `VR selecionado — ${activePix.percent}% de desconto aplicado!`
+          );
         } else {
           // Diagnóstico: applicable=false em cenário inesperado.
           // Esperado apenas se o Shopify Admin estiver desconfigurado.
@@ -75,7 +82,7 @@ const PaymentMethodSelector = ({
           return;
         }
       } else {
-        if (selected === "pix") {
+        if (selected === "pix" || selected === "vr") {
           await removeDiscountCode();
         }
         setSelected(method);
@@ -86,7 +93,7 @@ const PaymentMethodSelector = ({
     }
   };
 
-  const PAYMENT_METHODS: Array<{
+  const ALL_PAYMENT_METHODS: Array<{
     id: PaymentMethod;
     label: string;
     badge?: string;
@@ -99,6 +106,12 @@ const PaymentMethodSelector = ({
       description: "Desconto automático no total",
     },
     {
+      id: "vr",
+      label: "VR Refeição / Alimentação",
+      badge: "5% off",
+      description: "Cartão VR Benefícios — mesmo desconto do PIX",
+    },
+    {
       id: "credit",
       label: "Cartão de Crédito",
       description: "Em até 3x sem juros",
@@ -109,6 +122,7 @@ const PaymentMethodSelector = ({
       description: "Pague com sua conta PayPal",
     },
   ];
+  const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => method.id !== "vr" || VR_ENABLED);
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -153,9 +167,9 @@ const PaymentMethodSelector = ({
                 </div>
               </div>
               <p className="text-[11px] text-[#9b9b9b] mt-0.5">{method.description}</p>
-              {method.id === "pix" && isSelected && pixFinalValue > 0 && (
+              {(method.id === "pix" || method.id === "vr") && isSelected && pixFinalValue > 0 && (
                 <p className="text-[12px] text-[#1e3a1e] font-semibold mt-1">
-                  Total com PIX: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
+                  Total com {method.id === "pix" ? "PIX" : "VR"}: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
                   <span className="text-[#9b9b9b] font-normal">
                     ({activePix.percent}% off — economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
                   </span>

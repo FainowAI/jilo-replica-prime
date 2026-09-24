@@ -25,6 +25,7 @@ import Perfil from "./pages/conta/Perfil";
 import Pedidos from "./pages/conta/Pedidos";
 import PedidoDetalhe from "./pages/conta/PedidoDetalhe";
 import Enderecos from "./pages/conta/Enderecos";
+import PedidoConfirmado from "./pages/PedidoConfirmado";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,6 +45,7 @@ const AppContent = () => {
           <Route path="/cardapio" element={<Cardapio />} />
           <Route path="/colecao/:categoria" element={<Collection />} />
           <Route path="/carrinho" element={<Carrinho />} />
+          <Route path="/pedido-confirmado" element={<PedidoConfirmado />} />
           <Route path="/kits" element={<Kits />} />
           <Route path="/kit/:slug" element={<Kit />} />
           <Route path="/kit-livre" element={<KitLivre />} />
