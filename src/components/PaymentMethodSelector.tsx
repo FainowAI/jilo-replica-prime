@@ -11,14 +11,16 @@ const VR_ENABLED = import.meta.env.VITE_VR_ENABLED === "true";
 
 interface PaymentMethodSelectorProps {
   className?: string;
-  subtotalCents: number;
+  baseTotalCents: number;
+  pixTotalCents: number;
   totalNonShippingItems: number; // fonte: useNonShippingTotalItems()
   onMethodChange?: (method: PaymentMethod) => void;
 }
 
 const PaymentMethodSelector = ({
   className = "",
-  subtotalCents,
+  baseTotalCents,
+  pixTotalCents,
   totalNonShippingItems,
   onMethodChange,
 }: PaymentMethodSelectorProps) => {
@@ -27,13 +29,9 @@ const PaymentMethodSelector = ({
   const { discountCodes, applyDiscountCode, removeDiscountCode } = useCartStore();
 
   const activePix = getPixCouponForCart(totalNonShippingItems);
-  // Arredonda em centavos para que (final + economia) feche exatamente com a base.
-  const pixDiscountCents = subtotalCents
-    ? Math.round((subtotalCents * activePix.percent) / 100)
-    : 0;
-  const pixFinalCents = subtotalCents ? subtotalCents - pixDiscountCents : 0;
-  const pixDiscount = pixDiscountCents / 100;
-  const pixFinalValue = pixFinalCents / 100;
+  // pixTotalCents já vem calculado (computePixTotals no Carrinho.tsx) — prioriza
+  // o total real da Shopify quando disponível; fallback local senão.
+  const pixFinalValue = pixTotalCents / 100;
 
   const hasOtherCoupon = discountCodes.some(
     (dc) => dc.applicable && !isPixCoupon(dc.code)
@@ -167,13 +165,21 @@ const PaymentMethodSelector = ({
                 </div>
               </div>
               <p className="text-[11px] text-[#9b9b9b] mt-0.5">{method.description}</p>
-              {(method.id === "pix" || method.id === "vr") && isSelected && pixFinalValue > 0 && (
-                <p className="text-[12px] text-[#1e3a1e] font-semibold mt-1">
-                  Total com {method.id === "pix" ? "PIX" : "VR"}: R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
-                  <span className="text-[#9b9b9b] font-normal">
-                    ({activePix.percent}% off — economia de R$ {pixDiscount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                  </span>
-                </p>
+              {(method.id === "pix" || method.id === "vr") && isSelected && baseTotalCents > 0 && (
+                <div className="mt-1">
+                  <p className="text-xs text-[#9b9b9b]">
+                    De{" "}
+                    <span className="line-through">
+                      R$ {(baseTotalCents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </p>
+                  <p className="text-sm font-semibold text-[#1e3a1e] leading-tight">
+                    Por{" "}
+                    <span className="text-xl font-bold">
+                      R$ {pixFinalValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </p>
+                </div>
               )}
             </button>
           );

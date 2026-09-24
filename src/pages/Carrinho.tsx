@@ -20,6 +20,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import ShippingMethodSelector from "@/components/ShippingMethodSelector";
 import { isFreeShipping, getDeliveryMethod, isShippingVariant, SHIPPING_FREE_THRESHOLD, LALAMOVE_METHOD_LABEL } from "@/config/shipping";
 import { isValidKitQuantity } from "@/config/kitQuantity";
+import { computePixTotals, getPixCouponForCart, isPixCoupon } from "@/config/pixCoupons";
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 import SEO from "@/components/SEO";
 import KitQuantityNotice from "@/components/KitQuantityNotice";
@@ -42,6 +43,7 @@ const Carrinho = () => {
     refreshCartDetails,
     reconcileDiscountsOnLoad,
     shopifyHasShippingLine,
+    cartCost,
   } = useCartStore();
 
   const [couponCode, setCouponCode] = useState("");
@@ -92,6 +94,23 @@ const Carrinho = () => {
   const hasAppliedCoupon = !!appliedDiscount;
 
   const free = isFreeShipping(totalNonShippingItems);
+
+  // R79: TOTAL com PIX precisa bater com o que a Shopify cobra de verdade — o
+  // cupom PIX5 é um desconto de PEDIDO (ORDER), rateado pela Shopify entre
+  // produtos e a linha de frete (variant fantasma). A conta local (percent
+  // sobre a base) é só fallback para quando o cartCost ainda não reflete o
+  // estado de frete atual (ver shopifyTotalReady abaixo).
+  const pixApplied = discountCodes.some((dc) => dc.applicable && isPixCoupon(dc.code));
+  const baseTotalCents = Math.round(displayTotal * 100);
+  // Só confiamos no cartCost.totalAmount quando a linha de frete do Shopify Cart
+  // já reflete o estado atual (free ⇔ sem linha; pago ⇔ com linha e valor calculado).
+  const shopifyTotalReady =
+    !!cartCost && shopifyHasShippingLine === !free && (free || activeShippingFeeCents > 0);
+  const { pixTotalCents, pixDiscountCents } = computePixTotals(
+    baseTotalCents,
+    getPixCouponForCart(totalNonShippingItems).percent,
+    shopifyTotalReady ? Math.round(parseFloat(cartCost!.totalAmount) * 100) : null
+  );
 
   // R59 (substitui o antigo totalMatchesShopify): o hard-block valida o ESTADO DO FRETE
   // pela verdade do servidor — a linha de frete (variant fantasma) está no Shopify Cart?
@@ -609,8 +628,14 @@ const Carrinho = () => {
                 {/* Cupom manual */}
                 {hasAppliedCoupon && (
                   <div className="flex justify-between text-sm">
-                    <span className="text-[#1e3a1e]">Cupom {appliedDiscount!.code}</span>
-                    <span className="font-semibold text-[#1e3a1e]">Aplicado ✓</span>
+                    <span className="text-[#1e3a1e]">
+                      {pixApplied ? "Desconto PIX (5%)" : `Cupom ${appliedDiscount!.code}`}
+                    </span>
+                    <span className="font-semibold text-[#1e3a1e]">
+                      {pixApplied
+                        ? `-R$ ${(pixDiscountCents / 100).toFixed(2).replace(".", ",")}`
+                        : "Aplicado ✓"}
+                    </span>
                   </div>
                 )}
 
@@ -633,13 +658,30 @@ const Carrinho = () => {
               {/* Total */}
               <div className="flex justify-between items-baseline mb-1">
                 <span className="text-lg font-bold text-[#1a1a1a] font-sans">TOTAL</span>
-                <span className="text-2xl font-bold text-[#1a1a1a] font-sans">
-                  R$ {displayTotal.toFixed(2).replace(".", ",")}
-                </span>
+                {pixApplied && pixTotalCents > 0 ? (
+                  <span className="flex flex-col items-end">
+                    <span className="text-sm line-through text-[#9b9b9b] font-sans">
+                      R$ {displayTotal.toFixed(2).replace(".", ",")}
+                    </span>
+                    <span className="text-2xl font-bold text-[#1e3a1e] font-sans">
+                      R$ {(pixTotalCents / 100).toFixed(2).replace(".", ",")}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-2xl font-bold text-[#1a1a1a] font-sans">
+                    R$ {displayTotal.toFixed(2).replace(".", ",")}
+                  </span>
+                )}
               </div>
               {hasAppliedCoupon && (
-                <p className="text-right text-xs text-[#9b9b9b] font-sans mb-5">
-                  Seu cupom será aplicado no checkout
+                <p className="text-right text-xs mb-5 font-sans">
+                  {pixApplied && pixTotalCents > 0 ? (
+                    <span className="text-[#1e3a1e]">
+                      Você economiza R$ {(pixDiscountCents / 100).toFixed(2).replace(".", ",")} pagando com PIX
+                    </span>
+                  ) : (
+                    <span className="text-[#9b9b9b]">Seu cupom será aplicado no checkout</span>
+                  )}
                 </p>
               )}
 
@@ -650,7 +692,8 @@ const Carrinho = () => {
               {/* Payment Method Selector */}
               <div className="mb-5">
                 <PaymentMethodSelector
-                  subtotalCents={Math.round((subtotal - kitDiscountTotal) * 100)}
+                  baseTotalCents={baseTotalCents}
+                  pixTotalCents={pixTotalCents}
                   totalNonShippingItems={totalNonShippingItems}
                   onMethodChange={setPaymentMethod}
                 />

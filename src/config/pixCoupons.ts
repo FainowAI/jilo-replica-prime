@@ -30,3 +30,31 @@ export function getPixCouponForCart(
 ): { code: string; percent: number } {
   return { code: PIX_COUPON_ACTIVE, percent: 5 };
 }
+
+/**
+ * Total com PIX em centavos. `shopifyTotalCents` (cart.cost.totalAmount da
+ * Shopify, já com PIX5 aplicado) vence quando informado — é o valor real que
+ * o checkout cobra (a Shopify aloca o desconto ORDER entre produtos e frete,
+ * o que a conta local não reproduz exatamente por arredondamento). Sem um
+ * valor da Shopify confiável, cai no fallback local (percent sobre a base).
+ */
+export function computePixTotals(
+  baseTotalCents: number,
+  percent: number,
+  shopifyTotalCents?: number | null
+): { pixTotalCents: number; pixDiscountCents: number } {
+  if (baseTotalCents <= 0) return { pixTotalCents: 0, pixDiscountCents: 0 };
+  if (
+    typeof shopifyTotalCents === "number" &&
+    Number.isFinite(shopifyTotalCents) &&
+    shopifyTotalCents > 0 &&
+    shopifyTotalCents <= baseTotalCents
+  ) {
+    return {
+      pixTotalCents: shopifyTotalCents,
+      pixDiscountCents: baseTotalCents - shopifyTotalCents,
+    };
+  }
+  const pixDiscountCents = Math.round((baseTotalCents * percent) / 100);
+  return { pixTotalCents: baseTotalCents - pixDiscountCents, pixDiscountCents };
+}

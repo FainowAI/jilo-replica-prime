@@ -287,6 +287,7 @@ export const useCartStore = create<CartStore>()(
           if (result.cartNotFound) { clearCart(); return { success: false }; }
           if (result.success && result.discountCodes) {
             set({ discountCodes: result.discountCodes });
+            await get().refreshCartDetails();
             const applied = result.discountCodes.find(
               (dc) => dc.code.toUpperCase() === code.toUpperCase()
             );
