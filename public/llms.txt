@@ -2,7 +2,7 @@
 
 > Jilo é uma marca brasileira de marmitas artesanais congeladas da DaJu Alimentação. Vende pratos individuais e kits semanais prontos em 5 minutos no micro-ondas, sem conservantes, entregues em até 48h. Cardápio com 26 pratos em 4 grupos: Aves e Suínos, Bovinos, Peixes e Massas, Veganos. Slogan: "Comida para a vida real."
 
-A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos urbanos com rotina cheia. Cada marmita é preparada de forma artesanal, congelada sem aditivos e enviada pronta para o freezer. Aceita cartão de crédito, débito e Pix (com 5% de desconto). Atende principalmente a região metropolitana de São Paulo.
+A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos urbanos com rotina cheia. Cada marmita é preparada de forma artesanal, congelada sem aditivos e enviada pronta para o freezer. Aceita cartão de crédito, débito e Pix (com 5% de desconto). Atende São José dos Campos (SP).
 
 ## Páginas principais
 
@@ -19,16 +19,16 @@ O cardápio completo está em [https://jilomarmitas.com/cardapio](https://jiloma
 
 1. Escolha pratos individuais ou um kit semanal
 2. Finalize o pedido (Pix com 5% de desconto, cartão ou débito)
-3. Entrega em até 48h em São Paulo e região
-4. Guarde no freezer por até 60 dias
-5. Na hora de comer: 5 minutos no micro-ondas
+3. Entrega em até 48h em São José dos Campos (SP)
+4. Guarde no freezer por até 180 dias
+5. Na hora de comer: 5 a 6 minutos no micro-ondas
 
 ## Contato e operação
 
 - **Razão social:** DaJu Alimentação
 - **CNPJ:** 39.659.013/0001-02
 - **WhatsApp:** +55 12 97813-0583 ([wa.me/5512978130583](https://wa.me/5512978130583))
-- **Frete:** grátis para toda a área de cobertura
+- **Frete:** grátis a partir de 7 marmitas; abaixo disso, calculado no carrinho pelo CEP
 - **Prazo de entrega:** até 48h após a confirmação do pagamento
 
 ## Optional

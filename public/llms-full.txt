@@ -1,6 +1,6 @@
 # Jilo — Contexto completo para LLMs
 
-> Este arquivo é uma versão expandida do [llms.txt](https://jilomarmitas.com/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-09-24.
+> Este arquivo é uma versão expandida do [llms.txt](https://jilomarmitas.com/llms.txt), criada para ingestão direta por modelos de linguagem (ChatGPT, Claude, Perplexity, Gemini, Cursor). Contém toda a informação relevante sobre a marca Jilo, operação, cardápio e tom de voz em um único documento markdown. Última atualização: 2026-09-25.
 
 ## Sobre a Jilo
 
@@ -15,7 +15,7 @@ A proposta central é **"Comida para a vida real"**: pratos preparados de forma 
 - **26 pratos em rotação**: cardápio amplo para evitar monotonia semanal
 - **Pronto em 5 minutos**: do freezer ao prato, sem panela, sem louça extra
 - **Zero desperdício**: cada porção é exata, chega de jogar comida fora
-- **Frete grátis**: em toda a área de cobertura
+- **Frete grátis**: a partir de 7 marmitas
 - **Pix com 5% de desconto**: incentivo à modalidade mais barata para a operação
 - **Entrega em até 48h**: previsibilidade real, sem surpresa
 
@@ -53,8 +53,8 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 
 ### Grupo 1 — Aves e Suínos (7 pratos)
 
-1. **Filé de Frango Pizzaiolo** — Filé grelhado ao molho sugo, arroz branco, queijo ralado
-2. **Estrogonofe de Frango** — Cubos ao molho de estrogonofe, arroz, batata assada
+1. **Filé de Frango Pizzaiolo** — Filé grelhado ao molho sugo, arroz branco, mussarela
+2. **Estrogonofe de Frango** — Cubos ao molho de estrogonofe, arroz, batata cozida no molho
 3. **Filé de Frango Desfiado** — Frango cozido desfiado, arroz, feijão, purê de mandioquinha
 4. **Filé de Frango Cubo Grelhado** — Cubos grelhados, arroz, feijão, creme de milho
 5. **Feijoada (com frango)** — Feijoada magra, arroz, couve, farinha
@@ -63,13 +63,13 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 
 ### Grupo 2 — Peixes e Massas (7 pratos)
 
-1. **Tilápia Desfiada** — Filé de peixe desfiado, arroz com brócolis, purê de batata-doce
+1. **Filé de Peixe Desfiado** — Peixe desfiado, arroz com brócolis, purê de batata-doce
 2. **Linguiça Toscana Assada** — Linguiça espalmada, arroz, feijão, farofa
 3. **Panqueca de Frango e Calabresa** — Massa fresca, frango desfiado, calabresa, molho sugo, queijo
 4. **Lasanha Bolonhesa** — Massa fresca, molho bolonhesa, queijo ralado
 5. **Calabresa com Mandioca** — Calabresa em cubos, arroz, feijão, mandioca na manteiga
 6. **Tilápia Grelhada** — Filé grelhado, arroz, feijão, batata em cubos assada
-7. **Lasanha Bechamel com Calabresa** — Massa fresca, presunto, mussarela, molho bechamel
+7. **Lasanha Bechamel com Presunto e Mussarela** — Massa fresca, presunto, mussarela, molho bechamel
 
 ### Grupo 3 — Bovinos (7 pratos)
 
@@ -78,16 +78,16 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 3. **Escondidinho de Carne Seca** — Carne seca refogada, purê de mandioca, queijo ralado
 4. **Picadinho com Batatas** — Carne refogada com batata, arroz, feijão, farofa
 5. **Almôndegas ao Sugo** — Almôndegas ao molho, arroz, feijão, purê de cenoura
-6. **Hambúrguer Artesanal** — Hambúrguer 80g, arroz, feijão, brócolis e couve-flor
+6. **Hambúrguer Artesanal** — Hambúrguer 90g, arroz, feijão, brócolis e couve-flor
 7. **Iscas de Carne** — Iscas refogadas, arroz, feijão, espaguete alho e óleo
 
 ### Grupo 4 — Veganos (5 pratos)
 
-1. **Lasanha de Brócolis** — Brócolis refogado, massa fresca, bechamel com leite vegetal
+1. **Lasanha de Brócolis** — Brócolis refogado, massa de pastel, bechamel com leite de amêndoa
 2. **Nhoque ao Sugo com Proteína de Soja** — Nhoque, PTS, molho sugo
 3. **Feijoada Vegana** — Feijão preto, PTS, abóbora, cenoura, arroz, couve, farofa
-4. **Curry de Lentilha e Arroz de Couve-Flor** — Lentilha com curry e leite de coco, arroz de couve-flor
-5. **Estrogonofe de Proteína de Soja** — PTS com cogumelos, arroz, batata, molho vegetal
+4. **Curry de Lentilha e Arroz de Couve-Flor** — Lentilha verde com curry e leite de coco, arroz branco com couve-flor
+5. **Estrogonofe de Proteína de Soja** — PTS, arroz, batata, molho de estrogonofe vegetal
 
 ## Kits semanais
 
@@ -105,8 +105,8 @@ Quanto maior o kit, menor o preço por marmita.
 1. **Escolha**: navegue pelo [cardápio](https://jilomarmitas.com/cardapio) ou [monte um kit livre](https://jilomarmitas.com/kit-livre)
 2. **Pagamento**: Pix com 5% de desconto, cartão de crédito, cartão de débito ou VR/VA (Alelo, Sodexo, VR, Ticket, Flash)
 3. **Entrega**: em até 48h após a confirmação, gelado e lacrado
-4. **Armazenamento**: até 60 dias no freezer com embalagem intacta, ou até 48h na geladeira após descongelar
-5. **Preparo**: 5 minutos no micro-ondas
+4. **Armazenamento**: até 180 dias no freezer com embalagem intacta, ou até 48h na geladeira após descongelar
+5. **Preparo**: 5 a 6 minutos no micro-ondas, em potência alta
 
 ## FAQ — perguntas frequentes
 
@@ -120,23 +120,19 @@ Quando o congelamento é feito corretamente e em pequenos lotes, não. O congela
 
 ### Qual a validade?
 
-Até 60 dias no freezer com a embalagem fechada. Depois de descongelada, consumir em até 48h na geladeira.
+Até 180 dias no freezer com a embalagem fechada. Depois de descongelada, consumir em até 48h na geladeira.
 
 ### Como é o preparo?
 
-Retire a marmita do freezer, tire a tampa, coloque no micro-ondas em potência alta por 5 minutos (tempo pode variar conforme o modelo). Pronto.
-
-### Posso cancelar uma assinatura?
-
-Sim. Cancela com 1 clique, sem burocracia, sem multa.
+Retire a marmita do freezer, tire a tampa, coloque no micro-ondas em potência alta por 5 a 6 minutos (tempo pode variar conforme o modelo). Pronto.
 
 ### Qual a área de entrega?
 
-Principalmente São Paulo e região metropolitana. Consulte o CEP na [página inicial](https://jilomarmitas.com/) para confirmação.
+São José dos Campos (SP). Consulte o CEP na [página inicial](https://jilomarmitas.com/) para confirmação.
 
 ### Quanto custa o frete?
 
-Frete grátis em toda a área de cobertura.
+Grátis a partir de 7 marmitas. Abaixo disso, o frete é calculado no carrinho pelo CEP.
 
 ### Quais formas de pagamento?
 

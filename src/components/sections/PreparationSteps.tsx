@@ -16,7 +16,7 @@ const steps = [
     {
         number: "03",
         title: "Micro-ondas",
-        description: "Leve ao micro-ondas por 3 a 5 minutos em potência alta.",
+        description: "Leve ao micro-ondas por 5 a 6 minutos em potência alta.",
         icon: MonitorPlay,
     },
     {

@@ -3,7 +3,7 @@ import { ShoppingCart, Package, Flame } from "lucide-react";
 const steps = [
   { icon: ShoppingCart, title: "Escolha", desc: "Monte seu kit com os pratos que mais gosta" },
   { icon: Package, title: "Receba", desc: "Entrega grátis em até 48 horas a partir de 7 unidades." },
-  { icon: Flame, title: "Aqueça", desc: "Pronto em 6 minutos no micro-ondas ou forno" },
+  { icon: Flame, title: "Aqueça", desc: "Pronto em 5 a 6 minutos no micro-ondas" },
 ];
 
 const HowItWorks = () => {

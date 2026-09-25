@@ -425,7 +425,7 @@ export default function Product() {
                 <ol className="space-y-1.5 text-[13px] text-[#6b6b6b] font-sans">
                   <li className="flex gap-2"><span className="text-[#d4a017] font-bold">1.</span> Retire a marmita do freezer</li>
                   <li className="flex gap-2"><span className="text-[#d4a017] font-bold">2.</span> Abra a tampa e leve ao micro-ondas</li>
-                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">3.</span> Aqueça por 5 minutos (potência alta)</li>
+                  <li className="flex gap-2"><span className="text-[#d4a017] font-bold">3.</span> Aqueça por 5 a 6 minutos (potência alta)</li>
                   <li className="flex gap-2"><span className="text-[#d4a017] font-bold">4.</span> Pronto! Sirva no prato ou direto na embalagem</li>
                 </ol>
               )}

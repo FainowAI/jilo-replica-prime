@@ -14,7 +14,7 @@ const PixCallout = ({ originalCents, className = "", variant = "inline" }: PixCa
           <span className="font-bold text-[#32bcad]">PIX com 5% off</span>
           {pixValue && (
             <span className="ml-1">
-              → R$ {pixValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+              → R$ {pixValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           )}
         </p>
@@ -30,7 +30,7 @@ const PixCallout = ({ originalCents, className = "", variant = "inline" }: PixCa
       PIX 5% off
       {pixValue && (
         <span className="text-[#1a1a1a] font-normal">
-          R$ {pixValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+          R$ {pixValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
         </span>
       )}
     </span>

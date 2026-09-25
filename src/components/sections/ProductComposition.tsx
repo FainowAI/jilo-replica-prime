@@ -164,7 +164,7 @@ export default function ProductComposition({ productType, metafields }: ProductC
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[11px] font-bold text-[#b0aea8] font-sans uppercase tracking-[0.44px] mb-[2px]">CONSERVAÇÃO</span>
-                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">{metafields?.conservacao || "Freezer por até 90 dias"}</span>
+                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">{metafields?.conservacao || "Freezer por até 180 dias"}</span>
                     </div>
                 </div>
                 <div className="flex flex-1 items-center p-[24px] gap-[16px]">
@@ -173,7 +173,7 @@ export default function ProductComposition({ productType, metafields }: ProductC
                     </div>
                     <div className="flex flex-col">
                         <span className="text-[11px] font-bold text-[#b0aea8] font-sans uppercase tracking-[0.44px] mb-[2px]">PREPARO</span>
-                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">3-5 min no micro-ondas</span>
+                        <span className="text-[15px] font-bold text-[#1a1a1a] font-sans">5 a 6 min no micro-ondas</span>
                     </div>
                 </div>
             </div>

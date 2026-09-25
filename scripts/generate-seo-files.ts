@@ -227,7 +227,7 @@ function generateLlmsTxt(
 
 > Jilo é uma marca brasileira de marmitas artesanais congeladas da DaJu Alimentação. Vende pratos individuais e kits semanais prontos em 5 minutos no micro-ondas, sem conservantes, entregues em até 48h. Cardápio com 26 pratos em 4 grupos: Aves e Suínos, Bovinos, Peixes e Massas, Veganos. Slogan: "Comida para a vida real."
 
-A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos urbanos com rotina cheia. Cada marmita é preparada de forma artesanal, congelada sem aditivos e enviada pronta para o freezer. Aceita cartão de crédito, débito e Pix (com 5% de desconto). Atende principalmente a região metropolitana de São Paulo.
+A proposta da Jilo é resolver o problema do "o que vou comer hoje" para adultos urbanos com rotina cheia. Cada marmita é preparada de forma artesanal, congelada sem aditivos e enviada pronta para o freezer. Aceita cartão de crédito, débito e Pix (com 5% de desconto). Atende São José dos Campos (SP).
 
 ## Páginas principais
 
@@ -271,16 +271,16 @@ O cardápio completo está em [${SITE_URL}/cardapio](${SITE_URL}/cardapio). Cada
 
 1. Escolha pratos individuais ou um kit semanal
 2. Finalize o pedido (Pix com 5% de desconto, cartão ou débito)
-3. Entrega em até 48h em São Paulo e região
-4. Guarde no freezer por até 60 dias
-5. Na hora de comer: 5 minutos no micro-ondas`);
+3. Entrega em até 48h em São José dos Campos (SP)
+4. Guarde no freezer por até 180 dias
+5. Na hora de comer: 5 a 6 minutos no micro-ondas`);
 
   sections.push(`## Contato e operação
 
 - **Razão social:** DaJu Alimentação
 - **CNPJ:** 39.659.013/0001-02
 - **WhatsApp:** +55 12 97813-0583 ([wa.me/5512978130583](https://wa.me/5512978130583))
-- **Frete:** grátis para toda a área de cobertura
+- **Frete:** grátis a partir de 7 marmitas; abaixo disso, calculado no carrinho pelo CEP
 - **Prazo de entrega:** até 48h após a confirmação do pagamento
 
 ## Optional
@@ -318,7 +318,7 @@ A proposta central é **"Comida para a vida real"**: pratos preparados de forma 
 - **26 pratos em rotação**: cardápio amplo para evitar monotonia semanal
 - **Pronto em 5 minutos**: do freezer ao prato, sem panela, sem louça extra
 - **Zero desperdício**: cada porção é exata, chega de jogar comida fora
-- **Frete grátis**: em toda a área de cobertura
+- **Frete grátis**: a partir de 7 marmitas
 - **Pix com 5% de desconto**: incentivo à modalidade mais barata para a operação
 - **Entrega em até 48h**: previsibilidade real, sem surpresa
 
@@ -356,8 +356,8 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 
 ### Grupo 1 — Aves e Suínos (7 pratos)
 
-1. **Filé de Frango Pizzaiolo** — Filé grelhado ao molho sugo, arroz branco, queijo ralado
-2. **Estrogonofe de Frango** — Cubos ao molho de estrogonofe, arroz, batata assada
+1. **Filé de Frango Pizzaiolo** — Filé grelhado ao molho sugo, arroz branco, mussarela
+2. **Estrogonofe de Frango** — Cubos ao molho de estrogonofe, arroz, batata cozida no molho
 3. **Filé de Frango Desfiado** — Frango cozido desfiado, arroz, feijão, purê de mandioquinha
 4. **Filé de Frango Cubo Grelhado** — Cubos grelhados, arroz, feijão, creme de milho
 5. **Feijoada (com frango)** — Feijoada magra, arroz, couve, farinha
@@ -366,13 +366,13 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 
 ### Grupo 2 — Peixes e Massas (7 pratos)
 
-1. **Tilápia Desfiada** — Filé de peixe desfiado, arroz com brócolis, purê de batata-doce
+1. **Filé de Peixe Desfiado** — Peixe desfiado, arroz com brócolis, purê de batata-doce
 2. **Linguiça Toscana Assada** — Linguiça espalmada, arroz, feijão, farofa
 3. **Panqueca de Frango e Calabresa** — Massa fresca, frango desfiado, calabresa, molho sugo, queijo
 4. **Lasanha Bolonhesa** — Massa fresca, molho bolonhesa, queijo ralado
 5. **Calabresa com Mandioca** — Calabresa em cubos, arroz, feijão, mandioca na manteiga
 6. **Tilápia Grelhada** — Filé grelhado, arroz, feijão, batata em cubos assada
-7. **Lasanha Bechamel com Calabresa** — Massa fresca, presunto, mussarela, molho bechamel
+7. **Lasanha Bechamel com Presunto e Mussarela** — Massa fresca, presunto, mussarela, molho bechamel
 
 ### Grupo 3 — Bovinos (7 pratos)
 
@@ -381,16 +381,16 @@ Cada prato é preparado artesanalmente, congelado sem conservantes e servido em 
 3. **Escondidinho de Carne Seca** — Carne seca refogada, purê de mandioca, queijo ralado
 4. **Picadinho com Batatas** — Carne refogada com batata, arroz, feijão, farofa
 5. **Almôndegas ao Sugo** — Almôndegas ao molho, arroz, feijão, purê de cenoura
-6. **Hambúrguer Artesanal** — Hambúrguer 80g, arroz, feijão, brócolis e couve-flor
+6. **Hambúrguer Artesanal** — Hambúrguer 90g, arroz, feijão, brócolis e couve-flor
 7. **Iscas de Carne** — Iscas refogadas, arroz, feijão, espaguete alho e óleo
 
 ### Grupo 4 — Veganos (5 pratos)
 
-1. **Lasanha de Brócolis** — Brócolis refogado, massa fresca, bechamel com leite vegetal
+1. **Lasanha de Brócolis** — Brócolis refogado, massa de pastel, bechamel com leite de amêndoa
 2. **Nhoque ao Sugo com Proteína de Soja** — Nhoque, PTS, molho sugo
 3. **Feijoada Vegana** — Feijão preto, PTS, abóbora, cenoura, arroz, couve, farofa
-4. **Curry de Lentilha e Arroz de Couve-Flor** — Lentilha com curry e leite de coco, arroz de couve-flor
-5. **Estrogonofe de Proteína de Soja** — PTS com cogumelos, arroz, batata, molho vegetal
+4. **Curry de Lentilha e Arroz de Couve-Flor** — Lentilha verde com curry e leite de coco, arroz branco com couve-flor
+5. **Estrogonofe de Proteína de Soja** — PTS, arroz, batata, molho de estrogonofe vegetal
 
 ## Kits semanais
 
@@ -408,8 +408,8 @@ Quanto maior o kit, menor o preço por marmita.
 1. **Escolha**: navegue pelo [cardápio](${SITE_URL}/cardapio) ou [monte um kit livre](${SITE_URL}/kit-livre)
 2. **Pagamento**: Pix com 5% de desconto, cartão de crédito, cartão de débito ou VR/VA (Alelo, Sodexo, VR, Ticket, Flash)
 3. **Entrega**: em até 48h após a confirmação, gelado e lacrado
-4. **Armazenamento**: até 60 dias no freezer com embalagem intacta, ou até 48h na geladeira após descongelar
-5. **Preparo**: 5 minutos no micro-ondas
+4. **Armazenamento**: até 180 dias no freezer com embalagem intacta, ou até 48h na geladeira após descongelar
+5. **Preparo**: 5 a 6 minutos no micro-ondas, em potência alta
 
 ## FAQ — perguntas frequentes
 
@@ -423,23 +423,19 @@ Quando o congelamento é feito corretamente e em pequenos lotes, não. O congela
 
 ### Qual a validade?
 
-Até 60 dias no freezer com a embalagem fechada. Depois de descongelada, consumir em até 48h na geladeira.
+Até 180 dias no freezer com a embalagem fechada. Depois de descongelada, consumir em até 48h na geladeira.
 
 ### Como é o preparo?
 
-Retire a marmita do freezer, tire a tampa, coloque no micro-ondas em potência alta por 5 minutos (tempo pode variar conforme o modelo). Pronto.
-
-### Posso cancelar uma assinatura?
-
-Sim. Cancela com 1 clique, sem burocracia, sem multa.
+Retire a marmita do freezer, tire a tampa, coloque no micro-ondas em potência alta por 5 a 6 minutos (tempo pode variar conforme o modelo). Pronto.
 
 ### Qual a área de entrega?
 
-Principalmente São Paulo e região metropolitana. Consulte o CEP na [página inicial](${SITE_URL}/) para confirmação.
+São José dos Campos (SP). Consulte o CEP na [página inicial](${SITE_URL}/) para confirmação.
 
 ### Quanto custa o frete?
 
-Frete grátis em toda a área de cobertura.
+Grátis a partir de 7 marmitas. Abaixo disso, o frete é calculado no carrinho pelo CEP.
 
 ### Quais formas de pagamento?
 

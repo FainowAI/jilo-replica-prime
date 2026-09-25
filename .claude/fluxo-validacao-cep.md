@@ -33,7 +33,7 @@ Definida em `DELIVERY_AREAS` no `cepValidator.ts`:
 
 ```typescript
 const DELIVERY_AREAS = [
-  { uf: 'SP', cidades: ['São Paulo', 'Guarulhos', 'Osasco', 'Santo André', 'São Bernardo do Campo', 'São Caetano do Sul', 'Diadema', 'Mauá', 'Barueri', 'Cotia', 'Taboão da Serra', 'Itapevi', 'Carapicuíba', 'Embu das Artes', 'Itaquaquecetuba', 'Ferraz de Vasconcelos', 'Poá', 'Suzano', 'Mogi das Cruzes', 'Arujá'] },
+  { uf: 'SP', cidades: ['São José dos Campos'] },
 ];
 ```
 

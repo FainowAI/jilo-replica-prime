@@ -9,6 +9,8 @@ import { isFreeShipping, SHIPPING_FREE_THRESHOLD, DELIVERY_PROMISE_LABEL } from 
 import { useNonShippingTotalItems, useVisibleCartItems } from "@/hooks/useNonShippingTotalItems";
 import { analytics } from "@/analytics/events";
 
+const formatBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
@@ -121,6 +123,7 @@ export const CartDrawer = () => {
                 {visibleItems.map((item) => {
                   const itemTotal = parseFloat(item.price.amount) * item.quantity;
                   const imageUrl = item.product.node.images?.edges?.[0]?.node?.url;
+                  const optionLabels = item.selectedOptions.filter(o => o.value !== "Default Title").map(o => o.value);
 
                   return (
                     <div key={item.variantId} className="flex gap-3">
@@ -140,13 +143,13 @@ export const CartDrawer = () => {
                         <h4 className="text-sm font-semibold text-[#1a1a1a] leading-[18.2px] mb-0.5 line-clamp-2">
                           {item.product.node.title}
                         </h4>
-                        {item.selectedOptions.length > 0 && (
+                        {optionLabels.length > 0 && (
                           <p className="text-xs text-[#9b9b9b] leading-3 mb-0.5">
-                            {item.selectedOptions.map(o => o.value).join(' • ')}
+                            {optionLabels.join(' • ')}
                           </p>
                         )}
                         <p className="text-[11px] italic text-[#b0aea8] leading-[14.3px] mb-0.5">
-                          R$ {parseFloat(item.price.amount).toFixed(2)} / un
+                          R$ {formatBRL(parseFloat(item.price.amount))} / un
                         </p>
                       </div>
 
@@ -177,7 +180,7 @@ export const CartDrawer = () => {
 
                         {/* Item Total Price */}
                         <p className="text-sm font-semibold text-[#1e3a1e]">
-                          R$ {itemTotal.toFixed(2)}
+                          R$ {formatBRL(itemTotal)}
                         </p>
 
                         {/* Remove Button */}
@@ -202,7 +205,7 @@ export const CartDrawer = () => {
               <div className="space-y-2 mb-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-[#1a1a1a]">Subtotal ({totalItems} {totalItems === 1 ? 'prato' : 'pratos'})</span>
-                  <span className="text-sm font-semibold text-[#1a1a1a]">R$ {subtotal.toFixed(2)}</span>
+                  <span className="text-sm font-semibold text-[#1a1a1a]">R$ {formatBRL(subtotal)}</span>
                 </div>
                 {cartDiscountAllocations.length > 0 && cartDiscountAllocations.map((alloc, i) => (
                   <div key={i} className="flex justify-between items-center">
@@ -210,7 +213,7 @@ export const CartDrawer = () => {
                       {alloc.title || alloc.code || "Desconto de kit"}
                     </span>
                     <span className="text-xs font-semibold text-[#1e3a1e]">
-                      -R$ {parseFloat(alloc.discountedAmount.amount).toFixed(2).replace(".", ",")}
+                      -R$ {formatBRL(parseFloat(alloc.discountedAmount.amount))}
                     </span>
                   </div>
                 ))}
@@ -228,7 +231,7 @@ export const CartDrawer = () => {
               {/* Total */}
               <div className="flex justify-between items-center mb-3">
                 <span className="text-base font-bold text-[#1a1a1a]">Total estimado</span>
-                <span className="text-base font-bold text-[#1a1a1a]">R$ {totalWithDiscount.toFixed(2)}</span>
+                <span className="text-base font-bold text-[#1a1a1a]">R$ {formatBRL(totalWithDiscount)}</span>
               </div>
 
               <PixCallout variant="card" className="mb-3" />
@@ -245,7 +248,7 @@ export const CartDrawer = () => {
                   <>
                     <span>Finalizar Compra</span>
                     <span className="opacity-60">→</span>
-                    <span>R$ {totalWithDiscount.toFixed(2)}</span>
+                    <span>R$ {formatBRL(totalWithDiscount)}</span>
                   </>
                 )}
               </button>

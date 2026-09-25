@@ -51,13 +51,13 @@ const individual: ProductInput[] = [
 
   // G2 — Peixes e Massas — R$20.30
   ...([
-    ["Tilápia Desfiada", ["peixes-massas", "low-carb"]],
+    ["Filé de Peixe Desfiado", ["peixes-massas", "low-carb"]],
     ["Linguiça Toscana Assada", ["peixes-massas"]],
     ["Panqueca de Frango e Calabresa", ["peixes-massas"]],
     ["Lasanha Bolonhesa", ["peixes-massas", "mais-pedido"]],
     ["Calabresa com Mandioca", ["peixes-massas"]],
     ["Tilápia Grelhada", ["peixes-massas", "low-carb"]],
-    ["Lasanha Bechamel com Calabresa", ["peixes-massas"]],
+    ["Lasanha Bechamel com Presunto e Mussarela", ["peixes-massas"]],
   ] as [string, string[]][]).map(([title, tags]) => ({
     title,
     product_type: "Peixes e Massas",
