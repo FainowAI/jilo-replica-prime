@@ -10,6 +10,7 @@ import {
   applyDiscountCodesToCart,
   removeDiscountCodesFromCart,
   fetchCartFull,
+  formatCheckoutUrl,
 } from '@/lib/shopify';
 import { isShippingVariant, SHIPPING_FREE_THRESHOLD } from '@/config/shipping';
 import { PIX_COUPON_CODES } from '@/config/pixCoupons';
@@ -403,6 +404,13 @@ export const useCartStore = create<CartStore>()(
             isShippingVariant(edge.node.merchandise.id)
           );
           set({
+            // R80 (2026-09-25): a Shopify assina o checkoutUrl com o estado do cart; a URL
+            // gravada na criação NÃO carrega mudanças posteriores (PIX5 aplicado aqui via
+            // cartDiscountCodesUpdate chegava ao checkout sem o cupom: 132,93 em vez de
+            // 126,29). A doc manda re-requisitar quando "stale" — a CART_FULL_QUERY já traz
+            // a URL fresca, então basta gravá-la a cada refresh (applyDiscountCode chama
+            // refreshCartDetails logo após aplicar o cupom).
+            ...(cart.checkoutUrl ? { checkoutUrl: formatCheckoutUrl(cart.checkoutUrl) } : {}),
             cartCost: cart.cost ? {
               totalAmount: cart.cost.totalAmount.amount,
               subtotalAmount: cart.cost.subtotalAmount.amount,
