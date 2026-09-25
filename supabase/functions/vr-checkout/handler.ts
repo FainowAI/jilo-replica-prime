@@ -40,6 +40,7 @@ import {
   type VrReturnClass,
 } from "../_shared/vr-client.ts";
 import { completeDraftOrder, createDraftOrder, deleteDraftOrder, type DraftOrderInput } from "../_shared/shopify-draft-order.ts";
+import { isValidCpf } from "../_shared/cpf.ts";
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -56,7 +57,9 @@ const VR_BREAKER_WINDOW_MIN = 10;
 const STALE_AUTHORIZING_MIN = 5;
 
 // ---------------------------------------------------------------------------
-// Body (zod, strict — campo extra tipo `cartao`/`cpf` vira 400 por construção)
+// Body (zod, strict — campo extra tipo `cartao` vira 400 por construção; `cpf`
+// (só dígitos, obrigatório) é aceito e vira o CPF do comprador no draft order —
+// achado 2026-09-25, ver shopify-draft-order.ts)
 // ---------------------------------------------------------------------------
 
 const CheckoutBodySchema = z
@@ -71,6 +74,7 @@ const CheckoutBodySchema = z
       .string()
       .max(1024)
       .regex(/^[A-Za-z0-9+/]+={0,2}$/, "invalid_base64"),
+    cpf: z.string().regex(/^\d{11}$/),
   })
   .strict();
 
@@ -323,6 +327,10 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
   }
   const body: CheckoutBody = parsed.data;
 
+  if (!isValidCpf(body.cpf)) {
+    return jsonResponse({ code: "invalid_cpf", userMessage: "CPF inválido." }, 422, cors);
+  }
+
   // 5. Endereço: precisa ser do usuário e estar em área atendida
   const address = await deps.db.getOwnAddress(body.selectedAddressId, user.id);
   if (!address) {
@@ -426,6 +434,7 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     shippingAddress: buildShippingAddress(address),
     tags: ["vr", ...(deps.env.VR_ENV !== "prod" ? ["vr-test"] : [])],
     customAttributes,
+    cpf: body.cpf,
   };
 
   let draft: { id: string; totalPriceCents: number };

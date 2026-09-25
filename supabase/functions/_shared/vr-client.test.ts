@@ -5,14 +5,20 @@ import {
   __resetVrClientCaches,
   classifyReturnCode,
   createPayment,
+  createReservation,
+  deleteTokenizedCard,
   encryptCardData,
   forceRefreshVrAccessToken,
   getPublicKey,
+  getReservation,
+  getTokenizedCard,
   getTransaction,
   getVrAccessToken,
   invalidatePublicKeyCache,
   newIdTransacaoVan,
   refund,
+  settleReservation,
+  tokenizeCard,
   VrApiError,
   type VrCardInput,
 } from "./vr-client.ts";
@@ -442,6 +448,256 @@ Deno.test("refund: chama o estorno quando a transacao esta CONFIRMADA", async ()
     assertEquals(result.noop, false);
     assertEquals(estornoBody?.valor, 1000);
     assertEquals(estornoBody?.id_filiacao, "123456");
+  } finally {
+    restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// createPayment: via cartaoTokenId (sem key_id/blob no body)
+// ---------------------------------------------------------------------------
+
+Deno.test("createPayment: via cartaoTokenId monta body sem key_id/cartao_dados_criptografados", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  let sentBody: Record<string, unknown> | undefined;
+  const { restore } = stubFetch((url, init) => {
+    if (url.endsWith("/transacoes/pagamentos")) {
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ id_transacao: "tx1", valor: 1500, codigo_retorno: "00" }), { status: 201 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    await createPayment({ valorCents: 1500, idTransacaoVan: "abc123", cartaoTokenId: "tok-1" });
+    assertEquals(sentBody?.cartao_token_id, "tok-1");
+    assertEquals(sentBody?.key_id, undefined);
+    assertEquals(sentBody?.cartao_dados_criptografados, undefined);
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("createPayment: rejeita quando nenhuma via de cartão é informada", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await assertRejects(() => createPayment({ valorCents: 100, idTransacaoVan: "abc" } as never));
+});
+
+Deno.test("createPayment: rejeita quando as duas vias de cartão são informadas", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await assertRejects(() =>
+    createPayment({
+      valorCents: 100,
+      idTransacaoVan: "abc",
+      keyId: "k1",
+      cardEncrypted: "enc",
+      cartaoTokenId: "tok-1",
+    } as never)
+  );
+});
+
+// ---------------------------------------------------------------------------
+// refund: reembolso parcial retorna o estorno parseado
+// ---------------------------------------------------------------------------
+
+Deno.test("refund: reembolso parcial (valorCents < total) retorna o estorno parseado", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  const { restore } = stubFetch((url) => {
+    if (url.includes("estornos")) {
+      return new Response(
+        JSON.stringify({ id_transacao: "tx1", valor: 400, codigo_retorno: "00", codigo_autorizacao: "P1" }),
+        { status: 201 },
+      );
+    }
+    if (url.includes("/transacoes/pagamentos/")) {
+      return new Response(JSON.stringify({ id_transacao: "tx1", status: "CONFIRMADA", valor: 1000 }), { status: 200 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await refund({ idTransacao: "tx1", valorCents: 400 });
+    assertEquals(result.noop, false);
+    assertEquals(result.estorno?.valor, 400);
+    assertEquals(result.estorno?.codigo_retorno, "00");
+  } finally {
+    restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Reserva de valor: createReservation / getReservation / settleReservation
+// ---------------------------------------------------------------------------
+
+Deno.test("createReservation: POST /transacoes/pagamentos/reservas com o mesmo body de Transacao", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  let seenUrl = "";
+  let sentBody: Record<string, unknown> | undefined;
+  const { restore } = stubFetch((url, init) => {
+    if (url.endsWith("/transacoes/pagamentos/reservas")) {
+      seenUrl = url;
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({ id_transacao: "res1", valor: 1500, status: "PENDENTE", codigo_retorno: "00" }),
+        { status: 201 },
+      );
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await createReservation({ valorCents: 1500, idTransacaoVan: "van-r1", keyId: "k1", cardEncrypted: "enc" });
+    assert(seenUrl.endsWith("/transacoes/pagamentos/reservas"));
+    assertEquals(sentBody?.valor, 1500);
+    assertEquals(sentBody?.id_transacao_van, "van-r1");
+    assertEquals(result.id_transacao, "res1");
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("getReservation: GET /transacoes/pagamentos/reservas/{id}", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  const { restore } = stubFetch((url) => {
+    if (url.includes("/transacoes/pagamentos/reservas/res-abc")) {
+      return new Response(
+        JSON.stringify({ id_transacao: "res-abc", valor: 2000, status: "PENDENTE", codigo_retorno: "00" }),
+        { status: 200 },
+      );
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await getReservation("res-abc");
+    assertEquals(result.status, "PENDENTE");
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("settleReservation: PATCH no path do Swagger ({id}/reservas), body EfetivaReserva", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  let seenUrl = "";
+  let seenMethod = "";
+  let sentBody: Record<string, unknown> | undefined;
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/transacoes/pagamentos/") && url.endsWith("/reservas")) {
+      seenUrl = url;
+      seenMethod = init?.method ?? "";
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ id_transacao: "res1", valor: 1500, codigo_retorno: "00" }), { status: 200 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await settleReservation({ idTransacao: "res1", acao: "efetivar", valorCents: 1500 });
+    assertEquals(seenMethod, "PATCH");
+    assert(seenUrl.includes("/transacoes/pagamentos/res1/reservas"), seenUrl);
+    assertEquals(sentBody?.acao, "efetivar");
+    assertEquals(sentBody?.valor, 1500);
+    assertEquals(sentBody?.id_filiacao, "123456");
+    assertEquals(result.codigo_retorno, "00");
+  } finally {
+    restore();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Tokenização
+// ---------------------------------------------------------------------------
+
+Deno.test("tokenizeCard: POST /cartoes com mes_validade/ano_validade inteiros", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  let sentBody: Record<string, unknown> | undefined;
+  const { restore } = stubFetch((url, init) => {
+    if (url.endsWith("/cartoes")) {
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ cartao_token_id: "tok-1", mensagens: [] }), { status: 201 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await tokenizeCard({
+      numero_cartao: "4111111111111111",
+      nome_impressao: "Fulano",
+      cvv: "123",
+      mes_validade: 12,
+      ano_validade: 2028,
+    });
+    assertEquals(sentBody?.mes_validade, 12);
+    assertEquals(sentBody?.ano_validade, 2028);
+    assertEquals(result.cartao_token_id, "tok-1");
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("getTokenizedCard: GET /cartoes/{id} parseia CartaoTokenizado", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  const { restore } = stubFetch((url) => {
+    if (url.includes("/cartoes/tok-1")) {
+      return new Response(
+        JSON.stringify({
+          cartao: { cartao_token_id: "tok-1", ultimos4_digitos: "1111", status_cartao: "ATIVO" },
+          mensagens: [],
+        }),
+        { status: 200 },
+      );
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    const result = await getTokenizedCard("tok-1");
+    assertEquals(result.cartao.status_cartao, "ATIVO");
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("deleteTokenizedCard: DELETE /cartoes/{id}, 204 sem corpo", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+
+  let seenMethod = "";
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/cartoes/tok-1")) {
+      seenMethod = init?.method ?? "";
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+
+  try {
+    await deleteTokenizedCard("tok-1");
+    assertEquals(seenMethod, "DELETE");
   } finally {
     restore();
   }

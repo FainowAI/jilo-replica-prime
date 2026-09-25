@@ -100,8 +100,11 @@ export async function payWithVr(
   const { key_id: keyId, public_key: publicKey } = await getVrPublicKey();
   const cardEncrypted = await encryptCard(publicKey, card);
 
+  // `card.documento` já é o CPF (só dígitos) validado no dialog; a loja (Brasil) exige o CPF
+  // do comprador no pedido — vai em claro aqui (só ele) para virar localizedFields
+  // TAX_CREDENTIAL_BR no draft order (achado E2E 2026-09-25, ver shopify-draft-order.ts).
   const { data, error } = await supabase.functions.invoke<{ orderName: string; orderId: string }>("vr-checkout", {
-    body: { ...input, keyId, cardEncrypted },
+    body: { ...input, keyId, cardEncrypted, cpf: card.documento },
   });
 
   if (error) {

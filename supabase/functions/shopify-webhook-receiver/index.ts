@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
 import { SHIPPING_FREE_THRESHOLD } from "../_shared/shipping-constants.ts";
 import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
+import { readRawBody, verifyShopifyHmac } from "../_shared/shopify-webhook-body.ts";
 
 const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") ?? "";
 
@@ -18,19 +18,6 @@ const SHOPIFY_STORE_DOMAIN = Deno.env.get("SHOPIFY_STORE_DOMAIN")!;
 const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-async function verifyShopifyHmac(body: string, hmacHeader: string): Promise<boolean> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(SHOPIFY_WEBHOOK_SECRET),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  const computedHmac = btoa(String.fromCharCode(...new Uint8Array(signature)));
-  return computedHmac === hmacHeader;
-}
 
 function extractOrderData(payload: any) {
   const totalCents = Math.round(parseFloat(payload.total_price || "0") * 100);
@@ -311,7 +298,7 @@ serve(async (req) => {
     return new Response("Method not allowed", { status: 405 });
   }
 
-  const body = await req.text();
+  const body = await readRawBody(req);
   const hmacHeader = req.headers.get("x-shopify-hmac-sha256") || "";
   const topic = req.headers.get("x-shopify-topic") || "";
 
@@ -320,7 +307,7 @@ serve(async (req) => {
     console.error("[shopify-webhook-receiver] SHOPIFY_WEBHOOK_SECRET/SHOPIFY_CLIENT_SECRET ausentes — recusando webhook");
     return new Response("Unauthorized", { status: 401 });
   }
-  const valid = await verifyShopifyHmac(body, hmacHeader);
+  const valid = await verifyShopifyHmac(body, hmacHeader, SHOPIFY_WEBHOOK_SECRET);
   if (!valid) {
     console.error("Invalid HMAC signature");
     return new Response("Unauthorized", { status: 401 });

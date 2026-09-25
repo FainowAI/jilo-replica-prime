@@ -43,6 +43,7 @@ const VALID_BODY = {
   deliveryMethod: "jilo_own",
   keyId: "key-1",
   cardEncrypted: "YWJjZGVmZw==",
+  cpf: "52998224725",
 };
 
 function makeReq(bodyOverrides: Record<string, unknown> = {}, authHeader: string | null = "Bearer test-token"): Request {
@@ -171,12 +172,31 @@ Deno.test("401 quando getUser retorna null (sem sessão)", async () => {
 // 400 body com campo extra
 // ---------------------------------------------------------------------------
 
-Deno.test("400 quando o body tem campo extra (cpf)", async () => {
+Deno.test("400 quando o body tem campo extra (cartao)", async () => {
   const deps = buildDeps();
-  const res = await handleVrCheckout(makeReq({ cpf: "12345678900" }), deps);
+  const res = await handleVrCheckout(makeReq({ cartao: "1234" }), deps);
   assertEquals(res.status, 400);
   const json = await res.json();
   assertEquals(json.code, "invalid_body");
+});
+
+// ---------------------------------------------------------------------------
+// 422 CPF inválido
+// ---------------------------------------------------------------------------
+
+Deno.test("422 quando o cpf e invalido (digito verificador errado)", async () => {
+  const deps = buildDeps();
+  let insertCalled = false;
+  const originalInsert = deps.db.insertAuthorizing.bind(deps.db);
+  deps.db.insertAuthorizing = async (input) => {
+    insertCalled = true;
+    return originalInsert(input);
+  };
+  const res = await handleVrCheckout(makeReq({ cpf: "52998224726" }), deps);
+  assertEquals(res.status, 422);
+  const json = await res.json();
+  assertEquals(json.code, "invalid_cpf");
+  assertEquals(insertCalled, false);
 });
 
 // ---------------------------------------------------------------------------
@@ -429,8 +449,15 @@ Deno.test("falha no complete aciona refund e marca refunded_auto", async () => {
 Deno.test("happy path: aprova e grava breadcrumbs", async () => {
   const { db, rows } = makeFakeDb();
   const deps = buildDeps({ db });
+  let draftCpf: string | undefined;
+  const originalCreate = deps.draft.create;
+  deps.draft.create = async (input) => {
+    draftCpf = input.cpf;
+    return originalCreate(input);
+  };
   const res = await handleVrCheckout(makeReq(), deps);
   assertEquals(res.status, 200);
+  assertEquals(draftCpf, VALID_BODY.cpf);
   const json = await res.json();
   assertEquals(json.orderName, "#1001");
   assertEquals(json.orderId, "gid://shopify/Order/1");

@@ -41,6 +41,13 @@ export interface DraftOrderInput {
   shippingAddress: DraftOrderAddress;
   tags: string[];
   customAttributes: Record<string, string>;
+  /**
+   * CPF do comprador (11 dígitos, já validado pelo chamador). A loja (Brasil) exige
+   * essa informação em todo pedido — sem ela `draftOrderComplete` falha com
+   * userErrors `"Enter a valid CPF/CNPJ"` (achado no E2E de 2026-09-25). Vira
+   * `localizedFields TAX_CREDENTIAL_BR`, igual a todo pedido real do checkout Shopify.
+   */
+  cpf?: string;
 }
 
 // `DraftOrderAppliedDiscountInput.value` e `Float!` na Admin API — mandar string
@@ -99,6 +106,9 @@ export async function createDraftOrder(input: DraftOrderInput): Promise<{ id: st
       valueType: "FIXED_AMOUNT",
       title: input.discountTitle ?? "Desconto",
     };
+  }
+  if (input.cpf) {
+    draftInput.localizedFields = [{ key: "TAX_CREDENTIAL_BR", value: input.cpf }];
   }
 
   const data = await callShopifyAdmin<DraftOrderCreateResponse>(DRAFT_ORDER_CREATE_MUTATION, { input: draftInput });

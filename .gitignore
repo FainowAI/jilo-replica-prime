@@ -30,6 +30,8 @@ dist-ssr
 .env.*.local
 !.env
 !.env.example
+# Credenciais de homologação VR (runner supabase/functions/_hml/vr-homologacao.ts)
+.env.vr-hml
 
 #MCPs
 .mcp.json
@@ -45,3 +47,4 @@ mcp-logs.txt
 
 # Playwright MCP (screenshots/logs locais)
 .playwright-mcp/
+.env.vr-e2e

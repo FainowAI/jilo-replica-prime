@@ -329,23 +329,40 @@ export interface TransacaoAutorizada {
   mensagem?: string;
 }
 
-export async function createPayment(params: {
+/** Uma via de cartão por chamada: cartão cifrado (fluxo atual do checkout) OU token salvo (homologação). */
+export type VrPaymentParams = {
   valorCents: number;
   idTransacaoVan: string;
-  keyId: string;
-  cardEncrypted: string;
-}): Promise<TransacaoAutorizada> {
+} & ({ keyId: string; cardEncrypted: string; cartaoTokenId?: undefined } | {
+  cartaoTokenId: string;
+  keyId?: undefined;
+  cardEncrypted?: undefined;
+});
+
+/** Body `Transacao` do Swagger — compartilhado entre pagamento e reserva. */
+function buildTransacaoBody(params: VrPaymentParams, idFiliacao: string): Record<string, unknown> {
+  const hasEncrypted = !!(params.keyId && params.cardEncrypted);
+  const hasToken = !!params.cartaoTokenId;
+  if (hasEncrypted === hasToken) {
+    // hasEncrypted===hasToken cobre os dois jeitos de errar: nenhuma via ou as duas.
+    throw new Error("Informe exatamente uma via de cartão: keyId+cardEncrypted OU cartaoTokenId.");
+  }
+  return {
+    valor: params.valorCents,
+    id_filiacao: idFiliacao,
+    id_transacao_van: params.idTransacaoVan,
+    quantidade_parcelas: 1,
+    ...(hasToken
+      ? { cartao_token_id: params.cartaoTokenId }
+      : { key_id: params.keyId, cartao_dados_criptografados: params.cardEncrypted }),
+  };
+}
+
+export async function createPayment(params: VrPaymentParams): Promise<TransacaoAutorizada> {
   const idFiliacao = requireEnv("VR_ID_FILIACAO");
   return await vrFetch<TransacaoAutorizada>("/transacoes/pagamentos", {
     method: "POST",
-    body: JSON.stringify({
-      valor: params.valorCents,
-      id_filiacao: idFiliacao,
-      id_transacao_van: params.idTransacaoVan,
-      quantidade_parcelas: 1,
-      key_id: params.keyId,
-      cartao_dados_criptografados: params.cardEncrypted,
-    }),
+    body: JSON.stringify(buildTransacaoBody(params, idFiliacao)),
   });
 }
 
@@ -365,18 +382,123 @@ export async function getTransaction(idTransacaoOuVan: string): Promise<Consulta
   return await vrFetch<ConsultaTransacao>(`/transacoes/pagamentos/${encodeURIComponent(idTransacaoOuVan)}`);
 }
 
-/** Idempotente: consulta antes de estornar; no-op se já CANCELADA/CANCELAMENTO_PENDENTE. */
-export async function refund(params: { idTransacao: string; valorCents: number }): Promise<{ noop: boolean }> {
+/**
+ * Idempotente: consulta antes de estornar; no-op se já CANCELADA/CANCELAMENTO_PENDENTE.
+ * `valorCents` menor que o valor total da transação = reembolso PARCIAL — a VR aceita e a
+ * transação continua CONFIRMADA, então a guarda de idempotência acima não bloqueia um
+ * segundo parcial (só bloqueia repetir um estorno TOTAL já efetivado).
+ */
+export async function refund(
+  params: { idTransacao: string; valorCents: number },
+): Promise<{ noop: boolean; estorno?: TransacaoAutorizada }> {
   const consulta = await getTransaction(params.idTransacao);
   if (consulta.status === "CANCELADA" || consulta.status === "CANCELAMENTO_PENDENTE") {
     return { noop: true };
   }
   const idFiliacao = requireEnv("VR_ID_FILIACAO");
-  await vrFetch(`/transacoes/pagamentos/${encodeURIComponent(params.idTransacao)}/estornos`, {
+  const estorno = await vrFetch<TransacaoAutorizada>(`/transacoes/pagamentos/${encodeURIComponent(params.idTransacao)}/estornos`, {
     method: "POST",
     body: JSON.stringify({ valor: params.valorCents, id_filiacao: idFiliacao }),
   });
-  return { noop: false };
+  return { noop: false, estorno };
+}
+
+// ---------------------------------------------------------------------------
+// Reserva de valor (pré-autorização)
+// ---------------------------------------------------------------------------
+
+export interface TransacaoReserva {
+  id_transacao: string;
+  id_transacao_van?: string;
+  id_filiacao?: string;
+  valor: number;
+  data?: string;
+  status: VrTransactionStatus;
+  codigo_retorno: string;
+  codigo_autorizacao?: string;
+  mensagem?: string;
+}
+
+export async function createReservation(params: VrPaymentParams): Promise<TransacaoReserva> {
+  const idFiliacao = requireEnv("VR_ID_FILIACAO");
+  return await vrFetch<TransacaoReserva>("/transacoes/pagamentos/reservas", {
+    method: "POST",
+    body: JSON.stringify(buildTransacaoBody(params, idFiliacao)),
+  });
+}
+
+export async function getReservation(idTransacao: string): Promise<TransacaoReserva> {
+  return await vrFetch<TransacaoReserva>(`/transacoes/pagamentos/reservas/${encodeURIComponent(idTransacao)}`);
+}
+
+export type VrSettleReservationAcao = "efetivar" | "cancelar";
+
+/**
+ * PATCH `EfetivaReserva`. ponytail: a página "Descrição dos Recursos" do portal lista
+ * `PATCH /transacoes/pagamentos/reservas/{id-transacao}` (reservas antes do id) — diverge
+ * do Swagger 2.4.0, que usa `{id-transacao}/reservas` (id antes de reservas). Seguimos o
+ * Swagger por ser a fonte de verdade; se a HML devolver 404, trocar para o path do portal.
+ */
+export async function settleReservation(params: {
+  idTransacao: string;
+  acao: VrSettleReservationAcao;
+  valorCents: number;
+}): Promise<TransacaoAutorizada> {
+  const idFiliacao = requireEnv("VR_ID_FILIACAO");
+  return await vrFetch<TransacaoAutorizada>(`/transacoes/pagamentos/${encodeURIComponent(params.idTransacao)}/reservas`, {
+    method: "PATCH",
+    body: JSON.stringify({ acao: params.acao, valor: params.valorCents, id_filiacao: idFiliacao }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tokenização de cartão
+//
+// Não é usada no caminho do checkout do site (regra G4: sem cartão salvo na v1);
+// existe só para a homologação exigida pela VR (funcionalidade 5/5). O PAN viaja em
+// claro (protegido só pelo TLS) do servidor da function até a VR — não chamar a
+// partir do checkout sem antes revisar o escopo PCI-DSS do projeto.
+// ---------------------------------------------------------------------------
+
+export interface VrTokenizeCardInput {
+  numero_cartao: string;
+  nome_impressao: string;
+  cvv: string;
+  mes_validade: number; // 1-12
+  ano_validade: number; // AAAA
+}
+
+export interface CriacaoCartaoRetorno {
+  cartao_token_id: string;
+  mensagens: unknown[];
+}
+
+export interface CartaoTokenizado {
+  cartao_token_id: string;
+  bin?: string;
+  ultimos4_digitos?: string;
+  nome_impressao?: string;
+  mes_validade?: number;
+  ano_validade?: number;
+  status_cartao?: string;
+}
+
+export interface ConsultaCartaoRetorno {
+  cartao: CartaoTokenizado;
+  mensagens: unknown[];
+}
+
+export async function tokenizeCard(card: VrTokenizeCardInput): Promise<CriacaoCartaoRetorno> {
+  return await vrFetch<CriacaoCartaoRetorno>("/cartoes", { method: "POST", body: JSON.stringify(card) });
+}
+
+export async function getTokenizedCard(cartaoId: string): Promise<ConsultaCartaoRetorno> {
+  return await vrFetch<ConsultaCartaoRetorno>(`/cartoes/${encodeURIComponent(cartaoId)}`);
+}
+
+/** 204 sem corpo — `vrFetch` já trata resposta vazia. */
+export async function deleteTokenizedCard(cartaoId: string): Promise<void> {
+  await vrFetch<void>(`/cartoes/${encodeURIComponent(cartaoId)}`, { method: "DELETE" });
 }
 
 // ---------------------------------------------------------------------------

@@ -83,3 +83,104 @@ DECLINED = user decided not to pursue
 **Suggested improvement:** Na Fase 5/T-final do feature-builder, separar em comandos distintos: (1) commits, (2) atualizações locais (kanban/docs), (3) push sozinho e por último. Assim uma negação do push não bloqueia o resto e o usuário recebe um comando de uma linha para rodar. Registrar na skill que "push liberado pelo usuário" não garante que o harness libere.
 
 **Principle:** Ação de publicação (push, deploy, envio) vai sempre no próprio comando, isolada do trabalho local — o custo de uma negação deve ser só a publicação, nunca o trabalho já feito.
+
+### Observation 6: WhatsApp de cliente — usar Evolution API, não o MCP whatsapp local
+**Status:** OPEN
+
+**Date:** 2026-09-25
+**Session context:** Levantar o que o cliente (Jilo) falou sobre parceiros Alelo para escolher gateway e abrir tela de cadastro.
+**Skill:** New skill candidate: client-context-lookup (ou jilo-context)
+**Type:** internal
+**Phase/Area:** Coleta de contexto (e-mail + WhatsApp + docs do repo)
+
+**Issue:** O usuário disse que a lista de fornecedores estava "nos e-mails", mas ela estava no WhatsApp (mensagens de 16 e 22/09). O MCP `whatsapp` local tinha histórico só até 07/08, e a busca dele é difusa ("Alelo" casou com "paralelo"). O usuário precisou corrigir: "use o mcp da evolution". Na Evolution (instância `claude2`) a conversa estava completa. A lista também estava registrada no `state.md` e no board kanban (J-11), o que teria encurtado a busca.
+
+**Suggested improvement:** Em buscas de contexto de cliente, a ordem seria: (1) `state.md` + board kanban do projeto; (2) Gmail; (3) WhatsApp **via Evolution** (`evolution_find_chats` → filtrar JSON por nome/JID → `evolution_find_messages` → filtrar por data com python). O MCP `whatsapp` local não deve ser usado como fonte de verdade.
+
+**Principle:** Quando existem duas fontes para o mesmo canal, verifique qual está atualizada (data da última mensagem) antes de concluir que "não existe". E a fonte que o usuário cita ("está nos e-mails") é uma pista, não uma garantia: confira nos outros canais antes de responder que não achou.
+
+### Observation 7: Controle negativo para separar "credencial errada" de "credencial não provisionada"
+**Status:** OPEN
+**Date:** 2026-09-25
+**Session context:** Homologação de gateway de pagamento de terceiro; o usuário avisou de antemão "antes de me dizer que está errado, já temos as credenciais".
+**Skill:** feature-builder
+**Type:** open-source
+**Phase/Area:** Verificação de integrações externas / gate de bloqueio
+
+**Issue:** O gateway devolvia 401 "Client Id invalid" para credenciais legítimas. O argumento que convenceu foi mandar um identificador inventado, receber exatamente a mesma resposta e citar a documentação do próprio fornecedor ("a App só funciona após aprovação interna"). "Está dando 401", sozinho, é justamente o tipo de afirmação que o usuário já esperava ouvir e recusar.
+
+**Suggested improvement:** Na seção de bloqueios externos do feature-builder, sempre que um serviço de terceiro recusar credenciais, exigir: (1) chamada de controle com um identificador falso; (2) comparar as respostas byte a byte; (3) citar a documentação oficial que descreve o estado (ex.: pendente de aprovação); (4) só então declarar o bloqueio, com as três evidências.
+
+**Principle:** Uma falha só aponta a causa quando é comparada com um controle. Uma resposta idêntica para uma entrada válida e uma inválida prova que o sistema do outro lado ainda nem olha para a entrada, e isso encerra o debate "a credencial está errada?" sem depender de opinião.
+
+### Observation 8: javascript_tool — loops longos congelam a aba e a saída é filtrada/cortada
+**Status:** OPEN
+**Date:** 2026-09-25
+**Session context:** Leitura de um portal de desenvolvedor autenticado via extensão de browser.
+**Skill:** claude-in-chrome
+**Type:** open-source
+**Phase/Area:** Extração de conteúdo de páginas autenticadas
+
+**Issue:** Um crawl síncrono (await fetch em loop dentro do javascript_exec) estourou o timeout de CDP (45 s) e congelou o renderer. A saída do tool é cortada em ~1 KB e devolve "[BLOCKED: Cookie/query string data]" quando o texto contém strings com cara de credencial. O que funcionou: agendar o crawl com setTimeout guardando o resultado em window, consultar o progresso em chamadas curtas, e ler páginas longas com navigate + get_page_text, que devolve o texto inteiro.
+
+**Suggested improvement:** Acrescentar à skill claude-in-chrome: "Para trabalho demorado, agende com setTimeout e consulte o progresso; nunca faça await de um loop dentro de uma única chamada. Para ler conteúdo, prefira get_page_text a devolver o texto pelo javascript_tool (limite de ~1 KB e filtro de credenciais)."
+
+**Principle:** Ferramentas de automação têm tetos de tempo e de tamanho de saída que não aparecem na documentação. Para cada tipo de trabalho, escolha o canal cujo contrato o suporta: execução assíncrona com polling para tarefas longas, extração nativa de texto para leitura.
+
+### Observation 9: Helper de produção que loga só a contagem de erros esconde a causa raiz
+**Status:** OPEN
+**Date:** 2026-09-25
+**Session context:** E2E local do pagamento VR contra Shopify real; o draftOrderComplete falhou e o log dizia apenas "userErrors (1)".
+**Skill:** feature-builder
+**Type:** open-source
+**Phase/Area:** Padrão de logging em integrações externas / debugging
+
+**Issue:** Por regra de "nunca logar body de terceiro", o helper `shopify-draft-order.ts` registra só `userErrors (N)`. A mensagem real ("Enter a valid CPF/CNPJ") era o diagnóstico inteiro e ficou invisível; foi preciso instrumentar um interceptor de fetch no harness para lê-la. A regra protege contra PII no corpo de RESPOSTA de pagamento, mas `userErrors.message` da Shopify é texto de validação, sem PII.
+
+**Suggested improvement:** No feature-builder, seção de integrações externas: distinguir "corpo da resposta" (não logar) de "mensagens de erro estruturadas do provedor" (logar, truncadas, sem campos de PII). Regra prática: se o erro vem num campo `message`/`code` de um envelope de erro documentado, ele é diagnóstico, não dado — logue.
+
+**Principle:** Uma política de "não logar" aplicada em bloco converte cada falha do provedor em um mistério que só se resolve reproduzindo com instrumentação. O custo de um log a mais é zero; o custo de um log a menos é uma sessão inteira de depuração.
+
+### Observation 10: Endurecer validação de auth sem conferir se o tráfego legítimo ainda passa
+**Status:** OPEN
+
+**Date:** 2026-09-25
+**Session context:** Investigação de pedido Shopify "expirado" relatado pela cliente; ao cruzar com o espelho no Supabase, descobriu-se que o receiver de webhooks recusa 100% das chamadas com "Invalid HMAC signature" desde que o fix fail-closed (commit db9bcc2) foi para produção.
+**Skill:** feature-builder (fase de verificação) / security-auditor
+**Type:** open-source
+**Phase/Area:** Verificação pós-deploy de mudanças de segurança
+
+**Issue:** Um fix de segurança correto (webhook passou de "pula HMAC se não houver secret" para fail-closed, com fallback para outro secret) foi entregue e verificado só por testes/leitura de código. Ninguém conferiu os logs depois do deploy: toda chamada legítima da Shopify passou a levar 401, e o espelho de pedidos, o despacho de entrega e a gravação de endereço pararam em silêncio. Só apareceu por acaso, dias depois, investigando outro problema.
+
+**Suggested improvement:** Na verificação do feature-builder e no checklist do security-auditor, sempre que a mudança endurecer autenticação/assinatura de um endpoint de entrada (webhook, callback, API pública), exigir uma prova de que o tráfego legítimo ainda passa: um evento real ou de teste do provedor aceito com 2xx, ou uma consulta aos logs da função depois do deploy (zero 401 ou nenhum pico de 401). Sem essa prova, a entrega fica "não verificada".
+
+**Principle:** Uma checagem fail-closed transforma um erro de configuração em queda total silenciosa. Um endurecimento de segurança só está verificado quando o caminho legítimo foi exercitado de ponta a ponta. Provar que o caminho malicioso é bloqueado não basta.
+
+### Observation 11: Webhook HMAC — verificar gzip antes de suspeitar do segredo
+**Status:** OPEN
+**Date:** 2026-09-25
+**Session context:** Receiver de webhooks Shopify em Supabase Edge recusava toda entrega real com "Invalid HMAC"; o segredo estava correto.
+**Skill:** feature-builder
+**Type:** open-source
+**Phase/Area:** Integrações externas / webhooks assinados
+
+**Issue:** A investigação percorreu 4 hipóteses sobre o SEGREDO (webhook secret sobrescrevendo, app diferente, chave rotacionada antiga/nova, encoding UTF-8) antes de testar o TRANSPORTE. A causa era `Content-Encoding: gzip`: o runtime (Deno) não descomprime o body, `req.text()` devolve os bytes gzip como UTF-8 com U+FFFD, e o HMAC — assinado sobre o JSON descomprimido — nunca bate. Sondas pequenas (<1 KB) passavam porque o provedor só comprime payloads grandes, o que mascarou o bug e reforçou a hipótese errada. O experimento decisivo foi trivial: mesmo body, mesma chave, com e sem gzip.
+
+**Suggested improvement:** No checklist de "webhook assinado recusa tudo mas o segredo parece certo", colocar como PRIMEIRO passo: reenviar o mesmo body assinado com e sem `Content-Encoding: gzip` e com tamanho ≥ o do payload real. E na implementação de qualquer receiver: ler `arrayBuffer()`, descomprimir conforme `Content-Encoding`, verificar HMAC sobre o resultado — nunca `req.text()` direto.
+
+**Principle:** Quando um sistema recusa a entrada real mas aceita a sua réplica, a diferença está no que você não replicou — aqui, tamanho e compressão. Réplicas pequenas e "limpas" testam o caminho feliz do runtime, não o caminho que o provedor de verdade usa. Replique o payload real em tamanho e encoding antes de mexer em credenciais.
+
+### Observation 12: Pedido vindo de doc externo do cliente — reconciliar cada item com git log -S antes de planejar
+**Status:** OPEN
+
+**Date:** 2026-09-25
+**Session context:** Planejar correções de site + descrições de pratos a partir de um Google Doc do cliente (lido via MCP do Drive) e da Shopify.
+**Skill:** feature-builder (Fase 0.A ingestão / Fase 2.6 reconciliação no modo avulso)
+**Type:** open-source
+**Phase/Area:** Ingestão de fonte externa
+
+**Issue:** O doc do cliente foi criado semanas antes e ganhou itens novos no mesmo arquivo; o primeiro item (texto da faixa de entrega) já tinha sido aplicado num commit antigo. Só apareceu porque o grep pelo texto-alvo achou o texto já no código; `git log -S"<texto>"` confirmou o commit. Além disso, o export do doc veio cortado no meio de uma palavra e o arquivo tinha sido editado minutos antes da leitura (o autor podia ainda estar escrevendo).
+
+**Suggested improvement:** Na Fase 2.6 do modo avulso, quando a entrada é um documento externo (Drive/Notion/PDF): (1) para cada item com texto-alvo explícito, grep o texto-alvo e rode `git log -S` — já presente = FEITO; (2) compare createdTime × modifiedTime do doc e releia logo antes de apresentar o plano; (3) se o texto termina truncado, marque o item como bloqueado e pergunte, sem inferir.
+
+**Principle:** Documento de cliente é cumulativo e vivo; tratá-lo como lista nova refaz trabalho feito e planeja sobre um texto que ainda está mudando.

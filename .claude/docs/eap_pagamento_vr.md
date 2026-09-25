@@ -84,7 +84,7 @@ Endpoints que o plano usa:
 |---|---|---|
 | G1 | Desconto PIX (5%) vale para VR? Cupom manual (BEMVINDO10) vale? Kit vale? | **Sim para os três.** VR recebe os mesmos 5% do Pix (cupom `PIX5` aplicado ao escolher VR). Kit e cupom manual vêm do cart Shopify; o valor cobrado é o `totalAmount` do cart. |
 | G2 | VR disponível no "Comprar agora" da página de produto? | **Não** — só em `/carrinho`, onde existem endereço, frete e gates. |
-| G3 | CPF obrigatório para pagar com VR? | **Sim** — é o `documento` do titular e viaja **só dentro do blob criptografado**. Pré-preenche de `profiles.cpf`; **não grava de volta** (o titular do cartão pode não ser o usuário — auditoria M4). Validação por dígito verificador. |
+| G3 | CPF obrigatório para pagar com VR? | **Sim** — é o `documento` do titular e viaja **só dentro do blob criptografado**. Pré-preenche de `profiles.cpf`; **não grava de volta** (o titular do cartão pode não ser o usuário — auditoria M4). Validação por dígito verificador. **2026-09-25:** o CPF também vai em claro no body do `vr-checkout` (só ele, validado no servidor por `_shared/cpf.ts`) → vira `localizedFields TAX_CREDENTIAL_BR` no draft order. Achado no E2E: a loja (Brasil) exige essa informação em todo pedido — `draftOrderComplete` falhava com `"Enter a valid CPF/CNPJ"` sem ela; todo pedido real do checkout Shopify já carrega esse campo. Continua sem persistência nossa (não grava em `profiles`/`vr_transactions`, nunca logado). |
 | G4 | Guardar cartão / tokenizar (`POST /cartoes`) para compras futuras? | **Não na v1.** Nada de dado de cartão em banco ou log. Tokenização é upgrade path. |
 | G5 | Pagamento aprovado na VR mas criação do pedido Shopify falhou — o que fazer? | **Draft order antes da cobrança** (auditoria A1): cria o draft, confere o total, cobra na VR e só então completa. Falha antes de cobrar não envolve dinheiro; falha só no `draftOrderComplete` ⇒ **estorno automático** (`refunded_auto`) + mensagem "não conseguimos concluir, o valor foi estornado". Invariante: ou cobra E cria pedido, ou nenhum. Reserva/efetivação em 2 fases é o upgrade path. |
 | G6 | Marketing já promete Alelo/Sodexo/VR/Ticket/Flash | Ajustar para **"VR"** (Refeição/Alimentação) e remover as outras bandeiras (ou "em breve") no ticket de produção. |
@@ -127,7 +127,10 @@ Endpoints que o plano usa:
         POR UNIDADE, medido em 2026-09-14), acceptAutomaticDiscounts:false, email/customerId do JWT/profile,
         shippingAddress (do addresses), tags ['vr' (+ 'vr-test' fora de prod)],
         customAttributes: selected_address_id, delivery_method, uber_quote_id|delivery_label (omitido fora
-        de prod), vr_id_transacao, vr_codigo_autorizacao }
+        de prod), vr_id_transacao, vr_codigo_autorizacao,
+        localizedFields TAX_CREDENTIAL_BR = CPF do body (obrigatório na loja BR; achado E2E 2026-09-25 —
+        todo pedido real do checkout Shopify já carrega esse campo, sem ele draftOrderComplete falha com
+        "Enter a valid CPF/CNPJ") }
       assert draft.totalPrice*100 == valor  (fecha Kit/cupom/frete)  → grava shopify_draft_order_id
    7. VR POST /transacoes/pagamentos {valor, id_filiacao, id_transacao_van, quantidade_parcelas:1,
                                        key_id, cartao_dados_criptografados}   (timeout 30 s, SEM retry)
