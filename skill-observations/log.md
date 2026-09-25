@@ -184,3 +184,33 @@ DECLINED = user decided not to pursue
 **Suggested improvement:** Na Fase 2.6 do modo avulso, quando a entrada é um documento externo (Drive/Notion/PDF): (1) para cada item com texto-alvo explícito, grep o texto-alvo e rode `git log -S` — já presente = FEITO; (2) compare createdTime × modifiedTime do doc e releia logo antes de apresentar o plano; (3) se o texto termina truncado, marque o item como bloqueado e pergunte, sem inferir.
 
 **Principle:** Documento de cliente é cumulativo e vivo; tratá-lo como lista nova refaz trabalho feito e planeja sobre um texto que ainda está mudando.
+
+### Observation 13: Antes de afirmar que um gerador "não roda" ou "quebra um artefato", checar hooks pre* e o artefato commitado
+**Status:** OPEN
+
+**Date:** 2026-09-25
+**Session context:** Correção de textos; cardápio duplicado num script gerador de arquivos SEO/llms.
+**Skill:** feature-builder (Fase 2.5 impacto / Fase 3 plano)
+**Type:** open-source
+**Phase/Area:** Análise de impacto de scripts de geração
+
+**Issue:** O plano afirmou "não vou rodar o gerador; sem o token ele regeneraria o sitemap sem as URLs de produto". Na verificação, `npm run build` rodou o gerador sozinho via `prebuild` (e o deploy da plataforma faz o mesmo), e o sitemap commitado já tinha só as rotas estáticas — as duas premissas estavam erradas. A consequência prática também mudou: o template do script é a fonte de verdade, e os arquivos gerados são sobrescritos a cada build.
+
+**Suggested improvement:** Na Fase 2.5, quando a mudança toca arquivo gerado ou script gerador: (1) `grep '"pre' package.json` para achar hooks pre*/post* que o rodam implicitamente; (2) inspecionar o artefato commitado (`git show HEAD:<arquivo>`) antes de prever o que o script "quebraria"; (3) editar sempre o template e regenerar, nunca só a saída.
+
+**Principle:** Previsão sobre o que um script faz vale menos que olhar o manifesto e o artefato atual — lifecycle hooks rodam código que ninguém chamou explicitamente.
+
+### Observation 14: Digitar no admin da Shopify sem foco no campo dispara atalhos de teclado
+**Status:** OPEN
+
+**Date:** 2026-09-25
+**Session context:** Criando um fluxo no Shopify Flow pelo Claude in Chrome; o texto foi digitado no campo "Diga o que você quer criar", mas o foco não estava no input.
+**Skill:** claude-in-chrome
+**Type:** open-source
+**Phase/Area:** Digitação em SPAs com atalhos globais
+
+**Issue:** O clique no campo não pegou foco (a janela tinha acabado de voltar a renderizar), e o texto longo foi interpretado como atalhos de teclado do admin da Shopify. Isso abriu em cascata "Todas as lojas", "Adicionar página" e "Adicionar coleção", e a aba travou. Nada foi salvo, mas foi preciso conferir pela API se nada tinha sido criado.
+
+**Suggested improvement:** Antes de digitar texto longo em app com atalhos globais (Shopify admin, Gmail, GitHub, Linear), confirmar que o foco está no input: via find/read_page, conferir que o elemento focado é o campo, ou digitar 1 caractere e ler o valor antes de mandar o resto. Preferir form_input com ref, que escreve direto no elemento, em vez de computer.type.
+
+**Principle:** Em SPA com atalhos de uma tecla, computer.type sem foco garantido vira uma sequência de comandos. Escrever direto no elemento (ref) é mais seguro que simular teclado.

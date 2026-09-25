@@ -1,10 +1,11 @@
 import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
 
-// Achado 2026-09-14→25: payloads reais da Shopify (~7 KB) chegam com
-// Content-Encoding: gzip. O runtime (Deno.serve) NÃO descomprime — req.text()
-// devolvia os bytes gzip crus decodificados como UTF-8 (lixo com U+FFFD), e o
-// HMAC calculado sobre esse lixo nunca batia com o header. Resultado: todo
-// webhook real era recusado como "Invalid HMAC signature" desde 14/09.
+// Leitura robusta do body de um webhook assinado: lê os BYTES (arrayBuffer), descomprime
+// se o provedor mandar Content-Encoding gzip/deflate (o runtime Deno não descomprime
+// sozinho — req.text() devolveria os bytes comprimidos como UTF-8 inválido) e só então
+// decodifica. Hoje a Shopify envia os pedidos (~7 KB) SEM compressão (verificado em
+// produção em 2026-09-25: enc=none, JSON íntegro); a descompressão é defesa para o dia
+// em que ela passar a comprimir. Nunca loga o conteúdo.
 export async function readRawBody(req: Request): Promise<string> {
   const buf = await req.arrayBuffer();
   const encoding = (req.headers.get("content-encoding") || "").toLowerCase();
@@ -42,6 +43,11 @@ function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+// Achado 2026-09-25 (causa real do "Invalid HMAC" desde a v37 de 14/09): o app Shopify
+// tinha DUAS chaves secretas ativas (Antiga 03/03, Nova 27/05); a Shopify assina os
+// webhooks com a Antiga e o cofre do Supabase tinha a Nova. Provado recalculando o HMAC
+// sobre o body real capturado: só a Antiga bate. Correção é operacional (revogar a chave
+// que a Shopify não deve usar, ou alinhar o cofre), não de código.
 export async function verifyShopifyHmac(
   body: string,
   hmacHeader: string,
