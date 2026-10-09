@@ -13,7 +13,7 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `supabase/functions/shopify-customer-sync/index.ts` | Edge function Deno com `verify_jwt: true`. Valida JWT, extrai email do user, chama `customerCreate` GraphQL no Shopify com upsert por email, grava `shopify_customer_id` em `profiles` |
+| `supabase/functions/shopify-customer-sync/index.ts` | Edge function Deno com `verify_jwt: true`. Valida JWT, extrai email do user, chama `upsertShopifyCustomer` (busca por email + `customerUpdate`/`customerCreate`), grava `shopify_customer_id` em `profiles` |
 | `supabase/functions/shopify-webhook-receiver/index.ts` | Edge function Deno que valida HMAC do Shopify, registra idempotência em `webhook_events` e faz upsert do espelho do pedido em `orders` |
 | `src/hooks/useProfile.ts` | `useUpdateProfile` dispara `supabase.functions.invoke("shopify-customer-sync")` quando `shopify_customer_id === null` após update bem-sucedido |
 
@@ -34,7 +34,7 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
 1. Cada profile no Supabase tem exatamente 1 customer correspondente no Shopify, identificado pelo email
 2. O campo `shopify_customer_id` só é preenchido pela edge function — nunca pelo frontend
 3. O sync é idempotente: se o profile já tem `shopify_customer_id`, a function retorna `{status: "already_synced"}` sem chamar o Shopify
-4. Se o customer já existe no Shopify com aquele email, a mutation faz upsert (argumento `identifier: { emailAddress }`)
+4. O upsert é feito pelo helper `supabase/functions/_shared/shopify-customer-upsert.ts`: busca `customers(query: "email:...")`; se achou, `customerUpdate` (nome, phone, tags = união com as existentes, note intacta) e retorna `action: "linked"`; senão `customerCreate` e `action: "created"`. `customerCreate` NÃO aceita `identifier` na Admin API 2025-10 (o uso antigo causava 502 em todo login). Phone inválido (userError no campo phone) → refaz 1x sem phone. Backfill de profiles órfãos: `supabase/functions/_hml/backfill-customer-sync.ts [--dry-run]`
 5. Falha de sync NÃO bloqueia UX — o perfil é salvo normalmente, erro só vai pro console
 6. Customers sincronizados ganham tags `["jilo-customer", "source:supabase"]` no Shopify
 
@@ -48,20 +48,19 @@ Todo perfil no Supabase tem um customer correspondente no Shopify, identificado 
    - Valida JWT
    - Busca profile via service_role
    - Se `shopify_customer_id` existe → retorna early (idempotência)
-   - Monta input para `customerCreate` (email, firstName, lastName split, phone, tags)
-   - Chama GraphQL Admin API com upsert por email
+   - Monta input (email, firstName, lastName split, phone, tags)
+   - Chama `upsertShopifyCustomer` (busca por email → update ou create)
    - Se sucesso, atualiza `profiles.shopify_customer_id` com o GID retornado
 7. Frontend re-invalida a query de profile e mostra o campo populado
 
 ## Respostas da edge function
-- **200** `{"status":"synced", "shopify_customer_id":"gid://shopify/Customer/123"}` — sucesso
+- **200** `{"status":"synced", "action":"linked|created", "shopify_customer_id":"gid://shopify/Customer/123"}` — sucesso
 - **200** `{"status":"already_synced", "shopify_customer_id":"..."}` — idempotente
 - **401** JWT inválido/expirado
-- **400** userErrors de validação Shopify
-- **502** Erro de rede ou GraphQL error
+- **502** `{"error":"Shopify upsert failed"}` — erro de rede, GraphQL ou userErrors (detalhe só no log, sem PII)
 
 ## Webhook de pedidos e entrega
-1. `shopify-webhook-receiver` recebe tópicos como `orders/create`, `orders/paid` e `orders/fulfilled`
+1. `shopify-webhook-receiver` recebe tópicos como `orders/create`, `orders/paid`, `orders/updated`, `orders/cancelled` e `orders/fulfilled`
 2. Antes de processar, registra o evento em `webhook_events` usando `(source, event_type, external_id)` para idempotência
 3. Em `orders/create`, faz upsert do espelho em `public.orders` com totais, cliente, endereço e `shopify_checkout_token`
 4. A migration `20260429000000_orders_uber_delivery_fields.sql` adiciona ao espelho do pedido os campos de entrega `delivery_method`, `uber_quote_id`, `uber_delivery_id`, `uber_tracking_url`, `shipping_fee_cents` e `delivery_status`
@@ -90,7 +89,10 @@ Além do `useUpdateProfile` (save de perfil), o `shopify-customer-sync` agora di
 O `shopify-customer-sync` passou a anexar o **endereço default** (tabela `addresses`, `is_default = true`) via mutation SEPARADA `customerAddressCreate(customerId, address: MailingAddressInput, setAsDefault: true)` — `CustomerInput` não tem `addresses` na API 2025-10. FAIL-SOFT (erro de endereço nunca bloqueia o customer). Bairro → `address2`, UF → `provinceCode`, `countryCode: BR`. **CPF nunca é enviado** (LGPD). Fallback de nome via `user_metadata.full_name` no signup. Nenhum log de PII.
 
 ### Captação de pedidos (A.2 — R67/R68/R69)
-- **Webhooks** `orders/create|paid|fulfilled` são registrados pela nova edge **`register-shopify-webhooks`** (idempotente, app custom via OAuth client_credentials → HMAC bate com `SHOPIFY_WEBHOOK_SECRET`; guard `Authorization: Bearer <SERVICE_ROLE_KEY>`; `verify_jwt: false`). ⚠️ **NÃO** registrar pelo MCP Shopify do Claude Desktop ("Shopify Claude Connector App", apiKey `bff99d…`, app DIFERENTE) nem pelo Admin UI — segredo de assinatura divergente → 401 no receiver. O Connector App também roda API mais antiga (rejeita o arg `identifier` do `customerCreate`).
+- **Webhooks** `orders/create|paid|updated|cancelled|fulfilled` são registrados pela nova edge **`register-shopify-webhooks`** (idempotente, app custom via OAuth client_credentials → HMAC bate com `SHOPIFY_WEBHOOK_SECRET`; guard `Authorization: Bearer <SERVICE_ROLE_KEY>`; `verify_jwt: false`). ⚠️ **NÃO** registrar pelo MCP Shopify do Claude Desktop ("Shopify Claude Connector App", apiKey `bff99d…`, app DIFERENTE) nem pelo Admin UI — segredo de assinatura divergente → 401 no receiver. O Connector App também roda API mais antiga (rejeita o arg `identifier` do `customerCreate`).
+- **Expirado/cancelado/estornado (`orders/updated` + `orders/cancelled`)** — pagamento expirado (`financial_status: expired`/`voided`) não gera `orders/paid`; o espelho ficava `pending` para sempre. Agora ambos os tópicos fazem `update` (nunca upsert) em `orders` com `{status, payment_status}` de `mapFinancialStatus` (`_shared/order-status-map.ts`): `cancelled_at`/`voided`/`expired` → `cancelled`; `refunded`/`partially_refunded` → `refunded`; `authorized`/`partially_paid`/outros → `pending`. `paid` é ignorado aqui (quem trata é `orders/paid`, para não pular o despacho Uber). Nunca rebaixa `dispatched`/`delivered` (filtra `status IN pending/paid/preparing`; mapeamento `pending` só atualiza linhas `pending`). `payment_status` desconhecido vira `pending`; o CHECK foi expandido em `20261009180000_orders_payment_status_expand.sql`.
+- **Idempotência de `orders/updated`** — dispara várias vezes por pedido, então o `external_id` em `webhook_events` é `<order id>:<updated_at>` (os demais tópicos seguem usando só o id).
+- JSON inválido com HMAC válido retorna 400 `{status:"bad_json"}`; erro do upsert em `orders/create` agora é logado.
 - **`orders/paid` virou upsert defensivo** — se chegar antes de `orders/create`, cria a linha em vez de perdê-la.
 - **`order_items` normalizado** é populado em ambos os eventos (`syncOrderItems`, delete-then-insert por `order_id`), excluindo a variant fantasma de frete.
 

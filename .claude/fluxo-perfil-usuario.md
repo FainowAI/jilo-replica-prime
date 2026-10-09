@@ -47,7 +47,7 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 ### Edge function (fonte dos pedidos)
 | Arquivo | Descrição |
 |---------|-----------|
-| `supabase/functions/customer-orders/index.ts` | Busca os pedidos do cliente logado na **Shopify Admin API** (`orders(query:"customer_id:...")`). Identidade vem do JWT (`getUser`), nunca do body (anti-IDOR). Reusa `_shared/shopify-admin-auth.ts`. `verify_jwt=true`. Mapeia o pedido Shopify → o shape que a UI já consome (order + items + history derivado). |
+| `supabase/functions/customer-orders/index.ts` | Busca os pedidos do cliente logado na **Shopify Admin API** (`orders(query:"customer_id:...")`; se vier 0 pedidos, refaz por `email:` — pedido guest com o mesmo e-mail). Identidade vem do JWT (`getUser`), nunca do body (anti-IDOR). Reusa `_shared/shopify-admin-auth.ts`. `verify_jwt=true`. Mapeia o pedido Shopify → o shape que a UI já consome (order + items + history derivado). |
 
 ## Tabelas do banco (ver `fluxo-infraestrutura.md` para schema completo)
 - `profiles` — dados pessoais + `shopify_customer_id` + `default_shipping_address_id`

@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Minus, Plus, ShoppingBag, Zap, Star, ShieldCheck, ThermometerSnowflake, Leaf } from "lucide-react";
-import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, appendReturnToCheckoutUrl } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCT_BY_HANDLE_QUERY, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, setCartBuyerIdentity, appendReturnToCheckoutUrl } from "@/lib/shopify";
 import { SITE_URL } from "@/config/site";
 import { useCartStore } from "@/stores/cartStore";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -67,6 +68,7 @@ const getMetafield = (metafields: any[] | null | undefined, key: string): string
 export default function Product() {
   const { handle } = useParams<{ handle: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const addItem = useCartStore((state) => state.addItem);
   const getCheckoutUrl = useCartStore((state) => state.getCheckoutUrl);
   const isLoading = useCartStore((state) => state.isLoading);
@@ -194,6 +196,11 @@ export default function Product() {
       await setCartAttributes(cartId, [
         { key: "return_url", value: SITE_URL },
       ]);
+      // R81: amarra o pedido ao customer do login; refresh renova o checkoutUrl (R80).
+      if (user?.email) {
+        await setCartBuyerIdentity(cartId, { email: user.email }).catch(() => {});
+      }
+      await useCartStore.getState().refreshCartDetails().catch(() => {});
     }
 
     const checkoutUrl = getCheckoutUrl();

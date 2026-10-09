@@ -7,7 +7,7 @@ const SHOPIFY_API_VERSION = Deno.env.get("SHOPIFY_API_VERSION") ?? "2025-10";
 const SHOPIFY_CLIENT_ID = Deno.env.get("SHOPIFY_CLIENT_ID")!;
 const SHOPIFY_CLIENT_SECRET = Deno.env.get("SHOPIFY_CLIENT_SECRET")!;
 
-const TOPICS = ["ORDERS_CREATE", "ORDERS_PAID", "ORDERS_FULFILLED"] as const;
+const TOPICS = ["ORDERS_CREATE", "ORDERS_PAID", "ORDERS_UPDATED", "ORDERS_CANCELLED", "ORDERS_FULFILLED"] as const;
 
 const EXISTING_QUERY = `query existingWebhooks {
   webhookSubscriptions(first: 50) {

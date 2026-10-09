@@ -135,6 +135,8 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 
 23. **PIX efêmero reconciliado no load (Sprint 5.1, R57)**: `cartStore.reconcileDiscountsOnLoad()` roda 1×/sessão (flag `pixReconciled`), removendo cupons PIX (`PIX3`/`PIX5`, de `src/config/pixCoupons.ts`) persistidos no Shopify Cart e reaplicando apenas os manuais (ex.: `100teste`), que sobrevivem. Disparado no mount do `Carrinho.tsx` (com `syncCart`/`refreshCartDetails`) e na abertura do `CartDrawer` (com `syncCart`). Garante que o cliente que reabre o site não fique com PIX grudento de sessão anterior sem reselecionar o método.
 
+24. **buyerIdentity no checkout (R81)**: o cart recebe `buyerIdentity` (e-mail/telefone do login, `setCartBuyerIdentity` em `shopify.ts`) antes do checkout, e o `checkoutUrl` é renovado (`refreshCartDetails`) depois de todas as mutações (R80); isso amarra o pedido ao customer que "Meus pedidos" procura. `Carrinho.tsx` concentra tudo em `prepareCartForCheckout()`; "Comprar agora" (`Product.tsx`) faz o mesmo só com e-mail. Telefone vai em E.164 (+55…) ou é omitido. Teste: `src/lib/buyerIdentity.test.ts`.
+
 ## Fluxo do usuário
 
 ### Adicionar ao carrinho

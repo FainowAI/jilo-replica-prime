@@ -628,6 +628,41 @@ export async function setCartAttributes(
   return { success: true };
 }
 
+const CART_BUYER_IDENTITY_UPDATE_MUTATION = `
+  mutation cartBuyerIdentityUpdate($cartId: ID!, $buyerIdentity: CartBuyerIdentityInput!) {
+    cartBuyerIdentityUpdate(cartId: $cartId, buyerIdentity: $buyerIdentity) {
+      cart { id }
+      userErrors { field message }
+    }
+  }
+`;
+
+// Limpa campos vazios. O telefone vai em E.164 (+55...); se não der pra normalizar é
+// omitido, senão a Shopify rejeitaria a mutation inteira e o e-mail se perderia junto.
+export function buildBuyerIdentity(identity: { email?: string | null; phone?: string | null }) {
+  const email = identity.email?.trim();
+  const digits = (identity.phone ?? "").replace(/\D/g, "");
+  const national = digits.startsWith("55") && digits.length >= 12 ? digits.slice(2) : digits;
+  const phone = national.length === 10 || national.length === 11 ? `+55${national}` : undefined;
+  return { ...(email && { email }), ...(phone && { phone }), countryCode: "BR" };
+}
+
+export async function setCartBuyerIdentity(
+  cartId: string,
+  identity: { email?: string | null; phone?: string | null }
+): Promise<{ success: boolean }> {
+  const data = await storefrontApiRequest(CART_BUYER_IDENTITY_UPDATE_MUTATION, {
+    cartId,
+    buyerIdentity: buildBuyerIdentity(identity),
+  });
+  const userErrors = data?.data?.cartBuyerIdentityUpdate?.userErrors || [];
+  if (userErrors.length > 0) {
+    console.error("setCartBuyerIdentity errors:", userErrors);
+    return { success: false };
+  }
+  return { success: true };
+}
+
 const CART_DELIVERY_ADDRESSES_ADD_MUTATION = `
   mutation cartDeliveryAddressesAdd($cartId: ID!, $addresses: [CartSelectableAddressInput!]!) {
     cartDeliveryAddressesAdd(cartId: $cartId, addresses: $addresses) {

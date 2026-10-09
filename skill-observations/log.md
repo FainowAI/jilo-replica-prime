@@ -214,3 +214,45 @@ DECLINED = user decided not to pursue
 **Suggested improvement:** Antes de digitar texto longo em app com atalhos globais (Shopify admin, Gmail, GitHub, Linear), confirmar que o foco está no input: via find/read_page, conferir que o elemento focado é o campo, ou digitar 1 caractere e ler o valor antes de mandar o resto. Preferir form_input com ref, que escreve direto no elemento, em vez de computer.type.
 
 **Principle:** Em SPA com atalhos de uma tecla, computer.type sem foco garantido vira uma sequência de comandos. Escrever direto no elemento (ref) é mais seguro que simular teclado.
+
+### Observation 15: xlsx recalc on Windows without LibreOffice — use Excel COM
+**Status:** OPEN
+**Date:** 2026-09-29
+**Session context:** Built a provider/pricing comparison workbook with formula-driven volume simulation
+**Skill:** xlsx (route to xlsx-extras)
+**Type:** open-source
+**Phase/Area:** Recalculate (mandatory) section
+
+**Issue:** recalc.py depends on LibreOffice, which was not installed on the Windows host; openpyxl was also missing. The pure-Python 'formulas' package hung past 120s. Excel was installed, and PowerShell COM (Workbooks.Open → CalculateFull → scan UsedRange for '#' text → Save) recalculated, verified zero errors and stored cached values in seconds.
+
+**Suggested improvement:** In the Recalculate section, add a fallback: if soffice is absent and Excel is available on Windows, recalc and error-scan via Excel COM from PowerShell; skip the 'formulas' package.
+
+**Principle:** Verification steps that depend on one tool need a documented fallback for the host's native tooling, or the step gets skipped silently.
+
+### Observation 16: eap-project-planner sem Fase 0 em sessao autonoma
+**Status:** OPEN
+**Date:** 2026-10-09
+**Session context:** Plano de migracao Jilo Supabase -> Shopify, pedido com "me entregue o plano" em sessao autonoma
+**Skill:** eap-project-planner
+**Type:** internal
+**Phase/Area:** FASE 0 (briefing iterativo obrigatorio)
+
+**Issue:** A skill exige rodadas de perguntas antes de qualquer EAP, mas o usuario pediu a entrega direta e nao estava presente. O agente substituiu o briefing por 13 sub-agentes de levantamento (codigo, banco, e-mail, WhatsApp, docs Shopify) e registrou as decisoes em aberto como "pontos a validar" no documento.
+
+**Suggested improvement:** Adicionar na Fase 0 um modo "briefing por evidencia": quando o usuario pede a entrega direta e ha fontes (repo, banco, e-mails, chats), coletar os 8 blocos a partir das fontes e listar no documento as perguntas nao respondidas com a recomendacao Fainow, em vez de bloquear.
+
+**Principle:** Gate de perguntas e util quando ha interlocutor; sem interlocutor, o gate vira bloqueio. A skill deve dizer o que fazer quando a resposta nao pode vir do usuario.
+
+### Observation 17: resultado de sub-agente acima de 16k e truncado
+**Status:** OPEN
+**Date:** 2026-10-09
+**Session context:** 13 sub-agentes em paralelo devolvendo relatorios longos
+**Skill:** feature-builder (orquestracao de sub-agentes) e eap-project-planner
+**Type:** open-source
+**Phase/Area:** Despacho de sub-agentes de levantamento
+
+**Issue:** 10 dos 13 relatorios voltaram truncados ("exceeded 16000 characters"). Foi preciso mandar uma segunda mensagem a cada agente pedindo para gravar o relatorio completo em arquivo no scratchpad. Alguns agentes nao tinham Write e falharam ao gravar acentos pelo shell.
+
+**Suggested improvement:** No brief de todo sub-agente de levantamento, pedir desde o inicio: "grave o relatorio completo em <scratchpad>/<nome>.md e devolva so um resumo de ate 10 linhas". Para agentes sem Write, orientar gravacao via heredoc sem acentos.
+
+**Principle:** O canal de retorno do sub-agente tem limite; o arquivo nao tem. Relatorio longo vai para arquivo por padrao, e o retorno e so o ponteiro mais o resumo.

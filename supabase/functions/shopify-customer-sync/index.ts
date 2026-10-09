@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
+import { upsertShopifyCustomer } from "../_shared/shopify-customer-upsert.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -15,25 +16,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const CUSTOMER_UPSERT_MUTATION = `
-  mutation customerCreate($input: CustomerInput!, $identifier: CustomerIdentifierInput) {
-    customerCreate(input: $input, identifier: $identifier) {
-      customer {
-        id
-        email
-        firstName
-        lastName
-        phone
-        tags
-      }
-      userErrors {
-        field
-        message
-      }
-    }
-  }
-`;
-
 const CUSTOMER_ADDRESS_CREATE_MUTATION = `
   mutation customerAddressCreate($customerId: ID!, $address: MailingAddressInput!) {
     customerAddressCreate(customerId: $customerId, address: $address, setAsDefault: true) {
@@ -42,16 +24,6 @@ const CUSTOMER_ADDRESS_CREATE_MUTATION = `
     }
   }
 `;
-
-interface ShopifyCustomerResponse {
-  data?: {
-    customerCreate?: {
-      customer?: { id: string; email: string; firstName?: string; lastName?: string };
-      userErrors?: { field?: string[]; message: string }[];
-    };
-  };
-  errors?: { message: string }[];
-}
 
 function splitName(fullName: string | null | undefined): { firstName: string | null; lastName: string | null } {
   if (!fullName || !fullName.trim()) return { firstName: null, lastName: null };
@@ -166,68 +138,32 @@ serve(async (req) => {
       .eq("is_default", true)
       .maybeSingle();
 
-    // 3. Chamar Shopify customerCreate com upsert por email
+    // 3. Upsert do customer por e-mail (busca + update/create; ver _shared/shopify-customer-upsert.ts)
     // No signup o trigger cria profile vazio; usa o nome do JWT (user_metadata) como fallback.
     const fullNameForShopify = (profile?.full_name && profile.full_name.trim())
       ? profile.full_name
       : (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null);
     const { firstName, lastName } = splitName(fullNameForShopify);
 
-    const shopifyPayload = {
-      query: CUSTOMER_UPSERT_MUTATION,
-      variables: {
-        input: {
-          email: user.email,
-          firstName,
-          lastName,
-          phone: profile?.phone || null,
-          tags: ["jilo-customer", "source:supabase"],
-          note: `Sincronizado do Supabase em ${new Date().toISOString()}`,
-        },
-        identifier: {
-          emailAddress: user.email,
-        },
-      },
-    };
-
-    const shopifyRes = await callShopifyAdmin(shopifyPayload);
-
-    if (!shopifyRes.ok) {
-      const errorBody = await shopifyRes.text();
-      console.error("Shopify HTTP error:", shopifyRes.status, errorBody);
-      return new Response(
-        JSON.stringify({ error: "Shopify API error", status: shopifyRes.status, detail: errorBody }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const shopifyData: ShopifyCustomerResponse = await shopifyRes.json();
-
-    // GraphQL errors (schema, auth)
-    if (shopifyData.errors && shopifyData.errors.length > 0) {
-      console.error("Shopify GraphQL errors:", shopifyData.errors);
-      return new Response(
-        JSON.stringify({ error: "GraphQL error", detail: shopifyData.errors }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // userErrors (validação de dados)
-    const userErrors = shopifyData.data?.customerCreate?.userErrors ?? [];
-    if (userErrors.length > 0) {
-      console.error("Shopify userErrors:", userErrors);
-      return new Response(
-        JSON.stringify({ error: "Validation error", detail: userErrors }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const shopifyCustomerId = shopifyData.data?.customerCreate?.customer?.id;
-    if (!shopifyCustomerId) {
-      return new Response(
-        JSON.stringify({ error: "No customer ID returned from Shopify" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    let shopifyCustomerId: string;
+    let action: string;
+    try {
+      const r = await upsertShopifyCustomer(callShopifyAdmin, {
+        email: user.email,
+        firstName,
+        lastName,
+        phone: profile?.phone || null,
+        tags: ["jilo-customer", "source:supabase"],
+        note: `Sincronizado do Supabase em ${new Date().toISOString()}`,
+      });
+      shopifyCustomerId = r.customerId;
+      action = r.action;
+    } catch (upsertErr) {
+      console.error("[shopify-customer-sync] upsert failed:", (upsertErr as Error).message);
+      return new Response(JSON.stringify({ error: "Shopify upsert failed" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // A.1.1 (EAP visibilidade de dados): anexa endereço default nativo ao customer.
@@ -301,6 +237,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         status: "synced",
+        action,
         shopify_customer_id: shopifyCustomerId,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
