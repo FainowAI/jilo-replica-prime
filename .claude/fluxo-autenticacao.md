@@ -46,3 +46,18 @@ Detalhes técnicos:
 
 ## Sincronização com Shopify
 Após o primeiro update de perfil de cada usuário, o hook `useUpdateProfile` dispara a edge function `shopify-customer-sync` que cria um customer no Shopify e grava o GID em `profiles.shopify_customer_id`. Ver detalhes em `fluxo-shopify-sync.md`.
+
+## Redefinição de senha ("Esqueci a senha") — out/2026
+Fluxo próprio do Supabase (sem senha antiga), para quem esqueceu a senha do cadastro do site.
+
+- **`/recuperar-senha`** (`src/pages/RecuperarSenha.tsx`): o cliente informa o e-mail; chama `resetPassword(email)` no `AuthContext`, que dispara `supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + "/redefinir-senha" })`. Mensagem de confirmação é neutra ("se existir uma conta...") para não permitir enumeração de contas.
+- **`/redefinir-senha`** (`src/pages/RedefinirSenha.tsx`): página de destino do link do e-mail. Detecta a sessão de recuperação por três caminhos (sessão já existente via `getSession`, evento `PASSWORD_RECOVERY` no `onAuthStateChange`, e troca manual de `?code=` via `exchangeCodeForSession` como fallback PKCE). Com a sessão válida, o cliente define a nova senha (`updatePassword(novaSenha)` → `supabase.auth.updateUser({ password })`), com confirmação e mínimo de 6 caracteres. Link inválido/expirado mostra aviso + atalho para pedir novo.
+- Link "Esqueci a senha" adicionado em `src/pages/Login.tsx`, abaixo do botão Entrar.
+- `AuthContext` ganhou `resetPassword` e `updatePassword`.
+
+### DEPENDÊNCIA DE CONFIG (Supabase Dashboard — obrigatória em produção)
+A URL `https://jilomarmitas.com/redefinir-senha` PRECISA estar na lista de **Redirect URLs** (Auth → URL Configuration), senão o link do e-mail não redireciona para a página. Incluir também a URL de preview do Lovable, se usada. O template de e-mail "Reset Password" do Supabase deve apontar para o fluxo padrão (`{{ .ConfirmationURL }}`).
+
+### Testado (out/2026)
+- `tsc`, `vitest` (4 testes novos em `AuthContext.test.tsx`), `vite build` e `eslint` limpos; render das rotas `/login`, `/recuperar-senha`, `/redefinir-senha` validado em browser headless.
+- NÃO testado automaticamente (requer projeto Supabase ao vivo + e-mail): a entrega do e-mail e o round-trip real do link de recuperação. Validar manualmente após liberar a Redirect URL.

@@ -20,6 +20,8 @@ import Kit from "./pages/Kit";
 import KitLivre from "./pages/KitLivre";
 import Login from "./pages/Login";
 import Cadastro from "./pages/Cadastro";
+import RecuperarSenha from "./pages/RecuperarSenha";
+import RedefinirSenha from "./pages/RedefinirSenha";
 import Conta from "./pages/Conta";
 import Perfil from "./pages/conta/Perfil";
 import Pedidos from "./pages/conta/Pedidos";
@@ -51,6 +53,8 @@ const AppContent = () => {
           <Route path="/kit-livre" element={<KitLivre />} />
           <Route path="/login" element={<Login />} />
           <Route path="/cadastro" element={<Cadastro />} />
+          <Route path="/recuperar-senha" element={<RecuperarSenha />} />
+          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
           <Route
             path="/conta"
             element={

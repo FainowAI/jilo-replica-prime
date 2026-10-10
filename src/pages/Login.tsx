@@ -66,6 +66,11 @@ const Login = () => {
             className="w-full h-12 bg-[#1e3a1e] text-white rounded-xl font-bold text-sm font-sans hover:bg-[#1e3a1e]/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
           </button>
+          <div className="text-center">
+            <Link to="/recuperar-senha" className="text-xs text-[#6b6b6b] font-sans hover:text-[#1e3a1e] hover:underline">
+              Esqueci a senha
+            </Link>
+          </div>
         </form>
 
         <p className="text-center text-sm text-[#9b9b9b] font-sans mt-4">
