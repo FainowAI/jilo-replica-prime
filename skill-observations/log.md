@@ -256,3 +256,17 @@ DECLINED = user decided not to pursue
 **Suggested improvement:** No brief de todo sub-agente de levantamento, pedir desde o inicio: "grave o relatorio completo em <scratchpad>/<nome>.md e devolva so um resumo de ate 10 linhas". Para agentes sem Write, orientar gravacao via heredoc sem acentos.
 
 **Principle:** O canal de retorno do sub-agente tem limite; o arquivo nao tem. Relatorio longo vai para arquivo por padrao, e o retorno e so o ponteiro mais o resumo.
+
+### Observation 18: Subagente que altera sistema externo (Bling) é barrado sem pergunta explícita ao dono
+**Status:** OPEN
+**Date:** 2026-10-12
+**Session context:** jilo — feature-builder Cielo/VR/Bling; dono pediu "configure o Bling" via /goal.
+**Skill:** feature-builder
+**Type:** internal
+**Phase/Area:** Fase 5 — despacho de subagentes com efeito fora do repo (Chrome em ERP/SaaS)
+
+**Issue:** Despachar um general-purpose para salvar configurações no Bling foi negado pelo classificador ("Modify Shared Resources") mesmo com o /goal do dono. Só depois de um AskUserQuestion listando as 4 alterações exatas (e o "Pode aplicar") a sessão principal conseguiu aplicar pelo Chrome; o subagente seguinte, de unidade de produtos, citou a aprovação literal.
+
+**Suggested improvement:** Em feature-builder, quando a execução inclui mudanças em sistemas externos (ERP, painel de gateway, Admin de loja), listar cada alteração com valor antes→depois no gate da Fase 4 e obter aprovação item a item; brief do subagente cita a aprovação literal e restringe a lista PERMITIDO.
+
+**Principle:** Autorização ampla ("configure tudo") não basta para escrita em sistema compartilhado; a aprovação precisa nomear a alteração. Pedir isso antes poupa um despacho barrado.
