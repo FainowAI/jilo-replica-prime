@@ -34,6 +34,16 @@ export function isQaAllowed(email: string, csv: string | null | undefined): bool
   return list.includes(email.trim().toLowerCase());
 }
 
+/**
+ * Gate de acesso ao Alelo: fora de prod exige allowlist; em prod, se `ALELO_QA_EMAILS` estiver
+ * preenchida, também exige (beta fechado em produção). Prod com allowlist vazia = aberto ao público.
+ */
+export function passesQaGate(env: string, email: string, csv: string | null | undefined): boolean {
+  const hasList = (csv ?? "").split(",").some((s) => s.trim());
+  if (env !== "prod" || hasList) return isQaAllowed(email, csv);
+  return true;
+}
+
 function brtDay(d: Date): string {
   return d.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 }

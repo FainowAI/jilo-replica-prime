@@ -121,11 +121,17 @@ Deno.test("sem JWT => 401", async () => {
   assertEquals((await handleCieloCheckout(req({}, null), s.deps)).status, 401);
 });
 
-Deno.test("fora de prod, e-mail fora da allowlist => 403; em prod passa", async () => {
+Deno.test("allowlist: fora de prod 403; prod com lista 403 (beta fechado); prod sem lista passa", async () => {
   const s = build({ getUser: async () => ({ id: "u", email: "outro@x.com" }) });
   assertEquals((await handleCieloCheckout(req(), s.deps)).status, 403);
   const p = build({ getUser: async () => ({ id: "u", email: "outro@x.com" }), cieloEnv: () => "prod" });
-  assertEquals((await handleCieloCheckout(req(), p.deps)).status, 200);
+  assertEquals((await handleCieloCheckout(req(), p.deps)).status, 403);
+  const open = build({
+    getUser: async () => ({ id: "u", email: "outro@x.com" }),
+    cieloEnv: () => "prod",
+    env: { ALELO_ENABLED: "true", ALELO_QA_EMAILS: null, SHOPIFY_SHIPPING_VARIANT_ID: "v" },
+  });
+  assertEquals((await handleCieloCheckout(req(), open.deps)).status, 200);
 });
 
 Deno.test("body com campo extra (amount/brand) => 400", async () => {

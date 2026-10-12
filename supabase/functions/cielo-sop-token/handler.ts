@@ -9,7 +9,7 @@ import { z } from "npm:zod@3.25.76";
 
 import { getCart, type StorefrontCart } from "../_shared/storefront-cart.ts";
 import { getCieloEnv, getSopAccessToken, sopEnvironment, type CieloEnv } from "../_shared/cielo-client.ts";
-import { buildCorsHeaders, errorResponse, isQaAllowed, jsonResponse } from "../_shared/cielo-support.ts";
+import { buildCorsHeaders, errorResponse, jsonResponse, passesQaGate } from "../_shared/cielo-support.ts";
 
 const Body = z.object({ cartId: z.string().startsWith("gid://shopify/Cart/") }).strict();
 
@@ -56,7 +56,7 @@ export async function handleSopToken(req: Request, deps: SopTokenDeps): Promise<
   } catch {
     return errorResponse("alelo_unavailable", "Pagamento com Alelo indisponível.", 503, cors);
   }
-  if (env !== "prod" && !isQaAllowed(user.email, deps.env.ALELO_QA_EMAILS)) {
+  if (!passesQaGate(env, user.email, deps.env.ALELO_QA_EMAILS)) {
     return errorResponse("forbidden", "Acesso negado.", 403, cors);
   }
   if (!deps.allowRate(user.id, deps.now().getTime())) {

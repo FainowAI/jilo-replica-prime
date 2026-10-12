@@ -40,7 +40,7 @@ import {
   errorResponse,
   findIdsOrEmpty,
   getDraftOrderStatus,
-  isQaAllowed,
+  passesQaGate,
   jsonResponse,
   SAFE_RELEASE_MIN,
   type DraftStatus,
@@ -222,7 +222,7 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     console.error("[cielo-checkout] env_invalid");
     return errorResponse("alelo_unavailable", "Pagamento com Alelo indisponível.", 503, cors);
   }
-  if (cieloEnv !== "prod" && !isQaAllowed(user.email, deps.env.ALELO_QA_EMAILS)) {
+  if (!passesQaGate(cieloEnv, user.email, deps.env.ALELO_QA_EMAILS)) {
     return errorResponse("forbidden", "Acesso negado.", 403, cors);
   }
 
