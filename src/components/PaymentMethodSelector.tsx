@@ -123,7 +123,7 @@ const PaymentMethodSelector = ({
     {
       id: "credit",
       label: "Cartão de crédito",
-      description: "Visa, Master, Elo e outros — via Cielo no checkout",
+      description: "Visa, Master, Elo e outros",
     },
   ];
   const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => (method.id !== "vr" || VR_ENABLED) && (method.id !== "alelo" || ALELO_ENABLED)

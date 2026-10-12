@@ -208,12 +208,12 @@ Molde do VR (`vr-checkout`), sem tocar nele. Regras R86–R90 em `requirements.m
 - **Banco:** `cielo_transactions` (migration `20261012210527`), RLS deny-all + `revoke all`, nunca token/PAN/CPF/IP.
 - **Receiver:** tag `alelo` → `payment_method='alelo'` (precedência `vr` > `alelo` > gateway).
 - **Secrets (pendentes, dono):** `CIELO_ENV`, `CIELO_MERCHANT_ID`, `CIELO_MERCHANT_KEY`, `CIELO_SOP_CLIENT_ID`, `CIELO_SOP_CLIENT_SECRET`, `ALELO_ENABLED`, `ALELO_QA_EMAILS`, `CIELO_RECONCILE_SECRET`, `ALERT_WEBHOOK_URL`. Deploy das 3 edges + cron do reconcile: aprovação do dono.
-- **Gate para ligar `VITE_ALELO_ENABLED`/`ALELO_ENABLED`:** (1) CSP com `connect-src`/`form-action` mapeados (re-auditoria M2, testar em Report-Only); (2) spike SOP + voucher no sandbox aprovado; (3) confirmação escrita da Alelo; (4) secrets + deploy + cron do reconcile. **Não publicar no Lovable** a copy "via Cielo"/sem PayPal enquanto a Getnet for o gateway ativo (re-auditoria B5).
+- **Gate para ligar `VITE_ALELO_ENABLED`/`ALELO_ENABLED`:** (1) CSP com `connect-src`/`form-action` mapeados (re-auditoria M2, testar em Report-Only); (2) spike SOP + voucher no sandbox aprovado; (3) confirmação escrita da Alelo; (4) secrets + deploy + cron do reconcile. Copy do site neutra ("Cartão de crédito — Visa, Master, Elo e outros"; FAQ sem citar gateway), sem PayPal.
 - **Spike pendente (sandbox):** confirmar a API JS do SOP (`bpSop_silentOrderPost`, callbacks, `cardType:"debitCard"`) e se voucher Alelo passa por SOP; onde vai o holder com PaymentToken; formato da resposta do void e da busca vazia (200 `[]` vs 404).
 
-## Conector Cielo no checkout Shopify (substitui a Getnet)
+## Conector Cielo no checkout Shopify — EM ESPERA (Getnet fica)
 
-Configuração, não código: app "Cielo Creditcard" **já instalado** na loja (12/10), gateway ativo ainda "Credit Credit Getnet" + "Getnet Pix". Falta: gerar Merchant ID/Key de produção no site Cielo (token do app Cielo Gestão), pedir login do Cielo Payment App, instalar "Cielo Pix", ativar, 3 compras teste (cartão, Pix pago, Pix não pago) e só então desativar a Getnet. Motivo: Getnet não confirma pagamento à Shopify (#1012, #1022, #1025 de 12/10 aprovado na Getnet e "Expirado" na Shopify).
+**Decisão 12/10: manter a Getnet** (cartão + Pix). A Shopify só aceita um provedor de cartão ativo — ativar o "Cielo Creditcard" (instalado, inativo) REMOVERIA a Getnet. Só se um dia decidirem trocar: gerar Merchant ID/Key de produção no site Cielo (token do app Cielo Gestão), pedir login do Cielo Payment App, instalar "Cielo Pix", ativar, 3 compras teste (cartão, Pix pago, Pix não pago) e só então desativar a Getnet. Motivo: Getnet não confirma pagamento à Shopify (#1012, #1022, #1025 de 12/10 aprovado na Getnet e "Expirado" na Shopify).
 
 ## Gotchas e armadilhas
 - O `lineId` do Shopify é obrigatório para update/remove — se null, operação falha silenciosamente
