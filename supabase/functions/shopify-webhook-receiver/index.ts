@@ -43,10 +43,16 @@ function extractOrderData(payload: any) {
   // Pedido pago fora da Shopify pelo vr-checkout (EAP pagamento-vr) chega como draft order
   // completado, sem gateway real. A marca confiável é a TAG "vr": tags só entram pela Admin
   // API (o cliente não forja via Storefront), diferente de note_attributes (auditoria B1).
+  // Mesma regra para o cielo-checkout (tag "alelo"). Precedência: vr > alelo > gateway —
+  // os dois fluxos nunca marcam o mesmo pedido; só staff edita tags (security.md B1).
   const orderTags = String(payload.tags ?? "")
     .split(",")
     .map((t: string) => t.trim().toLowerCase());
-  const paymentMethod = orderTags.includes("vr") ? "vr" : payload.payment_gateway_names?.[0] || null;
+  const paymentMethod = orderTags.includes("vr")
+    ? "vr"
+    : orderTags.includes("alelo")
+    ? "alelo"
+    : payload.payment_gateway_names?.[0] || null;
 
   const { status, payment_status } = mapFinancialStatus(payload.financial_status, payload.cancelled_at);
 

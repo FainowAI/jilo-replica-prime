@@ -65,6 +65,72 @@ export type Database = {
         }
         Relationships: []
       }
+      cielo_transactions: {
+        Row: {
+          cart_id: string
+          cielo_authorization_code: string | null
+          cielo_env: string
+          cielo_payment_id: string | null
+          cielo_proof_of_sale: string | null
+          cielo_return_code: string | null
+          cielo_status: number | null
+          cielo_tid: string | null
+          created_at: string
+          error: string | null
+          id: string
+          merchant_order_id: string
+          shopify_draft_order_id: string | null
+          shopify_order_id: string | null
+          shopify_order_name: string | null
+          status: string
+          updated_at: string
+          user_id: string | null
+          valor_cents: number
+        }
+        Insert: {
+          cart_id: string
+          cielo_authorization_code?: string | null
+          cielo_env: string
+          cielo_payment_id?: string | null
+          cielo_proof_of_sale?: string | null
+          cielo_return_code?: string | null
+          cielo_status?: number | null
+          cielo_tid?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          merchant_order_id: string
+          shopify_draft_order_id?: string | null
+          shopify_order_id?: string | null
+          shopify_order_name?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+          valor_cents: number
+        }
+        Update: {
+          cart_id?: string
+          cielo_authorization_code?: string | null
+          cielo_env?: string
+          cielo_payment_id?: string | null
+          cielo_proof_of_sale?: string | null
+          cielo_return_code?: string | null
+          cielo_status?: number | null
+          cielo_tid?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          merchant_order_id?: string
+          shopify_draft_order_id?: string | null
+          shopify_order_id?: string | null
+          shopify_order_name?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string | null
+          valor_cents?: number
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           created_at: string

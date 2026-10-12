@@ -2,3 +2,12 @@ project_id = "hofohxvizlmawgkinwwz"
 
 [functions.set-product-unlisted]
 verify_jwt = false
+
+[functions.cielo-reconcile]
+verify_jwt = false
+
+[functions.cielo-checkout]
+verify_jwt = false
+
+[functions.cielo-sop-token]
+verify_jwt = false

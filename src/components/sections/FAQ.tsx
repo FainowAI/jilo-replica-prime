@@ -10,7 +10,7 @@ const faqs = [
   { q: "Como funciona o congelamento?", a: "Nossos pratos são congelados logo após o preparo, utilizando o método de ultra-congelamento que preserva sabor, textura e nutrientes por até 180 dias." },
   { q: "Qual o prazo de entrega?", a: "O prazo é de até 48h após a confirmação do pedido. Você não escolhe o dia: ao confirmar, você recebe automaticamente a data prevista de entrega." },
   { q: "Quanto custa o frete?", a: "O frete é grátis a partir de 7 marmitas. Abaixo disso, o valor é calculado no carrinho pelo seu CEP — lá você também confere se entregamos no seu endereço." },
-  { q: "Quais as formas de pagamento?", a: "Aceitamos Pix, cartão de crédito e PayPal. As opções estarão disponíveis no momento do checkout." },
+  { q: "Quais as formas de pagamento?", a: "Aceitamos Pix e cartão de crédito (via Cielo). As opções estarão disponíveis no momento do checkout." },
   { q: "Os pratos contêm conservantes?", a: "Não. Nossos pratos são 100% livres de conservantes artificiais. Usamos apenas o congelamento como método de conservação natural." },
   { q: "Como aquecer os pratos?", a: "Micro-ondas: retire a tampa, aqueça por 5 a 6 minutos em potência alta. Forno: transfira para refratário, cubra com papel alumínio e aqueça por 20 minutos a 180°C." },
 ];

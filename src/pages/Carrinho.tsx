@@ -13,6 +13,7 @@ import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import PaymentMethodSelector, { type PaymentMethod } from "@/components/PaymentMethodSelector";
 import VrCardDialog from "@/components/VrCardDialog";
+import AleloCardDialog from "@/components/AleloCardDialog";
 import type { VrCheckoutInput } from "@/lib/vr/client";
 import DeliveryAddressSelector from "@/components/DeliveryAddressSelector";
 import { type CepValidationResult } from "@/lib/cepValidator";
@@ -61,6 +62,7 @@ const Carrinho = () => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [vrDialogOpen, setVrDialogOpen] = useState(false);
+  const [aleloDialogOpen, setAleloDialogOpen] = useState(false);
   const { data: addresses } = useAddresses();
   const { data: profile } = useProfile();
 
@@ -290,6 +292,16 @@ const Carrinho = () => {
       setVrDialogOpen(true);
       return;
     }
+    if (paymentMethod === "alelo") {
+      analytics.checkoutIniciado({
+        itens: totalNonShippingItems,
+        frete: free ? "gratis" : "pago",
+        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
+        metodoPagamento: "alelo",
+      });
+      setAleloDialogOpen(true);
+      return;
+    }
     const checkoutUrl = await prepareCartForCheckout();
     if (checkoutUrl) {
       analytics.checkoutIniciado({
@@ -307,6 +319,10 @@ const Carrinho = () => {
       setPendingCheckout(false);
       if (paymentMethod === "vr") {
         setVrDialogOpen(true);
+        return;
+      }
+      if (paymentMethod === "alelo") {
+        setAleloDialogOpen(true);
         return;
       }
       (async () => {
@@ -688,7 +704,7 @@ const Carrinho = () => {
               {/* Checkout Button */}
               <button
                 onClick={handleCheckout}
-                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout || vrDialogOpen}
+                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout || vrDialogOpen || aleloDialogOpen}
                 aria-busy={
                   isLoading ||
                   isSyncing ||
@@ -734,6 +750,11 @@ const Carrinho = () => {
                 ) : paymentMethod === "vr" ? (
                   <>
                     Pagar com VR
+                    <ChevronRight className="h-4 w-4" />
+                  </>
+                ) : paymentMethod === "alelo" ? (
+                  <>
+                    Pagar com Alelo
                     <ChevronRight className="h-4 w-4" />
                   </>
                 ) : (
@@ -857,6 +878,9 @@ const Carrinho = () => {
 
         {vrCheckoutInput && (
           <VrCardDialog open={vrDialogOpen} onOpenChange={setVrDialogOpen} checkout={vrCheckoutInput} />
+        )}
+        {vrCheckoutInput && (
+          <AleloCardDialog open={aleloDialogOpen} onOpenChange={setAleloDialogOpen} checkout={vrCheckoutInput} />
         )}
 
         <AuthDialog
