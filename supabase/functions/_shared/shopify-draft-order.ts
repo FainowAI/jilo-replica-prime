@@ -97,7 +97,8 @@ export async function createDraftOrder(input: DraftOrderInput): Promise<{ id: st
     tags: input.tags,
     customAttributes: Object.entries(input.customAttributes).map(([key, value]) => ({ key, value })),
   };
-  if (input.customerId) {
+  // C1: só amarra o draft a um GID canônico (o valor vem de profiles.shopify_customer_id).
+  if (input.customerId && /^gid:\/\/shopify\/Customer\/\d+$/.test(input.customerId)) {
     draftInput.purchasingEntity = { customerId: input.customerId };
   }
   if (input.discountCents && input.discountCents > 0) {
