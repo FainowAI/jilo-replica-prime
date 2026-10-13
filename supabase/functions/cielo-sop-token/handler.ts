@@ -80,8 +80,9 @@ export async function handleSopToken(req: Request, deps: SopTokenDeps): Promise<
     return jsonResponse({ accessToken, environment: sopEnvironment(env) }, 200, cors, {
       "Cache-Control": "no-store",
     });
-  } catch {
-    console.error("[cielo-sop-token] token failed");
+  } catch (err) {
+    // só o código interno (cielo_config_missing, cielo_http_401...) — nunca mensagem/corpo
+    console.error(`[cielo-sop-token] token failed ${(err as { code?: string })?.code ?? (err as Error)?.name ?? "error"}`);
     return errorResponse("alelo_unavailable", "Não foi possível iniciar o pagamento com Alelo agora.", 502, cors);
   }
 }
