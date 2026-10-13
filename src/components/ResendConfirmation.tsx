@@ -54,7 +54,7 @@ const ResendConfirmation = ({ email, startCooldown }: ResendProps) => {
 /** Tela "Confirme seu e-mail" exibida depois do cadastro (o título fica por conta de quem usa). */
 export const ConfirmEmailNotice = ({ email, onEnter }: { email: string; onEnter: () => void }) => (
   <div className="space-y-4 mt-2">
-    <p className="text-sm text-[#6b6b6b] font-sans">
+    <p className="ph-no-capture text-sm text-[#6b6b6b] font-sans">
       Enviamos um link para {email}. Abra o e-mail para ativar sua conta.
     </p>
     <ResendConfirmation email={email} startCooldown />
