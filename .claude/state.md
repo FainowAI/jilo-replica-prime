@@ -8,6 +8,13 @@
 - **App de produção cadastrada no portal (13/10, aprovada pelo Antônio; reCAPTCHA feito por ele):** "Jilo Marmitas - Loja Online - Produção", Client ID `c0fa77de-6b9b-4ac4-b43a-253e9197e54a`, **Pendente**, OAuth 2.3.0 + Captura 2.4.0, vinculada à HML `cfa0e3e7…`. Tentativa com as 140 APIs marcadas deu erro genérico do portal; com só as 2 funcionou. Descrição do form aceita no máx. 150 caracteres (contador diz 200).
 - **E-mail enviado ao Leone** (13/10, cc Felipe, Luiz, time-vr; msg `1a135872f8810893`): 400 marketplace-id + hipótese (Extra field vazio após voltar o plano), App de produção, pedido de call 14 ou 15/10. Rascunho antigo apagado. Deno: `npm-cache/_npx/05b6ef7b13673c57/node_modules/@deno/win32-x64/deno.exe` (não está no PATH).
 
+## Sessão 2026-10-13 (tarde) — ida para produção (aprovada pelo Antônio)
+
+- **Aviso de conta Google** (trabalho de outra sessão) commitado em `84531bc`; `origin/main` (PR #10 "Esqueci a senha") mesclado na branch sem conflito. Verificação no merge: Vitest 46/46, tsc limpo, build ok, Deno 175/175 (`--allow-net=127.0.0.1 --allow-write` para os testes `_hml`).
+- **Supabase prod:** migration `auth_email_has_google` aplicada (anon/authenticated sem EXECUTE, só service_role; advisors sem item novo); edge `auth-login-hint` v1 (verify_jwt=false), smoke `{hint:null}` + CORS ok. `cielo-checkout` v8 e `cielo-sop-token` v9 conferidos arquivo a arquivo = código atual.
+- **PR #11** (branch → main) aberto, quality-gate verde. O merge foi bloqueado pelo modo de permissão (fica para o Antônio). Depois do merge, o site só muda ao publicar no Lovable.
+- **Ressalva do auth-login-hint:** o limite por IP usa o 1º valor de `x-forwarded-for`, que o cliente pode forjar ⇒ o limite pode não segurar enumeração em massa. Aceito para ir ao ar; trocar para contador em tabela se houver abuso.
+
 ## Sessão 2026-10-12 — Cielo (conector + Alelo via API), VR e Bling — feature-builder cielo-vr-bling
 
 - **Pesquisa (4 agentes + docs Cielo):** second-brain, WhatsApp do Luiz (Evolution), Gmail, mapa de código; relatórios em `.claude/.work/cielo-vr-bling/` (research-*.md, code-map.md, bling-audit.md, security*.md, plan.md).
