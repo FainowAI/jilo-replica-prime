@@ -22,7 +22,8 @@ describe("AleloCardDialog (H5)", () => {
     const cvv = document.querySelector<HTMLInputElement>("input.bp-sop-cardcvvc")!;
     expect(document.querySelector("input.bp-sop-cardholdername")).toBeTruthy();
     expect(document.querySelector("input.bp-sop-cardexpirationdate")).toBeTruthy();
-    expect(cvv.type).toBe("password");
+    expect(cvv.type).toBe("text");
+    expect(cvv.getAttribute("autocomplete")).toBe("cc-csc");
     expect(document.querySelector(".ph-no-capture")).toBeTruthy();
 
     // Não controlado: o valor digitado vive só no DOM (um input controlado sem estado ignoraria a digitação

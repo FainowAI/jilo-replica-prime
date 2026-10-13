@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
@@ -150,7 +150,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
             <input
               ref={nameRef}
               type="text"
-              autoComplete="off"
+              autoComplete="cc-name"
               maxLength={50}
               required
               className={`${inputCls} bp-sop-cardholdername`}
@@ -162,7 +162,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
               ref={numberRef}
               type="text"
               inputMode="numeric"
-              autoComplete="off"
+              autoComplete="cc-number"
               maxLength={19}
               required
               className={`${inputCls} bp-sop-cardnumber`}
@@ -175,7 +175,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
                 ref={expiryRef}
                 type="text"
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-exp"
                 placeholder="MM/AAAA"
                 maxLength={7}
                 required
@@ -186,9 +186,12 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
               <label className={labelCls}>CVV</label>
               <input
                 ref={cvvRef}
-                type="password"
+                // type="text" + máscara por CSS: type="password" faz o gerenciador de senhas
+                // do navegador autopreencher login salvo em validade/CVV (visto em 12/10).
+                type="text"
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-csc"
+                style={{ WebkitTextSecurity: "disc" } as CSSProperties}
                 maxLength={4}
                 required
                 className={`${inputCls} bp-sop-cardcvvc`}
