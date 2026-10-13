@@ -255,7 +255,7 @@ export const CartDrawer = () => {
 
               {/* Payment Note */}
               <p className="text-center text-xs text-[#9b9b9b] mt-3">
-                ✅ Aceita Pix, PayPal e Cartão
+                ✅ Aceita Pix e Cartão
               </p>
             </div>
           </>

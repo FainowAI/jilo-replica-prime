@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SHIPPING_FREE_THRESHOLD } from "../_shared/shipping-constants.ts";
 import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
+import { mapFinancialStatus } from "../_shared/order-status-map.ts";
 import { readRawBody, verifyShopifyHmac } from "../_shared/shopify-webhook-body.ts";
 
 const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") ?? "";
@@ -42,10 +43,18 @@ function extractOrderData(payload: any) {
   // Pedido pago fora da Shopify pelo vr-checkout (EAP pagamento-vr) chega como draft order
   // completado, sem gateway real. A marca confiável é a TAG "vr": tags só entram pela Admin
   // API (o cliente não forja via Storefront), diferente de note_attributes (auditoria B1).
+  // Mesma regra para o cielo-checkout (tag "alelo"). Precedência: vr > alelo > gateway —
+  // os dois fluxos nunca marcam o mesmo pedido; só staff edita tags (security.md B1).
   const orderTags = String(payload.tags ?? "")
     .split(",")
     .map((t: string) => t.trim().toLowerCase());
-  const paymentMethod = orderTags.includes("vr") ? "vr" : payload.payment_gateway_names?.[0] || null;
+  const paymentMethod = orderTags.includes("vr")
+    ? "vr"
+    : orderTags.includes("alelo")
+    ? "alelo"
+    : payload.payment_gateway_names?.[0] || null;
+
+  const { status, payment_status } = mapFinancialStatus(payload.financial_status, payload.cancelled_at);
 
   return {
     shopify_order_id: payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`,
@@ -55,9 +64,9 @@ function extractOrderData(payload: any) {
       ? `${payload.customer.first_name || ""} ${payload.customer.last_name || ""}`.trim()
       : null,
     customer_phone: payload.customer?.phone || payload.shipping_address?.phone || null,
-    status: payload.financial_status === "paid" ? "paid" : "pending",
+    status,
     payment_method: paymentMethod,
-    payment_status: payload.financial_status || "pending",
+    payment_status,
     subtotal_cents: subtotalCents,
     discount_cents: discountCents,
     shipping_cents: shippingCents,
@@ -313,8 +322,21 @@ serve(async (req) => {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  const payload = JSON.parse(body);
-  const externalId = payload.id?.toString() || payload.admin_graphql_api_id || "unknown";
+  let payload: any;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    console.error("[shopify-webhook-receiver] JSON inválido com HMAC válido");
+    return new Response(JSON.stringify({ status: "bad_json" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  // orders/updated dispara várias vezes por pedido: a chave inclui updated_at para não
+  // descartar as atualizações seguintes como duplicata.
+  const baseId = payload.id?.toString() || payload.admin_graphql_api_id || "unknown";
+  const externalId =
+    topic === "orders/updated" && payload.updated_at ? `${baseId}:${payload.updated_at}` : baseId;
 
   try {
     // Idempotency check
@@ -348,11 +370,12 @@ serve(async (req) => {
       if (!orderData.shipping_address) {
         orderData.shipping_address = await resolveShippingAddress(payload);
       }
-      const { data: createdOrder } = await supabase
+      const { data: createdOrder, error: createErr } = await supabase
         .from("orders")
         .upsert(orderData, { onConflict: "shopify_order_id" })
         .select("id")
         .maybeSingle();
+      if (createErr) console.error("Failed to upsert order on create event:", createErr);
       if (createdOrder?.id) {
         await syncOrderItems(createdOrder.id, payload);
       }
@@ -434,6 +457,20 @@ serve(async (req) => {
         console.warn(
           `Order ${updatedOrder?.id} é uber_direct mas não tem uber_quote_id — admin precisa intervir manualmente`
         );
+      }
+    } else if (topic === "orders/updated" || topic === "orders/cancelled") {
+      // Expirado/cancelado/estornado nunca geram orders/paid. "paid" fica com orders/paid
+      // (despacho Uber); aqui só update, sem upsert e sem rebaixar dispatched/delivered.
+      const mapped = mapFinancialStatus(payload.financial_status, payload.cancelled_at);
+      if (mapped.status !== "paid") {
+        const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;
+        const { error: syncErr } = await supabase
+          .from("orders")
+          .update(mapped)
+          .eq("shopify_order_id", shopifyOrderId)
+          .in("status", mapped.status === "pending" ? ["pending"] : ["pending", "paid", "preparing"]);
+        if (syncErr) console.error(`Failed to sync order on ${topic}:`, syncErr);
+        else console.log(`${topic}: ${mapped.status}/${mapped.payment_status}`);
       }
     } else if (topic === "orders/fulfilled") {
       const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;

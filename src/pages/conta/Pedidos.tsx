@@ -7,12 +7,25 @@ const formatDate = (iso: string | null) => iso ? new Date(iso).toLocaleDateStrin
 const formatCents = (cents: number) => `R$ ${(cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
 const Pedidos = () => {
-  const { data: orders, isLoading } = useOrders();
+  const { data: orders, isLoading, isError, refetch } = useOrders();
 
   if (isLoading) {
     return (
       <div className="bg-white rounded-2xl border border-[#e8e8e4] p-8 flex items-center justify-center">
         <Loader2 className="w-5 h-5 animate-spin text-[#1e3a1e]" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="bg-white rounded-2xl border border-[#e8e8e4] p-12 text-center">
+        <Package className="h-10 w-10 text-[#9b9b9b] mx-auto mb-3" />
+        <p className="text-sm text-[#9b9b9b] font-sans mb-4">Não conseguimos carregar seus pedidos</p>
+        <button type="button" onClick={() => refetch()}
+          className="h-10 px-4 bg-[#1e3a1e] text-white rounded-xl font-bold text-sm font-sans hover:bg-[#1e3a1e]/90 transition-colors inline-flex items-center gap-2">
+          Tentar de novo
+        </button>
       </div>
     );
   }

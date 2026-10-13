@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, Loader2, Truck, ChevronRight, ShieldCheck, Snowflake, Tag } from "lucide-react";
 import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
-import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, setCartDeliveryAddress, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
+import { storefrontApiRequest, PRODUCTS_QUERY, excludeInternalShipping, setCartAttributes, setCartDeliveryAddress, setCartBuyerIdentity, appendReturnToCheckoutUrl, type ShopifyProduct } from "@/lib/shopify";
 import { useAddresses } from "@/hooks/useAddresses";
+import { useProfile } from "@/hooks/useProfile";
 import { SITE_URL } from "@/config/site";
 import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
@@ -12,6 +13,7 @@ import Footer from "@/components/sections/Footer";
 import BenefitsSummary from "@/components/BenefitsSummary";
 import PaymentMethodSelector, { type PaymentMethod } from "@/components/PaymentMethodSelector";
 import VrCardDialog from "@/components/VrCardDialog";
+import AleloCardDialog from "@/components/AleloCardDialog";
 import type { VrCheckoutInput } from "@/lib/vr/client";
 import DeliveryAddressSelector from "@/components/DeliveryAddressSelector";
 import { type CepValidationResult } from "@/lib/cepValidator";
@@ -60,7 +62,9 @@ const Carrinho = () => {
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [vrDialogOpen, setVrDialogOpen] = useState(false);
+  const [aleloDialogOpen, setAleloDialogOpen] = useState(false);
   const { data: addresses } = useAddresses();
+  const { data: profile } = useProfile();
 
   const totalNonShippingItems = useNonShippingTotalItems();
   const isQuantityValid = isValidKitQuantity(totalNonShippingItems);
@@ -236,22 +240,10 @@ const Carrinho = () => {
 
   const vrCheckoutInput = buildVrCheckoutInput();
 
-  const handleCheckout = async () => {
-    if (!user) {
-      setPendingCheckout(true);
-      setAuthDialogOpen(true);
-      return;
-    }
-    if (paymentMethod === "vr") {
-      analytics.checkoutIniciado({
-        itens: totalNonShippingItems,
-        frete: free ? "gratis" : "pago",
-        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
-        metodoPagamento: "vr",
-      });
-      setVrDialogOpen(true);
-      return;
-    }
+  // Prepara o cart (atributos, endereço, buyerIdentity) e devolve o checkoutUrl FRESCO.
+  // Tudo fail-silent (R26). buyerIdentity amarra o pedido ao customer do login (R81);
+  // o refresh vem por último porque a Shopify assina o checkoutUrl com o estado do cart (R80).
+  const prepareCartForCheckout = useCallback(async () => {
     const cartId = useCartStore.getState().cartId;
     if (cartId) {
       // Item 5: activeQuoteId === "lalamove" é o sentinela do fallback fora do raio Uber.
@@ -273,14 +265,44 @@ const Carrinho = () => {
       if (selectedAddressId) {
         attrs.push({ key: "selected_address_id", value: selectedAddressId });
       }
-      // Fail-silent: se a chamada falhar, segue o checkout (R26)
-      await setCartAttributes(cartId, attrs);
+      await setCartAttributes(cartId, attrs).catch(() => {});
       const selectedAddress = addresses?.find((a) => a.id === selectedAddressId);
       if (selectedAddress) {
         await setCartDeliveryAddress(cartId, selectedAddress).catch(() => {});
       }
+      await setCartBuyerIdentity(cartId, { email: user?.email, phone: profile?.phone }).catch(() => {});
+      await useCartStore.getState().refreshCartDetails().catch(() => {});
     }
-    const checkoutUrl = getCheckoutUrl();
+    return useCartStore.getState().getCheckoutUrl();
+  }, [activeQuoteId, totalNonShippingItems, selectedAddressId, addresses, user?.email, profile?.phone]);
+
+  const handleCheckout = async () => {
+    if (!user) {
+      setPendingCheckout(true);
+      setAuthDialogOpen(true);
+      return;
+    }
+    if (paymentMethod === "vr") {
+      analytics.checkoutIniciado({
+        itens: totalNonShippingItems,
+        frete: free ? "gratis" : "pago",
+        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
+        metodoPagamento: "vr",
+      });
+      setVrDialogOpen(true);
+      return;
+    }
+    if (paymentMethod === "alelo") {
+      analytics.checkoutIniciado({
+        itens: totalNonShippingItems,
+        frete: free ? "gratis" : "pago",
+        metodoEntrega: activeQuoteId === "lalamove" ? "lalamove" : getDeliveryMethod(totalNonShippingItems),
+        metodoPagamento: "alelo",
+      });
+      setAleloDialogOpen(true);
+      return;
+    }
+    const checkoutUrl = await prepareCartForCheckout();
     if (checkoutUrl) {
       analytics.checkoutIniciado({
         itens: totalNonShippingItems,
@@ -299,38 +321,18 @@ const Carrinho = () => {
         setVrDialogOpen(true);
         return;
       }
+      if (paymentMethod === "alelo") {
+        setAleloDialogOpen(true);
+        return;
+      }
       (async () => {
-        const cartId = useCartStore.getState().cartId;
-        if (cartId) {
-          const isLalamove = activeQuoteId === "lalamove";
-          const resolvedDeliveryMethod = isLalamove
-            ? "lalamove"
-            : getDeliveryMethod(totalNonShippingItems);
-          const attrs: Array<{ key: string; value: string }> = [
-            { key: "delivery_method", value: resolvedDeliveryMethod },
-            { key: "return_url", value: SITE_URL },
-          ];
-          if (isLalamove) {
-            attrs.push({ key: "delivery_label", value: LALAMOVE_METHOD_LABEL });
-          } else if (activeQuoteId) {
-            attrs.push({ key: "uber_quote_id", value: activeQuoteId });
-          }
-          if (selectedAddressId) {
-            attrs.push({ key: "selected_address_id", value: selectedAddressId });
-          }
-          await setCartAttributes(cartId, attrs);
-          const selectedAddress = addresses?.find((a) => a.id === selectedAddressId);
-          if (selectedAddress) {
-            await setCartDeliveryAddress(cartId, selectedAddress).catch(() => {});
-          }
-        }
-        const checkoutUrl = getCheckoutUrl();
+        const checkoutUrl = await prepareCartForCheckout();
         if (checkoutUrl) {
           window.open(appendReturnToCheckoutUrl(checkoutUrl), "_blank");
         }
       })();
     }
-  }, [user, pendingCheckout, getCheckoutUrl, activeQuoteId, totalNonShippingItems, selectedAddressId, addresses, paymentMethod]);
+  }, [user, pendingCheckout, prepareCartForCheckout, paymentMethod]);
 
   const handleAddSuggestion = async (product: ShopifyProduct) => {
     const variant = product.node.variants.edges[0]?.node;
@@ -702,7 +704,7 @@ const Carrinho = () => {
               {/* Checkout Button */}
               <button
                 onClick={handleCheckout}
-                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout || vrDialogOpen}
+                disabled={items.length === 0 || isLoading || isSyncing || !canCheckout || vrDialogOpen || aleloDialogOpen}
                 aria-busy={
                   isLoading ||
                   isSyncing ||
@@ -748,6 +750,11 @@ const Carrinho = () => {
                 ) : paymentMethod === "vr" ? (
                   <>
                     Pagar com VR
+                    <ChevronRight className="h-4 w-4" />
+                  </>
+                ) : paymentMethod === "alelo" ? (
+                  <>
+                    Pagar com Alelo
                     <ChevronRight className="h-4 w-4" />
                   </>
                 ) : (
@@ -871,6 +878,9 @@ const Carrinho = () => {
 
         {vrCheckoutInput && (
           <VrCardDialog open={vrDialogOpen} onOpenChange={setVrDialogOpen} checkout={vrCheckoutInput} />
+        )}
+        {vrCheckoutInput && (
+          <AleloCardDialog open={aleloDialogOpen} onOpenChange={setAleloDialogOpen} checkout={vrCheckoutInput} />
         )}
 
         <AuthDialog

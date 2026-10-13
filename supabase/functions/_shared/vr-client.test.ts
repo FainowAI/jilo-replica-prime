@@ -291,6 +291,35 @@ Deno.test("vrFetch: 401 força forceRefresh e repete a chamada uma unica vez", a
   }
 });
 
+Deno.test("createPayment: POST 401 não repete pagamento nem renova token", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  let paymentCalls = 0;
+  let oauthCalls = 0;
+  const { restore } = stubFetch((url) => {
+    if (url.includes("/oauth/")) {
+      oauthCalls++;
+      throw new Error("OAuth inesperado");
+    }
+    if (url.endsWith("/transacoes/pagamentos")) {
+      paymentCalls++;
+      return new Response(JSON.stringify({ codigo: "01" }), { status: 401 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    await assertRejects(
+      () => createPayment({ valorCents: 100, idTransacaoVan: "van-test", cartaoTokenId: "token-test" }),
+      VrApiError,
+    );
+    assertEquals(paymentCalls, 1);
+    assertEquals(oauthCalls, 0);
+  } finally {
+    restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // (e) timeout -> vr_timeout, sem retry
 // ---------------------------------------------------------------------------
@@ -448,6 +477,36 @@ Deno.test("refund: chama o estorno quando a transacao esta CONFIRMADA", async ()
     assertEquals(result.noop, false);
     assertEquals(estornoBody?.valor, 1000);
     assertEquals(estornoBody?.id_filiacao, "123456");
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("refund: rejeita valores inválidos sem chamar estorno", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  let readCalls = 0;
+  let refundCalls = 0;
+  const { restore } = stubFetch((url) => {
+    if (url.endsWith("/transacoes/pagamentos/tx1")) {
+      readCalls++;
+      return new Response(JSON.stringify({ id_transacao: "tx1", status: "CONFIRMADA", valor: 1000 }), { status: 200 });
+    }
+    if (url.endsWith("/estornos")) {
+      refundCalls++;
+      throw new Error("Estorno inesperado");
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    for (const valorCents of [0, -1, 1.5, Number.NaN]) {
+      await assertRejects(() => refund({ idTransacao: "tx1", valorCents }), Error);
+    }
+    assertEquals(readCalls, 0);
+    await assertRejects(() => refund({ idTransacao: "tx1", valorCents: 1001 }), Error);
+    assertEquals(readCalls, 1);
+    assertEquals(refundCalls, 0);
   } finally {
     restore();
   }
@@ -828,44 +887,54 @@ Deno.test("getPublicKey: cacheada em modulo, 2a chamada nao busca de novo", asyn
   }
 });
 
-// ---------------------------------------------------------------------------
-// (m) teste ao vivo — só roda com credenciais reais (VR_CLIENT_ID setado)
-// ---------------------------------------------------------------------------
+Deno.test("getPublicKey: cache não reutiliza chave entre mock e hml", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  const seen: string[] = [];
+  const { restore } = stubFetch((url) => {
+    seen.push(url);
+    return new Response(JSON.stringify({ key_id: `key-${seen.length}`, public_key: "public" }), { status: 200 });
+  });
+  try {
+    assertEquals((await getPublicKey()).key_id, "key-1");
+    Deno.env.set("VR_ENV", "hml");
+    assertEquals((await getPublicKey()).key_id, "key-2");
+    assertEquals(seen.length, 2);
+    assert(seen[0].startsWith("https://api-devportal.vr.com.br/captura/v2/"));
+    assert(seen[1].startsWith("https://api-hmp.vr.com.br/captura/v2/"));
+  } finally {
+    restore();
+    Deno.env.set("VR_ENV", "mock");
+    invalidatePublicKeyCache();
+  }
+});
 
-Deno.test({
-  name: "LIVE: getPublicKey + createPayment 2x com o mesmo id_transacao_van (mock/hml reais)",
-  ignore: !Deno.env.get("VR_CLIENT_ID"),
-  async fn() {
-    __resetVrClientCaches();
-    const { key_id, public_key } = await getPublicKey();
-    const idTransacaoVan = newIdTransacaoVan();
-    const cardEncrypted = await encryptCardData(
-      public_key,
-      {
-        nome: "Teste Spike",
-        numero_cartao: "4111111111111111",
-        data_expiracao: "1230",
-        cvv: "123",
-        documento: "00000000000",
-      },
-      "oaep-sha256",
-    );
-
-    const first = await createPayment({ valorCents: 100, idTransacaoVan, keyId: key_id, cardEncrypted });
-    // Nunca logar corpo — só o codigo_retorno, que já é o vocabulário público da VR.
-    console.log(`[vr live] 1a chamada codigo_retorno=${first.codigo_retorno}`);
-
-    try {
-      const second = await createPayment({ valorCents: 100, idTransacaoVan, keyId: key_id, cardEncrypted });
-      console.log(`[vr live] 2a chamada (mesmo id_transacao_van) codigo_retorno=${second.codigo_retorno}`);
-    } catch (err) {
-      if (err instanceof VrApiError) {
-        console.log(`[vr live] 2a chamada erro code=${err.code} codigo=${err.codigo ?? ""}`);
-      } else {
-        throw err;
-      }
-    }
-  },
+Deno.test("vrFetch: logs ocultam identificadores de cartão e transação", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  const logged: string[] = [];
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = (...args: unknown[]) => logged.push(args.join(" "));
+  console.error = (...args: unknown[]) => logged.push(args.join(" "));
+  const { restore } = stubFetch((url) => {
+    if (url.includes("/cartoes/")) return new Response("{}", { status: 200 });
+    return new Response(JSON.stringify({ codigo: "01" }), { status: 404 });
+  });
+  try {
+    await getTokenizedCard("secret-card-id");
+    await assertRejects(() => getTransaction("secret-transaction-id"), VrApiError);
+    assert(logged.some((line) => line.includes("/cartoes/:id")));
+    assert(logged.some((line) => line.includes("/pagamentos/:id")));
+    assert(!logged.join(" ").includes("secret-card-id"));
+    assert(!logged.join(" ").includes("secret-transaction-id"));
+  } finally {
+    restore();
+    console.log = originalLog;
+    console.error = originalError;
+  }
 });
 
 // ---------------------------------------------------------------------------

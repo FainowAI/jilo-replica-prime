@@ -1,8 +1,8 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { Buffer } from "node:buffer";
-import { constants as nodeConstants, generateKeyPairSync, privateDecrypt } from "node:crypto";
+import { generateKeyPairSync } from "node:crypto";
 import { __resetVrClientCaches } from "../_shared/vr-client.ts";
-import { runHomologacao } from "./vr-homologacao.ts";
+import { runHomologacao, runPreflight } from "./vr-homologacao.ts";
 
 // ponytail: valores sentinela em vez de PAN/CVV/nome/documento "realistas" — evita falsos
 // positivos/negativos na checagem de vazamento (dígitos curtos colidem com ids/valores).
@@ -41,9 +41,7 @@ function setEnv(): void {
 }
 
 /**
- * ponytail: `Deno.test` de outros arquivos (ex.: o teste LIVE de vr-client.test.ts,
- * `ignore: !Deno.env.get("VR_CLIENT_ID")`) roda no mesmo processo — sem isso, um
- * VR_CLIENT_ID de teste vazando no ambiente destrava esse teste ao vivo sem querer.
+ * Impede que sentinelas de um teste contaminem os outros casos no mesmo processo.
  */
 function cleanEnv(): void {
   for (const name of ENV_VARS) Deno.env.delete(name);
@@ -79,6 +77,47 @@ function oauthHandler(): FetchHandler {
   };
 }
 
+Deno.test("runPreflight: GET da chave em 403 falha sem chamar endpoints financeiros", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  const oauth = oauthHandler();
+  const called: string[] = [];
+  const { restore } = stubFetch((url, init) => {
+    called.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+    if (url.includes("/oauth/")) return oauth(url, init);
+    if (url.includes("/chaves/chave-publica")) return new Response("{}", { status: 403 });
+    throw new Error(`Endpoint inesperado: ${url}`);
+  });
+  try {
+    const result = await runPreflight();
+    assertEquals(result, { ok: false, message: "Falhou: vr_http_403 status=403" });
+    assertEquals(called.some((path) => path.includes("/transacoes/") || path.includes("/cartoes/")), false);
+  } finally {
+    restore();
+    cleanEnv();
+  }
+});
+
+Deno.test("runPreflight: token e chave autorizados passam sem cartao", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  const oauth = oauthHandler();
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/oauth/")) return oauth(url, init);
+    if (url.includes("/chaves/chave-publica")) {
+      return new Response(JSON.stringify({ key_id: "key-hml-sentinel", public_key: "PUBLIC_KEY_SENTINEL" }), { status: 200 });
+    }
+    throw new Error(`Endpoint inesperado: ${url}`);
+  });
+  try {
+    const result = await runPreflight();
+    assertEquals(result, { ok: true, message: "OK token + chave pública (key_id=key-hml-sentinel)" });
+  } finally {
+    restore();
+    cleanEnv();
+  }
+});
+
 let seq = 0;
 function nextId(prefix: string): string {
   seq++;
@@ -88,55 +127,68 @@ function nextId(prefix: string): string {
 /** Handler completo: OAuth + chave pública + todos os endpoints da API Captura, sempre com sucesso. */
 function fullSuccessHandler(publicKeyPem: string): FetchHandler {
   const oauth = oauthHandler();
+  const transactions = new Map<string, { id: string; valor: number; status: string }>();
+  const reservations = new Map<string, { id: string; valor: number; status: string }>();
   return (url, init) => {
     if (url.includes("/oauth/")) return oauth(url, init);
     if (url.includes("/chaves/chave-publica")) {
       return new Response(JSON.stringify({ key_id: "key-hml-1", public_key: publicKeyPem }), { status: 200 });
     }
-    if (url.endsWith("/transacoes/pagamentos/reservas")) {
-      return new Response(
-        JSON.stringify({ id_transacao: nextId("res"), valor: 1000, status: "PENDENTE", codigo_retorno: "00" }),
-        { status: 201 },
-      );
+    if (url.endsWith("/transacoes/pagamentos/reservas") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      const item = { id: nextId("res"), valor: body.valor, status: "PENDENTE" };
+      reservations.set(item.id, item);
+      reservations.set(body.id_transacao_van, item);
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, status: item.status, codigo_retorno: "00" }), { status: 201 });
     }
-    if (url.endsWith("/transacoes/pagamentos")) {
-      return new Response(
-        JSON.stringify({ id_transacao: nextId("tx"), valor: 1000, codigo_retorno: "00", codigo_autorizacao: "AUTH1" }),
-        { status: 201 },
-      );
+    if (url.endsWith("/transacoes/pagamentos") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      const item = { id: nextId("tx"), valor: body.valor, status: "CONFIRMADA" };
+      transactions.set(item.id, item);
+      transactions.set(body.id_transacao_van, item);
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, codigo_retorno: "00", codigo_autorizacao: "AUTH1" }), { status: 201 });
     }
-    if (url.includes("/transacoes/pagamentos/") && url.endsWith("/estornos")) {
-      return new Response(JSON.stringify({ id_transacao: "tx-estorno", valor: 400, codigo_retorno: "00" }), { status: 201 });
+    const refundId = url.match(/\/transacoes\/pagamentos\/([^/]+)\/estornos$/)?.[1];
+    if (refundId && init?.method === "POST") {
+      const item = transactions.get(refundId);
+      if (!item) throw new Error("stub: transação do estorno ausente");
+      const body = JSON.parse(String(init.body));
+      if (body.valor === item.valor) item.status = "CANCELADA";
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: body.valor, codigo_retorno: "00" }), { status: 201 });
     }
-    if (url.includes("/transacoes/pagamentos/reservas/")) {
-      return new Response(
-        JSON.stringify({ id_transacao: "res-1", valor: 1000, status: "PENDENTE", codigo_retorno: "00" }),
-        { status: 200 },
-      );
+    const reserveSettleId = url.match(/\/transacoes\/pagamentos\/([^/]+)\/reservas$/)?.[1];
+    if (reserveSettleId && init?.method === "PATCH") {
+      const item = reservations.get(reserveSettleId);
+      if (!item) throw new Error("stub: reserva ausente");
+      const body = JSON.parse(String(init.body));
+      item.status = body.acao === "cancelar" ? "CANCELADA" : "CONFIRMADA";
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, codigo_retorno: "00" }), { status: 200 });
     }
-    if (url.includes("/transacoes/pagamentos/") && url.endsWith("/reservas")) {
-      return new Response(JSON.stringify({ id_transacao: "res-1", valor: 1000, codigo_retorno: "00" }), { status: 200 });
+    const reserveGetId = url.match(/\/transacoes\/pagamentos\/reservas\/([^/]+)$/)?.[1];
+    if (reserveGetId && init?.method !== "POST") {
+      const item = reservations.get(reserveGetId);
+      if (!item) throw new Error("stub: reserva consultada ausente");
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, status: item.status, codigo_retorno: "00" }), { status: 200 });
     }
-    if (url.includes("/transacoes/pagamentos/")) {
-      return new Response(JSON.stringify({ id_transacao: "tx-1", status: "CONFIRMADA", valor: 1000 }), { status: 200 });
+    const paymentGetId = url.match(/\/transacoes\/pagamentos\/([^/]+)$/)?.[1];
+    if (paymentGetId && init?.method !== "POST") {
+      const item = transactions.get(paymentGetId) ?? reservations.get(paymentGetId);
+      if (!item) throw new Error("stub: transação consultada ausente");
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, status: item.status }), { status: 200 });
     }
-    if (url.endsWith("/cartoes")) {
+    if (url.endsWith("/cartoes") && init?.method === "POST") {
       return new Response(JSON.stringify({ cartao_token_id: "cartao-token-sentinela-0001", mensagens: [] }), { status: 201 });
     }
     if (url.includes("/cartoes/")) {
       if (init?.method === "DELETE") return new Response(null, { status: 204 });
       return new Response(
-        JSON.stringify({
-          cartao: { cartao_token_id: "cartao-token-sentinela-0001", ultimos4_digitos: "0001", status_cartao: "ATIVO" },
-          mensagens: [],
-        }),
+        JSON.stringify({ cartao: { cartao_token_id: "cartao-token-sentinela-0001", ultimos4_digitos: "0001", status_cartao: "ATIVO" }, mensagens: [] }),
         { status: 200 },
       );
     }
-    throw new Error(`stub fetch: URL inesperada ${url}`);
+    throw new Error("stub fetch: URL inesperada " + url);
   };
 }
-
 function generateTestKeyPair() {
   return generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -159,7 +211,7 @@ Deno.test("runHomologacao: 6 cenários ok, evidências sem PAN/CVV/documento/nom
   const tmpDir = await Deno.makeTempDir();
 
   try {
-    const evidencias = await runHomologacao({ out: tmpDir });
+    const evidencias = await runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" });
     const cenarios = new Set(evidencias.map((e) => e.cenario));
     assertEquals(cenarios.size, 6);
     assert([...cenarios].includes("confirmacao"));
@@ -189,87 +241,70 @@ Deno.test("runHomologacao: 6 cenários ok, evidências sem PAN/CVV/documento/nom
   }
 });
 
-Deno.test("runHomologacao: 400 no primeiro pagamento cifrado cai para pkcs1 e registra o padding", async () => {
+Deno.test("runHomologacao: bloqueia cenários HML sem contrato RSA antes de qualquer fetch", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  let fetchCalled = false;
+  const { restore } = stubFetch(() => {
+    fetchCalled = true;
+    throw new Error("não deveria chamar fetch sem contrato RSA");
+  });
+  try {
+    await assertRejects(() => runHomologacao(), Error, "contrato oficial do RSA");
+    assertEquals(fetchCalled, false);
+  } finally {
+    restore();
+    cleanEnv();
+  }
+});
+
+Deno.test("runHomologacao: código de retorno recusado falha e não tenta outro padding", async () => {
   setEnv();
   __resetVrClientCaches();
   seq = 0;
-  const { publicKey, privateKey } = generateTestKeyPair();
-  const tmpDir = await Deno.makeTempDir();
-
+  const { publicKey } = generateTestKeyPair();
+  const success = fullSuccessHandler(publicKey);
   let paymentCalls = 0;
-  const sentVans: string[] = [];
-  const oauth = oauthHandler();
   const { restore } = stubFetch((url, init) => {
-    if (url.includes("/oauth/")) return oauth(url, init);
-    if (url.includes("/chaves/chave-publica")) {
-      return new Response(JSON.stringify({ key_id: "key-hml-1", public_key: publicKey }), { status: 200 });
-    }
     if (url.endsWith("/transacoes/pagamentos") && init?.method === "POST") {
       paymentCalls++;
-      const body = JSON.parse(String(init?.body));
-      // Só as 2 primeiras chamadas (cenário "confirmacao", que fixa o padding) mexem com
-      // cartão cifrado; as demais (outros cenários reaproveitando o padding fixado, e a
-      // tokenização, que usa cartao_token_id) não precisam ser verificadas aqui de novo.
       if (paymentCalls === 1) {
-        sentVans.push(body.id_transacao_van);
-        // Prova que a 1a tentativa realmente cifrou com OAEP.
-        privateDecrypt(
-          { key: privateKey, padding: nodeConstants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" },
-          Buffer.from(body.cartao_dados_criptografados, "base64"),
-        );
-        return new Response(JSON.stringify({ mensagem: "Dados do cartão inválidos" }), { status: 400 });
+        return new Response(JSON.stringify({ id_transacao: "tx-recusa", valor: 1000, codigo_retorno: "63" }), { status: 201 });
       }
-      if (paymentCalls === 2) {
-        sentVans.push(body.id_transacao_van);
-        // Prova que o retry realmente cifrou com PKCS#1 v1.5.
-        const plain = privateDecrypt({ key: privateKey, padding: nodeConstants.RSA_PKCS1_PADDING }, Buffer.from(body.cartao_dados_criptografados, "base64"));
-        assert(JSON.parse(plain.toString("utf8")).numero_cartao === SENTINEL.numero);
-      }
-      return new Response(JSON.stringify({ id_transacao: nextId("tx"), valor: 1000, codigo_retorno: "00" }), { status: 201 });
     }
-    if (url.endsWith("/transacoes/pagamentos/reservas") && init?.method === "POST") {
-      // Reservas reutilizam o padding já fixado (pkcs1) — só confere na 1a reserva
-      // (cenário "reserva_efetivacao"); a 2a (reserva_cancelamento) não precisa reverificar.
-      const body = JSON.parse(String(init?.body));
-      const plain = privateDecrypt({ key: privateKey, padding: nodeConstants.RSA_PKCS1_PADDING }, Buffer.from(body.cartao_dados_criptografados, "base64"));
-      assert(JSON.parse(plain.toString("utf8")).numero_cartao === SENTINEL.numero);
-      return new Response(JSON.stringify({ id_transacao: nextId("res"), valor: 1000, status: "PENDENTE", codigo_retorno: "00" }), { status: 201 });
-    }
-    if (url.includes("/estornos")) {
-      return new Response(JSON.stringify({ id_transacao: "tx-estorno", valor: 400, codigo_retorno: "00" }), { status: 201 });
-    }
-    if (url.includes("/transacoes/pagamentos/reservas/")) {
-      return new Response(JSON.stringify({ id_transacao: "res-1", valor: 1000, status: "PENDENTE", codigo_retorno: "00" }), { status: 200 });
-    }
-    if (url.includes("/transacoes/pagamentos/") && url.endsWith("/reservas")) {
-      return new Response(JSON.stringify({ id_transacao: "res-1", valor: 1000, codigo_retorno: "00" }), { status: 200 });
-    }
-    if (url.includes("/transacoes/pagamentos/")) {
-      return new Response(JSON.stringify({ id_transacao: "tx-1", status: "CANCELADA", valor: 1000 }), { status: 200 });
-    }
-    if (url.endsWith("/cartoes")) {
-      return new Response(JSON.stringify({ cartao_token_id: "cartao-token-sentinela-0001", mensagens: [] }), { status: 201 });
-    }
-    if (url.includes("/cartoes/")) {
-      if (init?.method === "DELETE") return new Response(null, { status: 204 });
-      return new Response(
-        JSON.stringify({ cartao: { cartao_token_id: "cartao-token-sentinela-0001", ultimos4_digitos: "0001", status_cartao: "ATIVO" }, mensagens: [] }),
-        { status: 200 },
-      );
-    }
-    throw new Error(`stub fetch: URL inesperada ${url}`);
+    return success(url, init);
   });
-
+  const tmpDir = await Deno.makeTempDir();
   try {
-    const evidencias = await runHomologacao({ out: tmpDir });
-    assert(paymentCalls >= 2, "esperava ao menos a 1a tentativa (OAEP, 400) + retry (PKCS#1)");
-    assert(sentVans[0] !== sentVans[1], "o retry deveria usar um novo id_transacao_van");
-    const confirmacaoPayment = evidencias.find((e) => e.cenario === "confirmacao" && e.passo === "createPayment");
-    assertEquals(confirmacaoPayment?.padding, "pkcs1");
-    assertEquals(confirmacaoPayment?.id_transacao_van, sentVans[1]);
-
-    const reservaPayment = evidencias.find((e) => e.cenario === "reserva_efetivacao" && e.passo === "createReservation");
-    assertEquals(reservaPayment?.padding, "pkcs1", "reservas devem reutilizar o padding já fixado");
+    const evidencias = await runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" });
+    const confirmacao = evidencias.find((e) => e.cenario === "confirmacao" && e.passo === "createPayment");
+    assertEquals(confirmacao?.ok, false);
+    assertEquals(paymentCalls, 4, "cada cenário de pagamento faz uma tentativa; não há retry RSA");
+  } finally {
+    restore();
+    cleanEnv();
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+Deno.test("runHomologacao: consulta pendente não aprova confirmação", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  seq = 0;
+  const { publicKey } = generateTestKeyPair();
+  const success = fullSuccessHandler(publicKey);
+  let firstConsult = true;
+  const { restore } = stubFetch((url, init) => {
+    if (firstConsult && (!init?.method || init.method === "GET") && /\/transacoes\/pagamentos\/[^/]+$/.test(url)) {
+      firstConsult = false;
+      return new Response(JSON.stringify({ id_transacao: "tx-pendente", status: "PENDENTE", valor: 1000 }), { status: 200 });
+    }
+    return success(url, init);
+  });
+  const tmpDir = await Deno.makeTempDir();
+  try {
+    const evidencias = await runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" });
+    const consulta = evidencias.find((e) => e.cenario === "confirmacao" && e.passo === "getTransaction");
+    assertEquals(consulta?.ok, false);
   } finally {
     restore();
     cleanEnv();

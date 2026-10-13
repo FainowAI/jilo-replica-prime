@@ -4,12 +4,14 @@
  * valor, reembolso parcial e tokenização. Usa o MESMO `../_shared/vr-client.ts` do
  * checkout — nada de reimplementar cliente aqui.
  *
- * Uso:
- *   npx -y deno run --allow-net --allow-env --allow-read --allow-write \
- *     --env-file=.env.vr-hml supabase/functions/_hml/vr-homologacao.ts [--preflight] [--out <dir>]
+ * Uso liberado enquanto o contrato RSA estiver pendente (somente leitura):
+ *   deno run --allow-net=api.vr.com.br,api-hmp.vr.com.br --allow-env \
+ *     --allow-read=.env.vr-hml --env-file=.env.vr-hml \
+ *     supabase/functions/_hml/vr-homologacao.ts --preflight
  *
- * `--preflight`: só testa token + chave pública (sem cartão) — rodar assim que a
- * App da VR sair de "Pendente" no gateway, antes de gastar as transações de teste.
+ * `--preflight`: só testa token + chave pública (sem cartão).
+ * Os cenários financeiros via CLI ficam bloqueados até confirmação do padding e
+ * do plaintext RSA pela VR, mais autorização específica para transações HML.
  *
  * `--out <dir>`: pasta de saída das evidências (default `.claude/.work/pagamento-vr`,
  * relativo ao cwd = raiz do repo; já coberta pelo `.gitignore`).
@@ -162,6 +164,9 @@ async function step(
 ): Promise<boolean> {
   try {
     const extra = await fn();
+    if (extra.codigo_retorno && extra.codigo_retorno !== "00") {
+      throw new Error(`VR recusou ${passo} (codigo_retorno=${extra.codigo_retorno}).`);
+    }
     evidencias.push(evidenciaOk(cenario, passo, extra));
     return true;
   } catch (err) {
@@ -171,57 +176,28 @@ async function step(
 }
 
 // ---------------------------------------------------------------------------
-// Padding RSA indocumentado: tenta oaep-sha256, cai pra pkcs1 em falha de cartão,
-// e fixa o padding aceito para o resto da run (via `state`, compartilhado entre cenários).
+// O contrato RSA (padding e plaintext) ainda depende de resposta oficial da VR.
+// Nos testes sintéticos o padding é explícito; nunca repetir uma transação para "descobri-lo".
 // ---------------------------------------------------------------------------
 
 interface PaddingState {
-  padding: RsaPadding | null;
+  padding: RsaPadding;
 }
 
-const CARD_ERROR_CODES = ["63", "99", "76"];
-
-async function withPaddingFallback<T extends { codigo_retorno: string }>(
+async function withConfirmedPadding<T extends { codigo_retorno: string }>(
   state: PaddingState,
   create: (args: { valorCents: number; idTransacaoVan: string; keyId: string; cardEncrypted: string }) => Promise<T>,
   args: { keyId: string; publicKey: string; card: VrCardInput; valorCents: number },
 ): Promise<{ result: T; padding: RsaPadding; idTransacaoVan: string }> {
-  const padding1: RsaPadding = state.padding ?? "oaep-sha256";
-  const idTransacaoVan1 = newIdTransacaoVan();
-  const cardEncrypted1 = await encryptCardData(args.publicKey, args.card, padding1);
-
-  const attemptFallback = async () => {
-    const padding2: RsaPadding = padding1 === "oaep-sha256" ? "pkcs1" : "oaep-sha256";
-    const idTransacaoVan2 = newIdTransacaoVan();
-    const cardEncrypted2 = await encryptCardData(args.publicKey, args.card, padding2);
-    const result2 = await create({
-      valorCents: args.valorCents,
-      idTransacaoVan: idTransacaoVan2,
-      keyId: args.keyId,
-      cardEncrypted: cardEncrypted2,
-    });
-    state.padding = padding2;
-    return { result: result2, padding: padding2, idTransacaoVan: idTransacaoVan2 };
-  };
-
-  try {
-    const result = await create({
-      valorCents: args.valorCents,
-      idTransacaoVan: idTransacaoVan1,
-      keyId: args.keyId,
-      cardEncrypted: cardEncrypted1,
-    });
-    const cardCodeBad = result.codigo_retorno !== "00" && CARD_ERROR_CODES.includes(result.codigo_retorno);
-    if (state.padding === null && cardCodeBad) {
-      return await attemptFallback();
-    }
-    state.padding = padding1;
-    return { result, padding: padding1, idTransacaoVan: idTransacaoVan1 };
-  } catch (err) {
-    const shouldFallback = state.padding === null && err instanceof VrApiError && err.status === 400;
-    if (!shouldFallback) throw err;
-    return await attemptFallback();
-  }
+  const idTransacaoVan = newIdTransacaoVan();
+  const cardEncrypted = await encryptCardData(args.publicKey, args.card, state.padding);
+  const result = await create({
+    valorCents: args.valorCents,
+    idTransacaoVan,
+    keyId: args.keyId,
+    cardEncrypted,
+  });
+  return { result, padding: state.padding, idTransacaoVan };
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +214,9 @@ interface Ctx {
 }
 
 function transacaoExtra(t: TransacaoAutorizada | TransacaoReserva, idTransacaoVan: string, padding?: RsaPadding): Partial<Evidencia> {
+  if (!t.id_transacao || t.codigo_retorno !== "00" || !Number.isSafeInteger(t.valor) || t.valor <= 0) {
+    throw new Error("Resposta VR não comprova transação aprovada com valor válido.");
+  }
   return {
     id_transacao: t.id_transacao,
     id_transacao_van: idTransacaoVan,
@@ -249,17 +228,24 @@ function transacaoExtra(t: TransacaoAutorizada | TransacaoReserva, idTransacaoVa
   };
 }
 
+function assertStatusAndValue(actual: { status: string; valor: number }, expectedStatus: string, expectedValue: number): void {
+  if (actual.status !== expectedStatus || actual.valor !== expectedValue) {
+    throw new Error(`Consulta VR não confirmou ${expectedStatus} e valor ${expectedValue}.`);
+  }
+}
+
 async function scenarioConfirmacao(ctx: Ctx): Promise<void> {
   const cenario = "confirmacao";
   let idTransacaoVan: string;
   const created = await step(cenario, "createPayment", ctx.evidencias, async () => {
-    const { result, padding, idTransacaoVan: van } = await withPaddingFallback(ctx.state, createPayment, ctx);
+    const { result, padding, idTransacaoVan: van } = await withConfirmedPadding(ctx.state, createPayment, ctx);
     idTransacaoVan = van;
     return transacaoExtra(result, van, padding);
   });
   if (!created) return;
   await step(cenario, "getTransaction", ctx.evidencias, async () => {
     const consulta = await getTransaction(idTransacaoVan);
+    assertStatusAndValue(consulta, "CONFIRMADA", ctx.valorCents);
     return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
   });
 }
@@ -269,7 +255,7 @@ async function scenarioCancelamentoEstornoTotal(ctx: Ctx): Promise<void> {
   let idTransacao: string;
   let idTransacaoVan: string;
   const created = await step(cenario, "createPayment", ctx.evidencias, async () => {
-    const { result, padding, idTransacaoVan: van } = await withPaddingFallback(ctx.state, createPayment, ctx);
+    const { result, padding, idTransacaoVan: van } = await withConfirmedPadding(ctx.state, createPayment, ctx);
     idTransacao = result.id_transacao;
     idTransacaoVan = van;
     return transacaoExtra(result, van, padding);
@@ -277,11 +263,14 @@ async function scenarioCancelamentoEstornoTotal(ctx: Ctx): Promise<void> {
   if (!created) return;
   const refunded = await step(cenario, "refund", ctx.evidencias, async () => {
     const { estorno } = await refund({ idTransacao, valorCents: ctx.valorCents });
-    return estorno ? transacaoExtra(estorno, idTransacaoVan) : {};
+    if (!estorno) throw new Error("Estorno integral não executado.");
+    if (estorno.valor !== ctx.valorCents) throw new Error("Valor do estorno integral divergente.");
+    return transacaoExtra(estorno, idTransacaoVan);
   });
   if (!refunded) return;
   await step(cenario, "getTransaction", ctx.evidencias, async () => {
     const consulta = await getTransaction(idTransacaoVan);
+    assertStatusAndValue(consulta, "CANCELADA", ctx.valorCents);
     return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
   });
 }
@@ -291,7 +280,7 @@ async function scenarioReservaEfetivacao(ctx: Ctx): Promise<void> {
   let idTransacao: string;
   let idTransacaoVan: string;
   const created = await step(cenario, "createReservation", ctx.evidencias, async () => {
-    const { result, padding, idTransacaoVan: van } = await withPaddingFallback(ctx.state, createReservation, ctx);
+    const { result, padding, idTransacaoVan: van } = await withConfirmedPadding(ctx.state, createReservation, ctx);
     idTransacao = result.id_transacao;
     idTransacaoVan = van;
     return transacaoExtra(result, van, padding);
@@ -299,6 +288,7 @@ async function scenarioReservaEfetivacao(ctx: Ctx): Promise<void> {
   if (!created) return;
   const consulted = await step(cenario, "getReservation", ctx.evidencias, async () => {
     const reserva = await getReservation(idTransacao);
+    assertStatusAndValue(reserva, "PENDENTE", ctx.valorCents);
     return { id_transacao: reserva.id_transacao, valor: reserva.valor, status: reserva.status, mensagem: reserva.mensagem };
   });
   if (!consulted) return;
@@ -309,6 +299,7 @@ async function scenarioReservaEfetivacao(ctx: Ctx): Promise<void> {
   if (!settled) return;
   await step(cenario, "getTransaction", ctx.evidencias, async () => {
     const consulta = await getTransaction(idTransacaoVan);
+    assertStatusAndValue(consulta, "CONFIRMADA", ctx.valorCents);
     return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
   });
 }
@@ -318,7 +309,7 @@ async function scenarioReservaCancelamento(ctx: Ctx): Promise<void> {
   let idTransacao: string;
   let idTransacaoVan: string;
   const created = await step(cenario, "createReservation", ctx.evidencias, async () => {
-    const { result, padding, idTransacaoVan: van } = await withPaddingFallback(ctx.state, createReservation, ctx);
+    const { result, padding, idTransacaoVan: van } = await withConfirmedPadding(ctx.state, createReservation, ctx);
     idTransacao = result.id_transacao;
     idTransacaoVan = van;
     return transacaoExtra(result, van, padding);
@@ -332,6 +323,7 @@ async function scenarioReservaCancelamento(ctx: Ctx): Promise<void> {
   if (!settled) return;
   await step(cenario, "getReservation", ctx.evidencias, async () => {
     const reserva = await getReservation(idTransacao);
+    assertStatusAndValue(reserva, "CANCELADA", ctx.valorCents);
     return { id_transacao: reserva.id_transacao, valor: reserva.valor, status: reserva.status, mensagem: reserva.mensagem };
   });
 }
@@ -341,7 +333,7 @@ async function scenarioReembolsoParcial(ctx: Ctx): Promise<void> {
   let idTransacao: string;
   let idTransacaoVan: string;
   const created = await step(cenario, "createPayment", ctx.evidencias, async () => {
-    const { result, padding, idTransacaoVan: van } = await withPaddingFallback(ctx.state, createPayment, ctx);
+    const { result, padding, idTransacaoVan: van } = await withConfirmedPadding(ctx.state, createPayment, ctx);
     idTransacao = result.id_transacao;
     idTransacaoVan = van;
     return transacaoExtra(result, van, padding);
@@ -350,11 +342,14 @@ async function scenarioReembolsoParcial(ctx: Ctx): Promise<void> {
   const parcialCents = Math.round(ctx.valorCents * 0.4);
   const refunded = await step(cenario, "refund(parcial 40%)", ctx.evidencias, async () => {
     const { estorno } = await refund({ idTransacao, valorCents: parcialCents });
-    return estorno ? transacaoExtra(estorno, idTransacaoVan) : {};
+    if (!estorno) throw new Error("Estorno parcial não executado.");
+    if (estorno.valor !== parcialCents) throw new Error("Valor do estorno parcial divergente.");
+    return transacaoExtra(estorno, idTransacaoVan);
   });
   if (!refunded) return;
   await step(cenario, "getTransaction", ctx.evidencias, async () => {
     const consulta = await getTransaction(idTransacaoVan);
+    assertStatusAndValue(consulta, "CONFIRMADA", ctx.valorCents);
     return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
   });
 }
@@ -400,6 +395,7 @@ async function scenarioTokenizacao(ctx: Ctx, testCard: TestCardEnv): Promise<voi
 
     await step(cenario, "getTransaction", ctx.evidencias, async () => {
       const consulta = await getTransaction(idTransacaoVan!);
+      assertStatusAndValue(consulta, "CONFIRMADA", ctx.valorCents);
       return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
     });
   } finally {
@@ -449,7 +445,7 @@ function buildMarkdown(
 ): string {
   const cenarios = [...new Set(evidencias.map((e) => e.cenario))];
   const lines: string[] = [
-    "# Evidências de Homologação VR — API de Captura 2.4.0",
+    "# Evidências de Homologação VR - API de Captura v2 (versão 2.4.0/2.4.1 a confirmar)",
     "",
     `- Ambiente: Homologação (VR_ENV=hml)`,
     `- id_filiacao: ${header.idFiliacao}`,
@@ -485,10 +481,18 @@ async function writeEvidenceFiles(
 // Entrypoint da homologação completa
 // ---------------------------------------------------------------------------
 
-export async function runHomologacao(opts: { out?: string } = {}): Promise<Evidencia[]> {
+export async function runHomologacao(opts: { out?: string; testOnlyRsaPadding?: RsaPadding } = {}): Promise<Evidencia[]> {
   assertHmlEnv();
+  // Bloqueio deliberado: o e-mail de liberação da App não confirmou padding nem
+  // formato do plaintext. Apenas testes com fetch stubado passam padding explícito.
+  if (import.meta.main || !opts.testOnlyRsaPadding) {
+    throw new Error("Cenários HML bloqueados: aguardar contrato oficial do RSA (padding e plaintext). Use --preflight para a chave pública.");
+  }
   const testCard = requireTestCardEnv();
   const valorCents = valorCentsFromEnv();
+  if (!Number.isSafeInteger(valorCents) || valorCents < 3) {
+    throw new Error("VR_TEST_VALOR_CENTS deve ser um inteiro de pelo menos 3 centavos para o teste parcial.");
+  }
   const idFiliacao = requireEnv("VR_ID_FILIACAO");
   const clientIdMasked = maskClientId(requireEnv("VR_CLIENT_ID"));
 
@@ -501,7 +505,7 @@ export async function runHomologacao(opts: { out?: string } = {}): Promise<Evide
     documento: testCard.documento,
   };
 
-  const state: PaddingState = { padding: null };
+  const state: PaddingState = { padding: opts.testOnlyRsaPadding };
   const evidencias: Evidencia[] = [];
   const ctx: Ctx = { state, keyId: key_id, publicKey: public_key, card, valorCents, evidencias };
 

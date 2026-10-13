@@ -59,6 +59,8 @@ Como aplicar:
 - `.claude/fluxo-kits.md` — Kits temáticos e Kit Livre, descontos progressivos
 - `.claude/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
 - `.claude/fluxo-analytics.md` — PostHog (produto): gate prod-only, eventos do funil, masking de PII
+- `.claude/fluxo-bling.md` — Bling (ERP/nota fiscal) ↔ Shopify: integração nativa, mapeamento de pedidos, bloqueios fiscais
+- `.claude/adr/` — decisões de arquitetura (0001: Cielo conector + Alelo via API)
 
 ## Regra de atualização
 Sempre que uma sessão do Claude Code modificar um fluxo documentado, ela DEVE atualizar o arquivo `.claude/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.claude/fluxo-[nome].md` e registrar aqui.
@@ -78,9 +80,13 @@ Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuá
 - O catálogo NÃO está no Supabase — está no Shopify. Qualquer mudança em produtos é feita via Shopify Admin ou scripts de seed.
 - O Storefront Access Token está hardcoded em `src/lib/shopify.ts` — é um token público (Storefront), mas deve ser movido para .env em produção.
 - O carrinho sincroniza com Shopify Cart API — se o cart expirar no Shopify, o store local limpa automaticamente (`cartNotFound` handler).
-- Pix com 5% de desconto é calculado no frontend (multiplicação por 0.95) — NÃO é um desconto real no Shopify.
+- Pix 5% = cupom real `PIX5` (classe ORDER, incide no frete) aplicado no cart via `cartDiscountCodesUpdate`; o front só espelha `cart.cost.totalAmount` (R79/R80). O "Pix 5%" nos cards de produto é só preview (×0,95).
 - A tabela `profiles` no Supabase tem RLS ativa — cada usuário só vê/edita o próprio perfil (policies escopadas a `authenticated`). Veja a seção "Segurança de RLS".
 - O projeto foi criado no Lovable — não altere a estrutura de pastas sem necessidade.
-- O cupom BEMVINDO10 é hardcoded no frontend (desconto fixo R$10) — não há validação server-side.
+- Cupons (BEMVINDO10 etc.) são códigos da Shopify validados server-side via `cartDiscountCodesUpdate`; nada é hardcoded no front.
 - Frete grátis a partir de 7 marmitas (R34, `src/config/shipping.ts`); abaixo disso, cotação Uber Direct cobrada por uma variante fantasma no cart. Os produtos DEVEM ficar com `requiresShipping: false` na Shopify (Path B) — se alguém marcar "produto físico" no Admin, o checkout passa a cobrar a taxa nativa "Padrão" (R$ 22) por cima. Foi o que aconteceu em set/2026; ver `.claude/fluxo-carrinho-checkout.md`.
-- O checkout redireciona para Shopify — descontos de cupom e PIX do frontend NÃO são refletidos lá.
+- O checkout redireciona para Shopify; o `checkoutUrl` é assinado com o estado do cart e DEVE ser renovado (`refreshCartDetails`) depois de qualquer mutação (R80). Antes do redirect o cart recebe `buyerIdentity` com e-mail/telefone do login (R81) — sem isso o pedido cai em outro customer e some de "Meus pedidos".
+- `customerCreate` da Admin API NÃO aceita `identifier`: o vínculo cliente↔Shopify é busca por e-mail + `customerUpdate`/`customerCreate` (`_shared/shopify-customer-upsert.ts`). Esse bug deixou 0/22 usuários Google sem `shopify_customer_id` até 2026-10-09.
+- Cielo: a Getnet FICA no checkout Shopify (cartão + Pix) — a Shopify só aceita um provedor de cartão ativo, então NÃO ativar o app "Cielo Creditcard" (removeria a Getnet). A Cielo serve ao Alelo, que é integração própria (`cielo-checkout`, molde VR) atrás de `VITE_ALELO_ENABLED` + `ALELO_ENABLED`. A Cielo NÃO deduplica `MerchantOrderId` e Alelo só cancela total no D0 — ver R86–R90 e ADR 0001. Cartão Alelo só via Silent Order Post (nunca PAN no backend).
+- Bling usa a integração nativa (sem código no repo; `orders.bling_*` são colunas mortas). Nunca mapear pedido não pago para "Cancelado" no Bling: o cancelamento volta para a Shopify e notifica o cliente. Ver `fluxo-bling.md`.
+- "Meus pedidos" NÃO lê `orders`: a edge `customer-orders` consulta a Admin API por `customer_id` e cai para `email:` se vier vazio. `orders`/`order_items` são espelho só para Uber/operação.

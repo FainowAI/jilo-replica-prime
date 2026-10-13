@@ -47,7 +47,7 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 ### Edge function (fonte dos pedidos)
 | Arquivo | Descrição |
 |---------|-----------|
-| `supabase/functions/customer-orders/index.ts` | Busca os pedidos do cliente logado na **Shopify Admin API** (`orders(query:"customer_id:...")`). Identidade vem do JWT (`getUser`), nunca do body (anti-IDOR). Reusa `_shared/shopify-admin-auth.ts`. `verify_jwt=true`. Mapeia o pedido Shopify → o shape que a UI já consome (order + items + history derivado). |
+| `supabase/functions/customer-orders/index.ts` | Busca os pedidos do cliente logado na **Shopify Admin API** (`orders(query:"customer_id:...")`; se vier 0 pedidos, refaz por `email:` — pedido guest com o mesmo e-mail). Identidade vem do JWT (`getUser`), nunca do body (anti-IDOR). Reusa `_shared/shopify-admin-auth.ts`. `verify_jwt=true`. Mapeia o pedido Shopify → o shape que a UI já consome (order + items + history derivado). |
 
 ## Tabelas do banco (ver `fluxo-infraestrutura.md` para schema completo)
 - `profiles` — dados pessoais + `shopify_customer_id` + `default_shipping_address_id`
@@ -91,6 +91,13 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 3. `useOrderDetails(id)` deriva do cache de `useOrders()` (sem rede extra) e acha o pedido por id
 4. Renderiza: itens, timeline derivada, resumo de valores, endereço de entrega, link de rastreio (se houver)
 5. Sem ações de edição — tudo read-only
+
+## Login/cadastro por e-mail e senha + dica de conta Google
+Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDialog`) junto com o Google.
+- Quem criou a conta com Google não tem senha. Ao falhar o login com "Invalid login credentials", o front chama `getLoginHint(email)` (`src/lib/authHint.ts`) -> edge `auth-login-hint` (pública, `verify_jwt=false`, fail-soft) -> RPC `auth_email_login_hint` (SECURITY DEFINER, só `service_role`; anon/authenticated não podem chamar, evita enumeração).
+- Dica `google` (conta com provedor Google, com ou sem senha) => alerta verde acima do botão Google ("Este e-mail foi cadastrado com o Google..."); null/timeout (4s) => "E-mail ou senha incorretos. Se você criou a conta com o Google, use o botão “Entrar com Google”.". Resposta só `{hint:'google'|null}`; a edge limita 5 consultas/IP/10 min (memória por instância) e impõe piso de ~300ms de latência (anti-enumeração).
+- Signup com e-mail já existente: o Supabase não dá erro e devolve `user.identities = []`; `AuthContext.signUp` devolve o erro `email_already_registered` (sem disparar `cadastroConcluido`), e a UI mostra o alerta Google ou "Este e-mail já tem cadastro. Faça login.".
+- Mapeamento hint -> mensagem é a função pura `authNotice` (testada em `authHint.test.ts`).
 
 ## Integrações
 | Integração | Tipo | Descrição |

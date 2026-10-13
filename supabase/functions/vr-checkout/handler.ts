@@ -40,6 +40,7 @@ import {
   type VrReturnClass,
 } from "../_shared/vr-client.ts";
 import { completeDraftOrder, createDraftOrder, deleteDraftOrder, type DraftOrderInput } from "../_shared/shopify-draft-order.ts";
+import { getDraftOrderStatus } from "../_shared/cielo-support.ts";
 import { isValidCpf } from "../_shared/cpf.ts";
 
 // ---------------------------------------------------------------------------
@@ -162,6 +163,7 @@ export interface VrCheckoutDeps {
     create(input: DraftOrderInput): Promise<{ id: string; totalPriceCents: number }>;
     complete(draftId: string): Promise<{ orderId: string; orderName: string }>;
     delete(draftId: string): Promise<void>;
+    status(draftId: string): Promise<{ status: string; order: { id: string; name: string } | null }>;
   };
   env: {
     VR_ENV: string;
@@ -533,6 +535,26 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     return jsonResponse({ orderName: completed.orderName, orderId: completed.orderId }, 200, cors);
   } catch {
     console.error(`[vr-checkout] draft_complete_failed ${idTransacaoVan}`);
+    // Ticket 09 (H3): o complete pode ter dado timeout DEPOIS de criar o pedido. Estornar aí =
+    // pedido pago na Shopify sem dinheiro. Consulta o draft antes de qualquer estorno.
+    try {
+      const st = await deps.draft.status(draft.id);
+      if (st.status === "COMPLETED" && st.order) {
+        await deps.db.update(txId, { status: "approved", shopify_order_id: st.order.id, shopify_order_name: st.order.name });
+        console.log(`[vr-checkout] approved_after_complete_error ${idTransacaoVan}`);
+        return jsonResponse({ orderName: st.order.name, orderId: st.order.id }, 200, cors);
+      }
+    } catch {
+      // ponytail: sem saber se o pedido nasceu, não estorna — a linha fica `authorizing` (cart
+      // travado pelo índice) e o suporte concilia; melhor que pedido pago sem dinheiro.
+      await deps.db.update(txId, { error: "draft_status_unknown:0" });
+      console.error(`[vr-checkout] draft_status_unknown ${idTransacaoVan}`);
+      return jsonResponse(
+        { code: "payment_pending", userMessage: "Pagamento em processamento. Não pague de novo; vamos confirmar em instantes." },
+        202,
+        cors,
+      );
+    }
     try {
       await deps.vr.refund({ idTransacao: vrResult.id_transacao, valorCents });
       await deps.db.update(txId, { status: "refunded_auto" });
@@ -652,7 +674,7 @@ export function buildDefaultDeps(): VrCheckoutDeps {
     hasOtherCoupon,
     isAreaDeliverable,
     vr: { createPayment, getTransaction, refund, classifyReturnCode, newIdTransacaoVan },
-    draft: { create: createDraftOrder, complete: completeDraftOrder, delete: deleteDraftOrder },
+    draft: { create: createDraftOrder, complete: completeDraftOrder, delete: deleteDraftOrder, status: getDraftOrderStatus },
     env: {
       VR_ENV: Deno.env.get("VR_ENV") ?? "mock",
       SHOPIFY_SHIPPING_VARIANT_ID: Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") || null,

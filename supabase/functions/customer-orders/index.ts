@@ -233,6 +233,39 @@ function mapOrder(node: ShopifyOrderNode) {
   };
 }
 
+// Rejeita metacaracteres da DSL de busca da Shopify (espaço, aspas, ':', '()',
+// wildcards, quebras de linha) para fechar injeção de termo.
+function isSafeEmail(email: string): boolean {
+  return !/["'\s:()*?]/.test(email) && !/[\r\n]/.test(email);
+}
+
+type OrdersResult =
+  | { ok: true; orders: ReturnType<typeof mapOrder>[] }
+  | { ok: false; error: string };
+
+async function fetchOrders(searchQuery: string): Promise<OrdersResult> {
+  const shopifyRes = await callShopifyAdmin({
+    query: CUSTOMER_ORDERS_QUERY,
+    variables: { q: searchQuery },
+  });
+
+  if (!shopifyRes.ok) {
+    const errorBody = await shopifyRes.text();
+    console.error("Shopify HTTP error:", shopifyRes.status, errorBody);
+    // ponytail: detalhe fica só no log do servidor; cliente recebe genérico.
+    return { ok: false, error: "Shopify API error" };
+  }
+
+  const shopifyData: ShopifyOrdersResponse = await shopifyRes.json();
+  if (shopifyData.errors && shopifyData.errors.length > 0) {
+    console.error("Shopify GraphQL errors:", shopifyData.errors);
+    return { ok: false, error: "GraphQL error" };
+  }
+
+  const edges = shopifyData.data?.orders?.edges ?? [];
+  return { ok: true, orders: edges.map(({ node }) => mapOrder(node)) };
+}
+
 serve(async (req) => {
   // Preflight CORS
   if (req.method === "OPTIONS") {
@@ -280,52 +313,33 @@ serve(async (req) => {
       .eq("id", user.id)
       .maybeSingle();
 
-    let searchQuery: string;
+    // ponytail: 2 queries no pior caso; unificar com OR na DSL se virar gargalo
+    let result: OrdersResult;
     if (profile?.shopify_customer_id) {
       // gid://shopify/Customer/123 → 123
       const customerNumericId = String(profile.shopify_customer_id).split("/").pop();
-      searchQuery = `customer_id:${customerNumericId}`;
+      result = await fetchOrders(`customer_id:${customerNumericId}`);
+      // Pedido feito como guest com o mesmo e-mail não tem customer_id: cai no e-mail.
+      if (result.ok && !result.orders.length && isSafeEmail(user.email)) {
+        result = await fetchOrders(`email:${user.email}`);
+      }
     } else {
-      // Fallback por e-mail do JWT. Rejeita metacaracteres da DSL de busca da
-      // Shopify (espaço, aspas, ':', '()', wildcards) para fechar injeção de termo.
-      if (/["'\s:()*?]/.test(user.email) || /[\r\n]/.test(user.email)) {
+      if (!isSafeEmail(user.email)) {
         return new Response(JSON.stringify({ error: "Invalid user email" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      searchQuery = `email:${user.email}`;
+      result = await fetchOrders(`email:${user.email}`);
     }
 
-    const shopifyPayload = {
-      query: CUSTOMER_ORDERS_QUERY,
-      variables: { q: searchQuery },
-    };
-
-    const shopifyRes = await callShopifyAdmin(shopifyPayload);
-
-    if (!shopifyRes.ok) {
-      const errorBody = await shopifyRes.text();
-      console.error("Shopify HTTP error:", shopifyRes.status, errorBody);
-      // ponytail: detalhe fica só no log do servidor; cliente recebe genérico.
+    if (!result.ok) {
       return new Response(
-        JSON.stringify({ error: "Shopify API error" }),
+        JSON.stringify({ error: result.error }),
         { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const shopifyData: ShopifyOrdersResponse = await shopifyRes.json();
-
-    if (shopifyData.errors && shopifyData.errors.length > 0) {
-      console.error("Shopify GraphQL errors:", shopifyData.errors);
-      return new Response(
-        JSON.stringify({ error: "GraphQL error" }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const edges = shopifyData.data?.orders?.edges ?? [];
-    const orders = edges.map(({ node }) => mapOrder(node));
+    const orders = result.orders;
 
     return new Response(
       JSON.stringify({ orders }),

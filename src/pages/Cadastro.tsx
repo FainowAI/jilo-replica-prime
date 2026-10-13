@@ -7,12 +7,15 @@ import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import GoogleHintAlert from "@/components/GoogleHintAlert";
+import { authNotice, getLoginHint, EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
 
 const Cadastro = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
   const { signUp, user } = useAuth();
   const navigate = useNavigate();
 
@@ -27,8 +30,13 @@ const Cadastro = () => {
       return;
     }
     setLoading(true);
+    setGoogleNotice(null);
     const { error } = await signUp(email, password, fullName);
-    if (error) {
+    if (error?.message === EMAIL_ALREADY_REGISTERED) {
+      const n = authNotice("signup", await getLoginHint(email));
+      if (n.google) setGoogleNotice(n.message);
+      else toast.error(n.message);
+    } else if (error) {
       toast.error(error.message);
     } else {
       toast.success("Conta criada! Verifique seu e-mail para confirmar.");
@@ -45,6 +53,7 @@ const Cadastro = () => {
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Criar conta</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">Acompanhe seus pedidos e salve seus endereços</p>
 
+        <GoogleHintAlert message={googleNotice} />
         <div className="flex justify-center mb-4">
           <GoogleSignInButton text="signup_with" />
         </div>

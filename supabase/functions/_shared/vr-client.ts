@@ -5,7 +5,7 @@
  *
  * Padrão copiado de `_shared/shopify-admin-auth.ts` (cache + refresh de
  * token) e do `callShopifyAdmin` de `customer-orders/index.ts` (retry único
- * em 401). Diferença deliberada: aqui o cache é uma variável de módulo, não
+ * em 401 somente para GET). Diferença deliberada: aqui o cache é uma variável de módulo, não
  * uma tabela — ponytail: cache em módulo; mover pra tabela só se o
  * grant-code tiver rate limit que exija sobreviver a cold starts frequentes.
  *
@@ -209,7 +209,7 @@ export async function getVrAccessToken(): Promise<string> {
   return await grantAndFetchToken();
 }
 
-/** Força renovação do token, ignorando validade do cache. Usado no retry de 401. */
+/** Força renovação do token, ignorando validade do cache. Usado no retry de GET após 401. */
 export async function forceRefreshVrAccessToken(): Promise<string> {
   if (tokenCache?.refresh_token) {
     return await refreshWithToken(tokenCache.refresh_token);
@@ -223,11 +223,33 @@ export async function forceRefreshVrAccessToken(): Promise<string> {
 
 export const VR_TIMEOUT_MS = 30_000;
 
-/** Faz uma chamada à API Captura injetando auth, timeout e retry único em 401. */
+/** Nunca incluir identificadores de transação ou token de cartão nos logs. */
+function safeLogPath(path: string): string {
+  if (
+    path === "/chaves/chave-publica" ||
+    path === "/transacoes/pagamentos" ||
+    path === "/transacoes/pagamentos/reservas" ||
+    path === "/cartoes"
+  ) return path;
+  if (/^\/transacoes\/pagamentos\/reservas\/[^/?]+$/.test(path)) {
+    return "/transacoes/pagamentos/reservas/:id";
+  }
+  if (/^\/transacoes\/pagamentos\/[^/?]+\/(estornos|reservas)$/.test(path)) {
+    return `/transacoes/pagamentos/:id/${path.split("/").at(-1)}`;
+  }
+  if (/^\/transacoes\/pagamentos\/[^/?]+$/.test(path)) {
+    return "/transacoes/pagamentos/:id";
+  }
+  if (/^\/cartoes\/[^/?]+$/.test(path)) return "/cartoes/:id";
+  return "[redacted-path]";
+}
+
+/** Faz uma chamada à API Captura injetando auth, timeout e retry único de GET após 401. */
 export async function vrFetch<T = unknown>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
   const clientId = requireEnv("VR_CLIENT_ID");
   const token = await getVrAccessToken();
   const method = init.method ?? "GET";
+  const logPath = safeLogPath(path);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), VR_TIMEOUT_MS);
@@ -246,21 +268,22 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
     });
   } catch (err) {
     if ((err as { name?: string })?.name === "AbortError") {
-      console.error(`[vr] ${method} ${path} -> timeout`);
+      console.error(`[vr] ${method} ${logPath} -> timeout`);
       throw new VrApiError({ code: "vr_timeout" });
     }
     // ponytail: vocabulário fechado no ticket 01 (timeout/401/http/bad_response);
     // falha de rede pura (DNS, conexão recusada) é rara aqui e cai em
     // vr_bad_response — promover pra um vr_network dedicado se aparecer em prod.
-    console.error(`[vr] ${method} ${path} -> network_error`);
+    console.error(`[vr] ${method} ${logPath} -> network_error`);
     throw new VrApiError({ code: "vr_bad_response" });
   } finally {
     clearTimeout(timeoutId);
   }
 
-  // Retry único em 401 (token revogado/expirado server-side); nunca em timeout/5xx.
-  if (res.status === 401 && !isRetry) {
-    console.warn(`[vr] ${method} ${path} -> 401, forçando refresh e repetindo uma vez`);
+  // Só leitura pode ser repetida automaticamente. Escritas exigem reconciliação
+  // do estado da transação antes de qualquer nova tentativa.
+  if (res.status === 401 && method.toUpperCase() === "GET" && !isRetry) {
+    console.warn(`[vr] ${method} ${logPath} -> 401, forçando refresh e repetindo uma vez`);
     await forceRefreshVrAccessToken();
     return vrFetch<T>(path, init, true);
   }
@@ -277,7 +300,7 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
 
   if (!res.ok) {
     const b = (body ?? {}) as { codigo?: string; mensagem?: string };
-    console.error(`[vr] ${method} ${path} -> ${res.status}${b.codigo ? ` codigo=${b.codigo}` : ""}`);
+    console.error(`[vr] ${method} ${logPath} -> ${res.status}${b.codigo ? ` codigo=${b.codigo}` : ""}`);
     throw new VrApiError({
       status: res.status,
       codigo: b.codigo,
@@ -286,7 +309,7 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
     });
   }
 
-  console.log(`[vr] ${method} ${path} -> ${res.status}`);
+  console.log(`[vr] ${method} ${logPath} -> ${res.status}`);
   return (body ?? {}) as T;
 }
 
@@ -295,6 +318,7 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
 // ---------------------------------------------------------------------------
 
 interface PublicKeyCacheEntry {
+  env: VrEnv;
   key_id: string;
   public_key: string;
   fetched_at: number;
@@ -304,12 +328,13 @@ let publicKeyCache: PublicKeyCacheEntry | null = null;
 const PUBLIC_KEY_TTL_MS = 10 * 60 * 1000;
 
 export async function getPublicKey(): Promise<{ key_id: string; public_key: string }> {
+  const env = getVrEnv();
   const now = Date.now();
-  if (publicKeyCache && now - publicKeyCache.fetched_at < PUBLIC_KEY_TTL_MS) {
+  if (publicKeyCache && publicKeyCache.env === env && now - publicKeyCache.fetched_at < PUBLIC_KEY_TTL_MS) {
     return { key_id: publicKeyCache.key_id, public_key: publicKeyCache.public_key };
   }
   const data = await vrFetch<{ key_id: string; public_key: string }>("/chaves/chave-publica");
-  publicKeyCache = { key_id: data.key_id, public_key: data.public_key, fetched_at: now };
+  publicKeyCache = { env, key_id: data.key_id, public_key: data.public_key, fetched_at: now };
   return { key_id: data.key_id, public_key: data.public_key };
 }
 
@@ -391,9 +416,15 @@ export async function getTransaction(idTransacaoOuVan: string): Promise<Consulta
 export async function refund(
   params: { idTransacao: string; valorCents: number },
 ): Promise<{ noop: boolean; estorno?: TransacaoAutorizada }> {
+  if (!Number.isSafeInteger(params.valorCents) || params.valorCents <= 0) {
+    throw new Error("Valor de estorno inválido.");
+  }
   const consulta = await getTransaction(params.idTransacao);
   if (consulta.status === "CANCELADA" || consulta.status === "CANCELAMENTO_PENDENTE") {
     return { noop: true };
+  }
+  if (!Number.isSafeInteger(consulta.valor) || params.valorCents > consulta.valor) {
+    throw new Error("Valor de estorno excede o valor da transação.");
   }
   const idFiliacao = requireEnv("VR_ID_FILIACAO");
   const estorno = await vrFetch<TransacaoAutorizada>(`/transacoes/pagamentos/${encodeURIComponent(params.idTransacao)}/estornos`, {

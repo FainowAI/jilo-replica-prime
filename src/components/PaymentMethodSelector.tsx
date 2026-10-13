@@ -4,10 +4,15 @@ import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
 import { getPixCouponForCart, isPixCoupon } from "@/config/pixCoupons";
 
-export type PaymentMethod = "pix" | "vr" | "credit" | "paypal";
+export type PaymentMethod = "pix" | "vr" | "alelo" | "credit";
 
 // VR só aparece com VITE_VR_ENABLED=true (.env) — fica escondido até a homologação na VR.
 const VR_ENABLED = import.meta.env.VITE_VR_ENABLED === "true";
+// Alelo (via Cielo) idem: só com VITE_ALELO_ENABLED=true, até a Alelo habilitar o EC.
+const ALELO_ENABLED = import.meta.env.VITE_ALELO_ENABLED === "true";
+
+// PIX5 vale para PIX, VR e Alelo.
+const isPixLike = (m: PaymentMethod | null) => m === "pix" || m === "vr" || m === "alelo";
 
 interface PaymentMethodSelectorProps {
   className?: string;
@@ -45,7 +50,7 @@ const PaymentMethodSelector = ({
   const handleSelect = async (method: PaymentMethod) => {
     if (selected === method || applying) return;
 
-    if ((method === "pix" || method === "vr") && hasOtherCoupon) {
+    if (isPixLike(method) && hasOtherCoupon) {
       const otherCode = discountCodes.find(
         (dc) => dc.applicable && !isPixCoupon(dc.code)
       )?.code;
@@ -57,7 +62,7 @@ const PaymentMethodSelector = ({
 
     setApplying(true);
     try {
-      if (method === "pix" || method === "vr") {
+      if (isPixLike(method)) {
         const couponToApply = activePix.code;
         const result = await applyDiscountCode(couponToApply);
         if (result.success && result.applicable) {
@@ -65,7 +70,7 @@ const PaymentMethodSelector = ({
           toast.success(
             method === "pix"
               ? `PIX selecionado — ${activePix.percent}% de desconto aplicado!`
-              : `VR selecionado — ${activePix.percent}% de desconto aplicado!`
+              : `${method === "vr" ? "VR" : "Alelo"} selecionado — ${activePix.percent}% de desconto aplicado!`
           );
         } else {
           // Diagnóstico: applicable=false em cenário inesperado.
@@ -80,7 +85,7 @@ const PaymentMethodSelector = ({
           return;
         }
       } else {
-        if (selected === "pix" || selected === "vr") {
+        if (isPixLike(selected)) {
           await removeDiscountCode();
         }
         setSelected(method);
@@ -110,17 +115,19 @@ const PaymentMethodSelector = ({
       description: "Cartão VR Benefícios — mesmo desconto do PIX",
     },
     {
-      id: "credit",
-      label: "Cartão de Crédito",
-      description: "Em até 3x sem juros",
+      id: "alelo",
+      label: "Alelo Refeição / Alimentação",
+      badge: "5% off",
+      description: "Cartão Alelo — mesmo desconto do PIX",
     },
     {
-      id: "paypal",
-      label: "PayPal",
-      description: "Pague com sua conta PayPal",
+      id: "credit",
+      label: "Cartão de crédito",
+      description: "Visa, Master, Elo e outros",
     },
   ];
-  const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => method.id !== "vr" || VR_ENABLED);
+  const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => (method.id !== "vr" || VR_ENABLED) && (method.id !== "alelo" || ALELO_ENABLED)
+  );
 
   return (
     <div className={`space-y-2 ${className}`}>
@@ -165,7 +172,7 @@ const PaymentMethodSelector = ({
                 </div>
               </div>
               <p className="text-[11px] text-[#9b9b9b] mt-0.5">{method.description}</p>
-              {(method.id === "pix" || method.id === "vr") && isSelected && baseTotalCents > 0 && (
+              {isPixLike(method.id) && isSelected && baseTotalCents > 0 && (
                 <div className="mt-1">
                   <p className="text-xs text-[#9b9b9b]">
                     De{" "}

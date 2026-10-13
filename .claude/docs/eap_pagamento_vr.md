@@ -272,7 +272,18 @@ Tickets 00 e 01 são independentes e podem correr em paralelo. 03 e 04 são file
 
 ---
 
-## Apêndice A — Referências rápidas do portal VR
+## 10. Estado da homologação em 2026-10-09
+
+- Felipe de Pierro informou por e-mail a liberação da App e dos escopos DEV/HML no plano `[ESCOPO] - [DEV/HML] - API de Captura v2`. O preflight local obteve token OAuth, mas `GET /captura/v2/chaves/chave-publica` em `api-hmp.vr.com.br` ainda respondeu 403. A liberação efetiva desta App precisa ser confirmada pela VR.
+- No diagnóstico de 09/10 às 20:28:01 UTC, ambos os passos OAuth no host `api.vr.com.br` responderam 201; o GET da chave no host HML respondeu 403 com a mensagem "Este APP não pode ser usado para esse ambiente. Contate a Gestão de APIs VR Benefícios." `client_id` e `access_token` estavam presentes no GET, com token recém-obtido; o OAuth não pediu `scope` no body nem retornou `scope`. Não veio ID de correlação nos cabeçalhos de resposta examinados. Solicitar à VR a conferência do Client ID usado nesta App e dos escopos efetivos, sem enviar o valor por chat.
+- As variáveis esperadas para credenciais e cartão de teste HML estão presentes no arquivo local ignorado `.env.vr-hml`; seus valores não foram inspecionados nesta verificação. O OAuth passou no preflight, mas a Captura respondeu 403. Nenhum valor é registrado nesta EAP. Nenhuma operação financeira HML foi feita nesta sessão.
+- A VR exige cinco comprovações para produção: confirmação, cancelamento, reserva/efetivação, reembolso parcial e tokenização. Tokenização e reserva constam como fora de escopo da experiência v1 do cliente na seção 9, mas são exercitadas no runner de homologação. O runner cobre seis cenários sintéticos para essas cinco funcionalidades.
+- O padding RSA e o formato do plaintext ainda não foram confirmados oficialmente. O runner não faz fallback automático entre paddings e bloqueia os cenários financeiros por CLI até o contrato e uma autorização específica para os efeitos HML. A equivalência entre Captura 2.4.0 do portal e 2.4.1 citada pela VR também segue aberta.
+- Verificação local sem rede: Deno 41/41, Vitest 32/32, `deno check` dos módulos alterados e `tsc --noEmit` passaram. Os cinco cenários exigidos pela VR seguem sem comprovação em HML. A flag rastreada em `.env` está em `false`; o `.env.local` preexistente contém `true` e prevalece no dev local. Nenhum desses arquivos foi alterado nesta sessão; não houve deploy, push, merge ou alteração de produção.
+
+---
+
+## Apêndice A - Referências rápidas do portal VR
 - Portal: https://dev.vr.com.br/api-portal/ · APIs Adquirência: `/content/apis/api-adquirencia` · Captura: `/content/apis/api-adquirencia/captura`
 - Swagger Captura 2.4.0: https://dev.vr.com.br/api-portal/swagger/api-de-captura/2.4.0
 - Autenticação padrão: https://dev.vr.com.br/api-portal/node/4

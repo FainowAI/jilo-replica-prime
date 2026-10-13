@@ -149,6 +149,7 @@ function buildDeps(overrides: Partial<VrCheckoutDeps> = {}): VrCheckoutDeps {
       create: async () => ({ id: "gid://shopify/DraftOrder/1", totalPriceCents: HAPPY_CART.totalAmountCents }),
       complete: async () => ({ orderId: "gid://shopify/Order/1", orderName: "#1001" }),
       delete: async () => {},
+      status: async () => ({ status: "OPEN", order: null }),
     },
     env: { VR_ENV: "mock", SHOPIFY_SHIPPING_VARIANT_ID: "gid://shopify/ProductVariant/999" },
     now: () => new Date(),
@@ -440,6 +441,47 @@ Deno.test("falha no complete aciona refund e marca refunded_auto", async () => {
   assertEquals(refundCalled, true);
   const row = rows.find((r) => r.cart_id === HAPPY_CART.id)!;
   assertEquals(row.status, "refunded_auto");
+});
+
+// Ticket 09 (H3): complete falhou mas o pedido nasceu → sucesso, sem estorno
+Deno.test("complete falha mas draft COMPLETED => 200 sem refund", async () => {
+  const { db, rows } = makeFakeDb();
+  const deps = buildDeps({ db });
+  let refundCalled = false;
+  deps.draft.complete = async () => {
+    throw new Error("timeout");
+  };
+  deps.draft.status = async () => ({ status: "COMPLETED", order: { id: "gid://shopify/Order/9", name: "#1099" } });
+  deps.vr.refund = async () => {
+    refundCalled = true;
+    return { noop: false };
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 200);
+  assertEquals((await res.json()).orderName, "#1099");
+  assertEquals(refundCalled, false);
+  assertEquals(rows.find((r) => r.cart_id === HAPPY_CART.id)!.status, "approved");
+});
+
+Deno.test("complete falha e status do draft desconhecido => 202 sem refund", async () => {
+  const { db, rows } = makeFakeDb();
+  const deps = buildDeps({ db });
+  let refundCalled = false;
+  deps.draft.complete = async () => {
+    throw new Error("timeout");
+  };
+  deps.draft.status = async () => {
+    throw new Error("shopify_admin_http_500");
+  };
+  deps.vr.refund = async () => {
+    refundCalled = true;
+    return { noop: false };
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 202);
+  assertEquals((await res.json()).code, "payment_pending");
+  assertEquals(refundCalled, false);
+  assertEquals(rows.find((r) => r.cart_id === HAPPY_CART.id)!.status, "authorizing");
 });
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { identifyUser, resetAnalytics } from "@/analytics/posthog";
 import { analytics } from "@/analytics/events";
+import { EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
 
 interface AuthContextType {
   user: User | null;
@@ -67,7 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signUp = async (email: string, password: string, fullName?: string) => {
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -75,6 +76,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         emailRedirectTo: `${window.location.origin}/conta`,
       },
     });
+    // E-mail já cadastrado: o Supabase não dá erro, devolve user com identities vazio.
+    if (!error && data.user && data.user.identities?.length === 0) {
+      return { error: new Error(EMAIL_ALREADY_REGISTERED) };
+    }
     if (!error) analytics.cadastroConcluido(); // B.2.2 — sem PII
     return { error };
   };
