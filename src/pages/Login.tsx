@@ -7,11 +7,14 @@ import AnnouncementBar from "@/components/sections/AnnouncementBar";
 import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import GoogleHintAlert from "@/components/GoogleHintAlert";
+import { authNotice, getLoginHint } from "@/lib/authHint";
 
 const Login = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -24,9 +27,16 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setGoogleNotice(null);
     const { error } = await signIn(email, password);
     if (error) {
-      toast.error(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos" : error.message);
+      if (error.message === "Invalid login credentials") {
+        const n = authNotice("login", await getLoginHint(email));
+        if (n.google) setGoogleNotice(n.message);
+        else toast.error(n.message);
+      } else {
+        toast.error(error.message);
+      }
     } else {
       toast.success("Bem-vinda(o) de volta!");
       navigate(redirect, { replace: true });
@@ -42,6 +52,7 @@ const Login = () => {
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Entrar na Jilo</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">Acesse seus pedidos e endereços</p>
 
+        <GoogleHintAlert message={googleNotice} />
         <div className="flex justify-center mb-4">
           <GoogleSignInButton text="signin_with" />
         </div>

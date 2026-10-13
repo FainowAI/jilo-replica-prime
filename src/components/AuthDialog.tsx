@@ -4,6 +4,8 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
+import GoogleHintAlert from "@/components/GoogleHintAlert";
+import { authNotice, getLoginHint, EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
 
 interface AuthDialogProps {
   open: boolean;
@@ -17,16 +19,24 @@ const AuthDialog = ({ open, onOpenChange, initialMode = "login" }: AuthDialogPro
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
   const { signIn, signUp } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setGoogleNotice(null);
     try {
       if (mode === "login") {
         const { error } = await signIn(email, password);
         if (error) {
-          toast.error(error.message === "Invalid login credentials" ? "E-mail ou senha incorretos" : error.message);
+          if (error.message === "Invalid login credentials") {
+            const n = authNotice("login", await getLoginHint(email));
+            if (n.google) setGoogleNotice(n.message);
+            else toast.error(n.message);
+          } else {
+            toast.error(error.message);
+          }
         } else {
           toast.success("Bem-vinda(o) de volta!");
           onOpenChange(false);
@@ -38,7 +48,14 @@ const AuthDialog = ({ open, onOpenChange, initialMode = "login" }: AuthDialogPro
           return;
         }
         const { error } = await signUp(email, password, fullName);
-        if (error) {
+        if (error?.message === EMAIL_ALREADY_REGISTERED) {
+          const n = authNotice("signup", await getLoginHint(email));
+          if (n.google) setGoogleNotice(n.message);
+          else {
+            toast.error(n.message);
+            setMode("login");
+          }
+        } else if (error) {
           toast.error(error.message);
         } else {
           toast.success("Conta criada! Verifique seu e-mail para confirmar.");
@@ -59,7 +76,10 @@ const AuthDialog = ({ open, onOpenChange, initialMode = "login" }: AuthDialogPro
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex justify-center mt-4">
+        <div className="mt-4">
+          <GoogleHintAlert message={googleNotice} />
+        </div>
+        <div className="flex justify-center">
           <GoogleSignInButton text={mode === "login" ? "signin_with" : "signup_with"} />
         </div>
         <div className="flex items-center gap-3 my-4">
