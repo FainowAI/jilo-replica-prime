@@ -11,7 +11,6 @@ declare global {
             client_id: string;
             callback: (response: { credential?: string }) => void;
             nonce: string;
-            use_fedcm_for_prompt?: boolean;
           }) => void;
           prompt: () => void;
           cancel: () => void;
@@ -41,9 +40,18 @@ const GOOGLE_AUTH_ERROR = "Não foi possível entrar com o Google. Tente novamen
 
 const reportGoogleError = (message: string, error?: unknown) => {
   const details = error instanceof Error ? error.name : "unknown";
-  console.warn(`[googleAuth] ${details}`);
+  // AuthError do Supabase traz `code` (ex.: bad_jwt); nunca logar e-mail/token.
+  const code = (error as { code?: string } | undefined)?.code;
+  console.warn(`[googleAuth] ${details}${code ? ` ${code}` : ""}`);
   toast.error(message, { id: GOOGLE_ERROR_TOAST_ID });
 };
+
+/**
+ * Conta criada há menos de 60 s = cadastro novo via Google (e não login recorrente).
+ * ponytail: compara com o relógio do cliente; relógio adiantado >60 s vira "login".
+ */
+export const isNewAccount = (user: { created_at?: string } | null | undefined, agora = Date.now()) =>
+  agora - Date.parse(user?.created_at ?? "") < 60_000;
 
 /** Carrega o script GSI (idempotente) e resolve quando ele estiver pronto. */
 let gsiScriptPromise: Promise<void> | null = null;
@@ -113,7 +121,6 @@ const ensureGoogleReady = (): Promise<boolean> => {
       window.google.accounts.id.initialize({
         client_id: clientId,
         nonce: hashedNonce,
-        use_fedcm_for_prompt: true,
         callback: (response) => {
           if (!response.credential || signInInFlight) {
             if (!response.credential) reportGoogleError(GOOGLE_AUTH_ERROR, new Error("Credencial ausente"));
@@ -126,13 +133,23 @@ const ensureGoogleReady = (): Promise<boolean> => {
               token: response.credential,
               nonce: rawNonce,
             })
-            .then(({ error }) => {
+            .then(({ data, error }) => {
               if (error) {
+                analytics.loginFalhou({ metodo: "google", motivo: "outro" });
                 reportGoogleError(GOOGLE_AUTH_ERROR, error);
                 return;
               }
-              analytics.loginEfetuado();
-              toast.success("Login efetuado!");
+              // O e-mail aparece só no toast (nunca em log/analytics): qualquer Gmail cria conta nova.
+              const email = data.user?.email ?? "Google";
+              if (isNewAccount(data.user)) {
+                analytics.cadastroConcluido({ metodo: "google" });
+                toast.success(`Criamos sua conta com ${email}. Já tinha conta com outro e-mail? Saia e entre com ele.`, {
+                  duration: 8000,
+                });
+              } else {
+                analytics.loginEfetuado({ metodo: "google" });
+                toast.success(`Você entrou como ${email}.`);
+              }
             })
             .catch((error) => reportGoogleError(GOOGLE_AUTH_ERROR, error))
             .finally(() => {

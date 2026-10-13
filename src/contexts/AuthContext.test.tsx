@@ -12,6 +12,7 @@ const {
   signInWithPassword,
   signUp,
   signOut,
+  resend,
 } = vi.hoisted(() => ({
   resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
@@ -20,6 +21,7 @@ const {
   signInWithPassword: vi.fn().mockResolvedValue({ error: null }),
   signUp: vi.fn().mockResolvedValue({ error: null }),
   signOut: vi.fn().mockResolvedValue({ error: null }),
+  resend: vi.fn().mockResolvedValue({ error: null }),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -32,6 +34,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       signInWithPassword,
       signUp,
       signOut,
+      resend,
     },
     functions: { invoke: vi.fn().mockResolvedValue({ data: null, error: null }) },
   },
@@ -40,9 +43,11 @@ vi.mock("@/integrations/supabase/client", () => ({
 // Analytics é fire-and-forget; não deve interferir nos testes.
 vi.mock("@/analytics/posthog", () => ({ identifyUser: vi.fn(), resetAnalytics: vi.fn() }));
 vi.mock("@/analytics/events", () => ({
-  analytics: { loginEfetuado: vi.fn(), cadastroConcluido: vi.fn() },
+  analytics: { loginEfetuado: vi.fn(), loginFalhou: vi.fn(), cadastroConcluido: vi.fn() },
 }));
 
+import { analytics } from "@/analytics/events";
+import { EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
 import { AuthProvider, useAuth } from "./AuthContext";
 
 const wrapper = ({ children }: { children: ReactNode }) => <AuthProvider>{children}</AuthProvider>;
@@ -107,5 +112,71 @@ describe("AuthContext — redefinição de senha", () => {
     });
 
     expect(res?.error).toBe(err);
+  });
+});
+
+describe("AuthContext — login, cadastro e reenvio", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getSession.mockResolvedValue({ data: { session: null } });
+    onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } });
+  });
+
+  it("signIn com sucesso registra login por senha", async () => {
+    signInWithPassword.mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      await result.current.signIn("a@b.com", "123456");
+    });
+    expect(analytics.loginEfetuado).toHaveBeenCalledWith({ metodo: "senha" });
+    expect(analytics.loginFalhou).not.toHaveBeenCalled();
+  });
+
+  it("signIn com erro registra só o motivo normalizado (sem e-mail nem mensagem)", async () => {
+    const err = Object.assign(new Error("Invalid login credentials"), { code: "invalid_credentials" });
+    signInWithPassword.mockResolvedValue({ error: err });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    let res: { error: Error | null } | undefined;
+    await act(async () => {
+      res = await result.current.signIn("a@b.com", "errada");
+    });
+    expect(res?.error).toBe(err);
+    expect(analytics.loginFalhou).toHaveBeenCalledWith({ metodo: "senha", motivo: "credenciais" });
+    expect(analytics.loginEfetuado).not.toHaveBeenCalled();
+  });
+
+  it("signUp de e-mail já cadastrado (identities vazio) devolve EMAIL_ALREADY_REGISTERED", async () => {
+    signUp.mockResolvedValue({ data: { user: { identities: [] } }, error: null });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    let res: { error: Error | null } | undefined;
+    await act(async () => {
+      res = await result.current.signUp("a@b.com", "123456", "Ana");
+    });
+    expect(res?.error?.message).toBe(EMAIL_ALREADY_REGISTERED);
+    expect(analytics.cadastroConcluido).not.toHaveBeenCalled();
+  });
+
+  it("signUp novo registra cadastro por senha", async () => {
+    signUp.mockResolvedValue({ data: { user: { identities: [{}] } }, error: null });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    await act(async () => {
+      await result.current.signUp("a@b.com", "123456", "Ana");
+    });
+    expect(analytics.cadastroConcluido).toHaveBeenCalledWith({ metodo: "senha" });
+  });
+
+  it("resendConfirmation chama auth.resend (signup) com o redirect para /conta", async () => {
+    resend.mockResolvedValue({ error: null });
+    const { result } = renderHook(() => useAuth(), { wrapper });
+    let res: { error: Error | null } | undefined;
+    await act(async () => {
+      res = await result.current.resendConfirmation("a@b.com");
+    });
+    expect(resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: "a@b.com",
+      options: { emailRedirectTo: expect.stringContaining("/conta") },
+    });
+    expect(res?.error).toBeNull();
   });
 });

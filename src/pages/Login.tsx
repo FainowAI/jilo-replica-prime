@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,13 +8,16 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import GoogleHintAlert from "@/components/GoogleHintAlert";
-import { authNotice, getLoginHint } from "@/lib/authHint";
+import ResendConfirmation from "@/components/ResendConfirmation";
+import { authNotice, type AuthNotice } from "@/lib/authHint";
 
 const Login = () => {
-  const [email, setEmail] = useState("");
+  const location = useLocation();
+  // O cadastro leva o e-mail junto ("Já confirmei, entrar").
+  const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? "");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<AuthNotice | null>(null);
   const { signIn, user } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -27,16 +30,10 @@ const Login = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setGoogleNotice(null);
+    setAviso(null);
     const { error } = await signIn(email, password);
     if (error) {
-      if (error.message === "Invalid login credentials") {
-        const n = authNotice("login", await getLoginHint(email));
-        if (n.google) setGoogleNotice(n.message);
-        else toast.error(n.message);
-      } else {
-        toast.error(error.message);
-      }
+      setAviso(authNotice("login", error, email.trim()));
     } else {
       toast.success("Bem-vinda(o) de volta!");
       navigate(redirect, { replace: true });
@@ -52,7 +49,12 @@ const Login = () => {
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Entrar na Jilo</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">Acesse seus pedidos e endereços</p>
 
-        <GoogleHintAlert message={googleNotice} />
+        <GoogleHintAlert message={aviso?.message ?? null} />
+        {aviso?.resendTo && (
+          <div className="-mt-2 mb-4">
+            <ResendConfirmation key={aviso.resendTo} email={aviso.resendTo} />
+          </div>
+        )}
         <div className="flex justify-center mb-4">
           <GoogleSignInButton text="signin_with" />
         </div>
