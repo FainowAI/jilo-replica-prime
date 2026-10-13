@@ -78,7 +78,7 @@ const Login = () => {
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Entrar"}
           </button>
           <div className="text-center">
-            <Link to="/recuperar-senha" className="text-xs text-[#6b6b6b] font-sans hover:text-[#1e3a1e] hover:underline">
+            <Link to="/recuperar-senha" state={{ email: email.trim() }} className="text-xs text-[#6b6b6b] font-sans hover:text-[#1e3a1e] hover:underline">
               Esqueci a senha
             </Link>
           </div>

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -130,6 +131,18 @@ const AuthDialog = ({ open, onOpenChange, initialMode = "login" }: AuthDialogPro
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : mode === "login" ? "Entrar" : "Criar conta"}
           </button>
+          {mode === "login" && (
+            <div className="text-center">
+              <Link
+                to="/recuperar-senha"
+                state={{ email: email.trim() }}
+                onClick={() => onOpenChange(false)}
+                className="text-xs text-[#6b6b6b] font-sans hover:text-[#1e3a1e] hover:underline"
+              >
+                Esqueci a senha
+              </Link>
+            </div>
+          )}
         </form>
 
         <div className="text-center text-sm text-[#9b9b9b] font-sans mt-4">

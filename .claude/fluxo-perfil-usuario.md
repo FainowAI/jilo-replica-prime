@@ -99,6 +99,30 @@ Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDia
 - Signup com e-mail já existente: o Supabase não dá erro e devolve `user.identities = []`; `AuthContext.signUp` devolve o erro `email_already_registered` (sem disparar `cadastroConcluido`), e a UI mostra o alerta Google ou "Este e-mail já tem cadastro. Faça login.".
 - Mapeamento hint -> mensagem é a função pura `authNotice` (testada em `authHint.test.ts`).
 
+## Esqueci a senha
+- Entradas: link "Esqueci a senha" no `AuthDialog` (modal do cabeçalho, carrinho e seletor de endereço; só no modo login, fecha o modal) e na página `/login`. Os dois levam o e-mail digitado em `state.email` e `/recuperar-senha` já abre preenchida. Até 2026-10-13 o link só existia em `/login`, e quase ninguém passava por lá.
+- `/recuperar-senha` chama `resetPassword` → `resetPasswordForEmail` com `redirectTo` `<origin>/redefinir-senha`. A mensagem é neutra ("Se existir uma conta…") para não revelar se o e-mail tem conta. Dispara o template `recovery`.
+- `/redefinir-senha` espera a sessão de recuperação (evento `PASSWORD_RECOVERY`) e grava a nova senha com `updatePassword`. No GoTrue, abrir o link de recuperação deve confirmar o e-mail de quem ficou preso em "Email not confirmed" (a confirmar no primeiro caso real).
+- O `redirectTo` precisa estar no `uri_allow_list` do Supabase (`https://jilomarmitas.com/**` está). Em localhost não está: o link cairia no `site_url`, então não teste o envio pelo dev server.
+
+## E-mails de autenticação (templates do Supabase Auth)
+Os 6 e-mails que o Supabase envia têm a identidade da Jiló e assunto em pt-BR. A fonte da verdade são os arquivos em `supabase/templates/`. Publicação: `SUPABASE_ACCESS_TOKEN=sbp_... npm run auth:emails` (`scripts/publish-auth-emails.ts`). O script faz PATCH em `/v1/projects/{ref}/config/auth` só das chaves `mailer_subjects_*`/`mailer_templates_*_content` e relê os valores para conferir.
+| Template | Assunto | Variáveis | Disparo |
+|---|---|---|---|
+| `confirmation` | Confirmar conta - JILO | `{{ .ConfirmationURL }}` | `signUp` (cadastro e-mail/senha) |
+| `recovery` | Redefinir senha - JILO | `{{ .ConfirmationURL }}` | "Esqueci minha senha" → `/redefinir-senha` |
+| `magic_link` | Seu link de acesso - JILO | `{{ .ConfirmationURL }}` | `signInWithOtp` (sem botão no site hoje) |
+| `email_change` | Confirmar troca de e-mail - JILO | `{{ .Email }}`, `{{ .NewEmail }}`, `{{ .ConfirmationURL }}` | `updateUser({email})`. Com secure email change ligado, vai para o endereço antigo E o novo, por isso o texto serve aos dois |
+| `invite` | Seu convite para a Jiló - JILO | `{{ .ConfirmationURL }}` | "Invite user" no painel |
+| `reauthentication` | Seu código de confirmação - JILO | `{{ .Token }}` (8 dígitos) | ação sensível que exige reautenticação |
+- Molde: `confirmation.html`. Os outros 5 copiam a estrutura dele e mudam só o texto (o `reauthentication` troca botão e link pelo bloco do código).
+- NUNCA usar `{{ .SiteURL }}` em href: o `site_url` do projeto está `jilomarmitas.com`, sem `https://`. Link fixo para o site é `https://jilomarmitas.com`.
+- Links e códigos valem 1 hora (`mailer_otp_exp` = 3600).
+- As 7 notificações de segurança (senha alterada, e-mail alterado, MFA, identidade vinculada etc.) seguem no padrão do Supabase em inglês, mas estão DESLIGADAS (`mailer_notifications_*_enabled=false`). Se alguém ligar, criar o template antes.
+- Remetente: desde 2026-10-13 o envio sai pela **Resend** (SMTP `smtp.resend.com:465`, usuário `resend`) como `Jiló <nao-responda@jilomarmitas.com>`. A configuração foi feita pela integração nativa Resend → Supabase (OAuth na org "Jilo-marmitas"), que criou na Resend a API key "Supabase Integration" e a gravou como `smtp_pass`. Limite no Supabase: 25 e-mails/h (`rate_limit_email_sent`). Plano Free da Resend: 100/dia e 3.000/mês.
+- Domínio na Resend: `jilomarmitas.com`, região São Paulo, sem rastreamento de clique/abertura (ele reescreveria os links de confirmação). DNS na Hostinger da Jiló: TXT `resend._domainkey` (DKIM), CNAME `send` → `send.forge.rmta.net`, CNAME `rsend` → `rsend-sae1.forge.rmta.net` e TXT `_dmarc` `v=DMARC1; p=none;`. O domínio NÃO recebe e-mail (sem MX na raiz), por isso o remetente é `nao-responda@`.
+- Rollback: no painel do Supabase, Authentication → Emails → SMTP Settings, desligar "Enable custom SMTP" volta ao remetente padrão do Supabase (2/h).
+
 ## Integrações
 | Integração | Tipo | Descrição |
 |-----------|------|-----------|
