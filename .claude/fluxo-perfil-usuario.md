@@ -102,7 +102,7 @@ Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDia
 ## Esqueci a senha
 - Entradas: link "Esqueci a senha" no `AuthDialog` (modal do cabeçalho, carrinho e seletor de endereço; só no modo login, fecha o modal) e na página `/login`. Os dois levam o e-mail digitado em `state.email` e `/recuperar-senha` já abre preenchida. Até 2026-10-13 o link só existia em `/login`, e quase ninguém passava por lá.
 - `/recuperar-senha` chama `resetPassword` → `resetPasswordForEmail` com `redirectTo` `<origin>/redefinir-senha`. A mensagem é neutra ("Se existir uma conta…") para não revelar se o e-mail tem conta. Dispara o template `recovery`.
-- `/redefinir-senha` espera a sessão de recuperação (evento `PASSWORD_RECOVERY`) e grava a nova senha com `updatePassword`. Abrir o link de recuperação também confirma o e-mail, o que destrava quem ficou preso em "Email not confirmed".
+- `/redefinir-senha` espera a sessão de recuperação (evento `PASSWORD_RECOVERY`) e grava a nova senha com `updatePassword`. No GoTrue, abrir o link de recuperação deve confirmar o e-mail de quem ficou preso em "Email not confirmed" (a confirmar no primeiro caso real).
 - O `redirectTo` precisa estar no `uri_allow_list` do Supabase (`https://jilomarmitas.com/**` está). Em localhost não está: o link cairia no `site_url`, então não teste o envio pelo dev server.
 
 ## E-mails de autenticação (templates do Supabase Auth)
