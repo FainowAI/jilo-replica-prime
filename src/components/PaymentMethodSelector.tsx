@@ -8,23 +8,9 @@ export type PaymentMethod = "pix" | "vr" | "alelo" | "credit";
 
 // VR só aparece com VITE_VR_ENABLED=true (.env) — fica escondido até a homologação na VR.
 const VR_ENABLED = import.meta.env.VITE_VR_ENABLED === "true";
-// Alelo (via Cielo) idem: só com VITE_ALELO_ENABLED=true, até a Alelo habilitar o EC.
+// Alelo (via Cielo): aparece para todos com VITE_ALELO_ENABLED=true (aberta em 13/10).
+// Quem pode pagar é decidido no servidor (ALELO_ENABLED + ALELO_QA_EMAILS, se preenchida).
 const ALELO_ENABLED = import.meta.env.VITE_ALELO_ENABLED === "true";
-
-// Beta fechado: com a flag ligada, a Alelo só aparece para quem abriu o site com ?alelo=1
-// (fica salvo no navegador; ?alelo=0 desliga). O servidor ainda exige e-mail em ALELO_QA_EMAILS.
-// ponytail: opt-in por URL, sem lista de e-mails no bundle; trocar por ALELO_ENABLED puro ao abrir para todos.
-const ALELO_BETA_KEY = "jilo_alelo_beta";
-const isAleloBetaOn = (): boolean => {
-  try {
-    const param = new URLSearchParams(window.location.search).get("alelo");
-    if (param === "1") localStorage.setItem(ALELO_BETA_KEY, "1");
-    if (param === "0") localStorage.removeItem(ALELO_BETA_KEY);
-    return localStorage.getItem(ALELO_BETA_KEY) === "1";
-  } catch {
-    return false;
-  }
-};
 
 // PIX5 vale para PIX, VR e Alelo.
 const isPixLike = (m: PaymentMethod | null) => m === "pix" || m === "vr" || m === "alelo";
@@ -45,7 +31,6 @@ const PaymentMethodSelector = ({
   onMethodChange,
 }: PaymentMethodSelectorProps) => {
   const [selected, setSelected] = useState<PaymentMethod | null>(null);
-  const [aleloBeta] = useState(isAleloBetaOn);
   const [applying, setApplying] = useState(false);
   const { discountCodes, applyDiscountCode, removeDiscountCode } = useCartStore();
 
@@ -142,7 +127,7 @@ const PaymentMethodSelector = ({
       description: "Visa, Master, Elo e outros",
     },
   ];
-  const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => (method.id !== "vr" || VR_ENABLED) && (method.id !== "alelo" || (ALELO_ENABLED && aleloBeta))
+  const PAYMENT_METHODS = ALL_PAYMENT_METHODS.filter((method) => (method.id !== "vr" || VR_ENABLED) && (method.id !== "alelo" || ALELO_ENABLED)
   );
 
   return (
