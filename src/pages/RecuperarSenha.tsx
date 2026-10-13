@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Loader2, MailCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,7 +8,9 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 
 const RecuperarSenha = () => {
-  const [email, setEmail] = useState("");
+  // O modal de login e a página /login mandam o e-mail já digitado no state da navegação.
+  const location = useLocation();
+  const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? "");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const { resetPassword } = useAuth();
@@ -33,7 +35,7 @@ const RecuperarSenha = () => {
       <main className="container mx-auto px-4 py-16 max-w-md">
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Esqueci a senha</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">
-          Enviamos um link para você criar uma nova senha
+          Informe seu e-mail e enviamos um link para criar uma nova senha
         </p>
 
         {sent ? (
