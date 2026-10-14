@@ -315,9 +315,9 @@ serve(async (req) => {
 
     // ponytail: 2 queries no pior caso; unificar com OR na DSL se virar gargalo
     let result: OrdersResult;
-    if (profile?.shopify_customer_id) {
-      // gid://shopify/Customer/123 → 123
-      const customerNumericId = String(profile.shopify_customer_id).split("/").pop();
+    // C1: só o GID canônico vira filtro; qualquer outro valor cai no e-mail e nunca entra na DSL.
+    const customerNumericId = /^gid:\/\/shopify\/Customer\/(\d+)$/.exec(String(profile?.shopify_customer_id ?? ""))?.[1];
+    if (customerNumericId) {
       result = await fetchOrders(`customer_id:${customerNumericId}`);
       // Pedido feito como guest com o mesmo e-mail não tem customer_id: cai no e-mail.
       if (result.ok && !result.orders.length && isSafeEmail(user.email)) {

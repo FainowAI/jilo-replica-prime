@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import CardExpiryFields from "@/components/CardExpiryFields";
 import { useCartStore } from "@/stores/cartStore";
 import { useProfile } from "@/hooks/useProfile";
 import { isValidCpf, formatCpf, onlyDigits } from "@/lib/vr/card";
@@ -12,6 +13,7 @@ import {
   GENERIC_ERROR_MESSAGE,
   type AleloCheckoutInput,
 } from "@/lib/alelo/client";
+import { composeExpiry } from "@/lib/alelo/expiry";
 
 interface AleloCardDialogProps {
   open: boolean;
@@ -52,13 +54,16 @@ const labelCls = "text-xs font-semibold text-[#6b6b6b] font-sans block mb-1";
 const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps) => {
   const navigate = useNavigate();
   const { data: profile } = useProfile();
-  // H5: nome/número/validade/CVV NÃO são state — ficam no DOM (classes bp-sop-*) e o SOP os lê direto.
-  // Só o CPF (não é dado de cartão) é controlado.
+  // H5: nome/número/CVV NÃO são state — ficam no DOM (classes bp-sop-*) e o SOP os lê direto.
+  // Só o CPF e mês/ano da validade (não são PAN/CVV) são controlados; o SOP lê a validade de um input
+  // oculto (expiryRef) preenchido com "MM/AAAA" no submit — o teclado numérico do celular não tem "/".
   const nameRef = useRef<HTMLInputElement>(null);
   const numberRef = useRef<HTMLInputElement>(null);
   const expiryRef = useRef<HTMLInputElement>(null);
   const cvvRef = useRef<HTMLInputElement>(null);
   const [cpf, setCpf] = useState("");
+  const [mes, setMes] = useState("");
+  const [ano, setAno] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 202 payment_pending: trava novo pagamento enquanto o diálogo estiver aberto.
@@ -71,6 +76,8 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
 
   const clearCardFields = () => {
     for (const r of [nameRef, numberRef, expiryRef, cvvRef]) if (r.current) r.current.value = "";
+    setMes("");
+    setAno("");
   };
 
   const handleClose = (next: boolean) => {
@@ -93,6 +100,9 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
     if (submitting || pending) return;
     if (!nameRef.current?.value.trim()) return setError("Informe o nome impresso no cartão.");
     if (!isValidCpf(cpf)) return setError("CPF inválido.");
+    const expiry = composeExpiry(mes, ano);
+    if (!expiry) return setError("Confira a validade do cartão (mês e ano).");
+    if (expiryRef.current) expiryRef.current.value = expiry; // o SOP lê "MM/AAAA" deste input
     setError(null);
     setSubmitting(true);
     try {
@@ -168,20 +178,18 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
               className={`${inputCls} bp-sop-cardnumber`}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Validade (MM/AAAA)</label>
-              <input
-                ref={expiryRef}
-                type="text"
-                inputMode="numeric"
-                autoComplete="cc-exp"
-                placeholder="MM/AAAA"
-                maxLength={7}
-                required
-                className={`${inputCls} bp-sop-cardexpirationdate`}
-              />
-            </div>
+          {/* Campo oculto que o SOP lê (não é type="hidden" para o script enxergá-lo como input de texto). */}
+          <input
+            ref={expiryRef}
+            type="text"
+            aria-hidden="true"
+            tabIndex={-1}
+            readOnly
+            autoComplete="off"
+            className="sr-only bp-sop-cardexpirationdate"
+          />
+          <div className="grid grid-cols-3 gap-2">
+            <CardExpiryFields mes={mes} ano={ano} onMesChange={setMes} onAnoChange={setAno} />
             <div>
               <label className={labelCls}>CVV</label>
               <input
