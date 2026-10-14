@@ -8,14 +8,16 @@ import Header from "@/components/sections/Header";
 import Footer from "@/components/sections/Footer";
 import GoogleSignInButton from "@/components/GoogleSignInButton";
 import GoogleHintAlert from "@/components/GoogleHintAlert";
-import { authNotice, getLoginHint, EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
+import { ConfirmEmailNotice } from "@/components/ResendConfirmation";
+import { authNotice } from "@/lib/authHint";
 
 const Cadastro = () => {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleNotice, setGoogleNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
   const { signUp, user } = useAuth();
   const navigate = useNavigate();
 
@@ -30,20 +32,31 @@ const Cadastro = () => {
       return;
     }
     setLoading(true);
-    setGoogleNotice(null);
+    setNotice(null);
     const { error } = await signUp(email, password, fullName);
-    if (error?.message === EMAIL_ALREADY_REGISTERED) {
-      const n = authNotice("signup", await getLoginHint(email));
-      if (n.google) setGoogleNotice(n.message);
-      else toast.error(n.message);
-    } else if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Conta criada! Verifique seu e-mail para confirmar.");
-      navigate("/login?redirect=/conta", { replace: true });
-    }
+    if (error) setNotice(authNotice("signup", error, email.trim()).message);
+    else setSentTo(email.trim()); // não navega: a tela de confirmação evita um 2º cadastro
     setLoading(false);
   };
+
+  if (sentTo) {
+    return (
+      <div className="min-h-screen bg-[#faf7f2]">
+        <AnnouncementBar />
+        <Header />
+        <main className="container mx-auto px-4 py-16 max-w-md">
+          <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-6 text-center">Confirme seu e-mail</h1>
+          <div className="bg-white rounded-2xl border border-[#e8e8e4] p-6">
+            <ConfirmEmailNotice
+              email={sentTo}
+              onEnter={() => navigate("/login?redirect=/conta", { replace: true, state: { email: sentTo } })}
+            />
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#faf7f2]">
@@ -53,7 +66,7 @@ const Cadastro = () => {
         <h1 className="font-['DM_Serif_Display'] text-3xl text-[#1a1a1a] mb-2 text-center">Criar conta</h1>
         <p className="text-sm text-[#9b9b9b] font-sans text-center mb-8">Acompanhe seus pedidos e salve seus endereços</p>
 
-        <GoogleHintAlert message={googleNotice} />
+        <GoogleHintAlert message={notice} />
         <div className="flex justify-center mb-4">
           <GoogleSignInButton text="signup_with" />
         </div>
