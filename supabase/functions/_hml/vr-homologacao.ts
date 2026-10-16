@@ -10,8 +10,8 @@
  *     supabase/functions/_hml/vr-homologacao.ts --preflight
  *
  * `--preflight`: só testa token + chave pública (sem cartão).
- * Os cenários financeiros via CLI ficam bloqueados até confirmação do padding e
- * do plaintext RSA pela VR, mais autorização específica para transações HML.
+ * Os cenários financeiros via CLI ficam bloqueados até confirmação do fluxo de
+ * tokenização inicial ou do contrato RSA, mais autorização específica para HML.
  *
  * `--out <dir>`: pasta de saída das evidências (default `.claude/.work/pagamento-vr`,
  * relativo ao cwd = raiz do repo; já coberta pelo `.gitignore`).
@@ -68,6 +68,19 @@ interface TestCardEnv {
 
 const TEST_CARD_ENV_VARS = ["VR_TEST_CARD_NUMERO", "VR_TEST_CARD_NOME", "VR_TEST_CARD_VALIDADE", "VR_TEST_CARD_CVV"];
 
+/** A massa enviada pela VR usa MM/AA; a API Captura espera AAMM. */
+export function normalizeTestCardExpiry(value: string): string {
+  const raw = value.trim();
+  const mmAa = /^(\d{2})\/(\d{2})$/.exec(raw);
+  const aaMm = /^(\d{2})(\d{2})$/.exec(raw);
+  const month = mmAa?.[1] ?? aaMm?.[2];
+  const year = mmAa?.[2] ?? aaMm?.[1];
+  if (!month || !year || Number(month) < 1 || Number(month) > 12) {
+    throw new Error("VR_TEST_CARD_VALIDADE deve estar em MM/AA ou AAMM, com mês válido.");
+  }
+  return `${year}${month}`;
+}
+
 function requireTestCardEnv(): TestCardEnv {
   const missing = TEST_CARD_ENV_VARS.filter((n) => !Deno.env.get(n));
   if (missing.length > 0) {
@@ -79,7 +92,7 @@ function requireTestCardEnv(): TestCardEnv {
   return {
     numero: requireEnv("VR_TEST_CARD_NUMERO"),
     nome: requireEnv("VR_TEST_CARD_NOME"),
-    validadeAAMM: requireEnv("VR_TEST_CARD_VALIDADE"),
+    validadeAAMM: normalizeTestCardExpiry(requireEnv("VR_TEST_CARD_VALIDADE")),
     cvv: requireEnv("VR_TEST_CARD_CVV"),
     documento: Deno.env.get("VR_TEST_CARD_DOCUMENTO") ?? undefined,
   };
@@ -107,8 +120,8 @@ export async function runPreflight(): Promise<{ ok: boolean; message: string }> 
   assertHmlEnv();
   try {
     await getVrAccessToken();
-    const { key_id } = await getPublicKey();
-    return { ok: true, message: `OK token + chave pública (key_id=${key_id})` };
+    await getPublicKey();
+    return { ok: true, message: "OK token + chave pública completa" };
   } catch (err) {
     if (err instanceof VrApiError) {
       return { ok: false, message: `Falhou: ${err.code}${err.status ? ` status=${err.status}` : ""}` };
@@ -145,7 +158,34 @@ function nowIso(): string {
 }
 
 function evidenciaOk(cenario: string, passo: string, extra: Partial<Evidencia> = {}): Evidencia {
-  return { cenario, passo, timestamp: nowIso(), ok: true, ...extra };
+  // O gateway pode ecoar a requisição em campos livres ou até em identificadores.
+  const {
+    mensagem: _ignored,
+    codigo_autorizacao: _authorization,
+    cartao_token_id_masked: _token,
+    ultimos4_digitos: _lastFour,
+    status_cartao: _cardStatus,
+    ...safeExtra
+  } = extra;
+  const safeId = (value: string | undefined, max: number) =>
+    value === undefined || (value.length <= max && /^[A-Za-z0-9_-]+$/.test(value));
+  if (
+    !safeId(safeExtra.id_transacao, 64) ||
+    !safeId(safeExtra.id_transacao_van, 15) ||
+    (safeExtra.codigo_retorno !== undefined && !/^\d{2}$/.test(safeExtra.codigo_retorno)) ||
+    (safeExtra.status !== undefined && !/^[A-Z_]{2,30}$/.test(safeExtra.status)) ||
+    (safeExtra.valor !== undefined && (!Number.isSafeInteger(safeExtra.valor) || safeExtra.valor <= 0))
+  ) {
+    throw new Error("Resposta VR contém campo inválido para evidência.");
+  }
+  const strings = [safeExtra.id_transacao, safeExtra.id_transacao_van, safeExtra.codigo_retorno, safeExtra.status]
+    .filter((value): value is string => typeof value === "string");
+  const secrets = ["VR_TEST_CARD_NUMERO", "VR_TEST_CARD_NOME", "VR_TEST_CARD_CVV", "VR_TEST_CARD_DOCUMENTO"]
+    .map((name) => Deno.env.get(name)).filter((value): value is string => !!value);
+  if (secrets.some((secret) => strings.some((value) => value.includes(secret)))) {
+    throw new Error("Resposta VR contém dado do cartão em campo de evidência.");
+  }
+  return { cenario, passo, timestamp: nowIso(), ok: true, ...safeExtra };
 }
 
 function evidenciaErr(cenario: string, passo: string, err: unknown): Evidencia {
@@ -155,7 +195,7 @@ function evidenciaErr(cenario: string, passo: string, err: unknown): Evidencia {
   return { cenario, passo, timestamp: nowIso(), ok: false, erro };
 }
 
-/** Roda um passo do cenário; em erro, registra a evidência e sinaliza para pular os passos seguintes do cenário. */
+/** Roda um passo; qualquer falha interrompe a suíte até a reconciliação do cenário. */
 async function step(
   cenario: string,
   passo: string,
@@ -171,7 +211,8 @@ async function step(
     return true;
   } catch (err) {
     evidencias.push(evidenciaErr(cenario, passo, err));
-    return false;
+    // Uma consulta falha também deixa a escrita anterior sem confirmação.
+    throw new Error(`Passo ${passo} sem conclusão comprovada; interromper e reconciliar antes de continuar.`);
   }
 }
 
@@ -359,6 +400,8 @@ async function scenarioTokenizacao(ctx: Ctx, testCard: TestCardEnv): Promise<voi
   const mes = Number(testCard.validadeAAMM.slice(2, 4));
   const ano = 2000 + Number(testCard.validadeAAMM.slice(0, 2));
   let cartaoTokenId: string | undefined;
+  let paymentStarted = false;
+  let paymentVerified = false;
 
   try {
     const tokenized = await step(cenario, "tokenizeCard", ctx.evidencias, async () => {
@@ -388,6 +431,7 @@ async function scenarioTokenizacao(ctx: Ctx, testCard: TestCardEnv): Promise<voi
     const paid = await step(cenario, "createPayment(cartaoTokenId)", ctx.evidencias, async () => {
       const van = newIdTransacaoVan();
       idTransacaoVan = van;
+      paymentStarted = true;
       const result = await createPayment({ valorCents: ctx.valorCents, idTransacaoVan: van, cartaoTokenId: cartaoTokenId! });
       return transacaoExtra(result, van);
     });
@@ -398,8 +442,10 @@ async function scenarioTokenizacao(ctx: Ctx, testCard: TestCardEnv): Promise<voi
       assertStatusAndValue(consulta, "CONFIRMADA", ctx.valorCents);
       return { id_transacao: consulta.id_transacao, id_transacao_van: idTransacaoVan, valor: consulta.valor, status: consulta.status, mensagem: consulta.mensagem };
     });
+    paymentVerified = true;
   } finally {
-    if (cartaoTokenId) {
+    // Se o pagamento não foi confirmado, manter o token para reconciliação controlada.
+    if (cartaoTokenId && (!paymentStarted || paymentVerified)) {
       await step(cenario, "deleteTokenizedCard", ctx.evidencias, async () => {
         await deleteTokenizedCard(cartaoTokenId!);
         return {};
@@ -450,7 +496,7 @@ function buildMarkdown(
     `- Ambiente: Homologação (VR_ENV=hml)`,
     `- id_filiacao: ${header.idFiliacao}`,
     `- client_id: ${header.clientIdMasked}`,
-    `- Padding RSA aceito: ${header.padding ?? "não determinado (todos os cenários com cartão cifrado falharam)"}`,
+    `- Padding RSA exercitado apenas em teste sintético: ${header.padding ?? "não determinado"}; aceitação pela VR não comprovada`,
     "",
   ];
   for (const cenario of cenarios) {
@@ -483,10 +529,11 @@ async function writeEvidenceFiles(
 
 export async function runHomologacao(opts: { out?: string; testOnlyRsaPadding?: RsaPadding } = {}): Promise<Evidencia[]> {
   assertHmlEnv();
-  // Bloqueio deliberado: o e-mail de liberação da App não confirmou padding nem
-  // formato do plaintext. Apenas testes com fetch stubado passam padding explícito.
+  // Bloqueio deliberado: a VR recomendou token, mas o contrato da tokenização
+  // inicial e o escopo de dados do cartão ainda não foram confirmados.
+  // Apenas testes com fetch stubado passam padding explícito.
   if (import.meta.main || !opts.testOnlyRsaPadding) {
-    throw new Error("Cenários HML bloqueados: aguardar contrato oficial do RSA (padding e plaintext). Use --preflight para a chave pública.");
+    throw new Error("Cenários HML bloqueados: confirmar tokenização inicial e escopo, ou contrato RSA, antes de transações. Use --preflight para consulta sem cartão.");
   }
   const testCard = requireTestCardEnv();
   const valorCents = valorCentsFromEnv();
@@ -509,15 +556,27 @@ export async function runHomologacao(opts: { out?: string; testOnlyRsaPadding?: 
   const evidencias: Evidencia[] = [];
   const ctx: Ctx = { state, keyId: key_id, publicKey: public_key, card, valorCents, evidencias };
 
-  await scenarioConfirmacao(ctx);
-  await scenarioCancelamentoEstornoTotal(ctx);
-  await scenarioReservaEfetivacao(ctx);
-  await scenarioReservaCancelamento(ctx);
-  await scenarioReembolsoParcial(ctx);
-  await scenarioTokenizacao(ctx, testCard);
-
   const out = opts.out ?? ".claude/.work/pagamento-vr";
-  await writeEvidenceFiles(out, evidencias, { idFiliacao, clientIdMasked, padding: state.padding });
+  let runError: unknown;
+  try {
+    await scenarioConfirmacao(ctx);
+    await scenarioCancelamentoEstornoTotal(ctx);
+    await scenarioReservaEfetivacao(ctx);
+    await scenarioReservaCancelamento(ctx);
+    await scenarioReembolsoParcial(ctx);
+    await scenarioTokenizacao(ctx, testCard);
+  } catch (err) {
+    runError = err;
+  }
+  try {
+    await writeEvidenceFiles(out, evidencias, { idFiliacao, clientIdMasked, padding: state.padding });
+  } catch (writeError) {
+    if (runError) {
+      throw new AggregateError([runError, writeError], "Homologação e gravação de evidência falharam.");
+    }
+    throw writeError;
+  }
+  if (runError) throw runError;
 
   return evidencias;
 }
