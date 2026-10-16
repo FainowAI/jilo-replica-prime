@@ -356,6 +356,45 @@ Deno.test("vrFetch: timeout vira VrApiError vr_timeout e NAO tenta de novo", asy
   }
 });
 
+Deno.test("vrFetch: sinal de timeout cobre OAuth antes da Captura", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  let oauthSignalPresent = false;
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/oauth/grant-code")) {
+      oauthSignalPresent = init?.signal instanceof AbortSignal;
+      return Promise.reject(new DOMException("abort sintético", "AbortError"));
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    await assertRejects(() => getTransaction("van-test"), VrApiError, "vr_timeout");
+    assertEquals(oauthSignalPresent, true);
+  } finally {
+    restore();
+  }
+});
+
+Deno.test("vrFetch: falha ao ler corpo da resposta vira vr_timeout", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/transacoes/pagamentos/")) {
+      assert(init?.signal instanceof AbortSignal);
+      const response = new Response("{}", { status: 200 });
+      response.text = () => Promise.reject(new DOMException("abort sintético", "AbortError"));
+      return response;
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    await assertRejects(() => getTransaction("van-test"), VrApiError, "vr_timeout");
+  } finally {
+    restore();
+  }
+});
+
 // ---------------------------------------------------------------------------
 // (f) createPayment monta body certo e parseia TransacaoAutorizada
 // ---------------------------------------------------------------------------
@@ -714,6 +753,29 @@ Deno.test("tokenizeCard: POST /cartoes com mes_validade/ano_validade inteiros", 
   }
 });
 
+Deno.test("tokenizeCard: recusa resposta 201 sem token utilizável", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  const { restore } = stubFetch((url) => {
+    if (url.endsWith("/cartoes")) {
+      return new Response(JSON.stringify({ cartao_token_id: "  ", mensagens: [] }), { status: 201 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    await assertRejects(() => tokenizeCard({
+      numero_cartao: "4111111111111111",
+      nome_impressao: "Fulano",
+      cvv: "123",
+      mes_validade: 12,
+      ano_validade: 2028,
+    }), VrApiError, "sem cartao_token_id");
+  } finally {
+    restore();
+  }
+});
+
 Deno.test("getTokenizedCard: GET /cartoes/{id} parseia CartaoTokenizado", async () => {
   setEnv();
   __resetVrClientCaches();
@@ -887,6 +949,24 @@ Deno.test("getPublicKey: cacheada em modulo, 2a chamada nao busca de novo", asyn
   }
 });
 
+Deno.test("getPublicKey: HTTP 200 sem chave completa falha fechado", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  await warmToken();
+  const { restore } = stubFetch((url) => {
+    if (url.includes("/chaves/chave-publica")) {
+      return new Response(JSON.stringify({ key_id: "test-key", public_key: "" }), { status: 200 });
+    }
+    throw new Error(`URL inesperada ${url}`);
+  });
+  try {
+    await assertRejects(() => getPublicKey(), VrApiError, "vr_bad_response");
+  } finally {
+    restore();
+    invalidatePublicKeyCache();
+  }
+});
+
 Deno.test("getPublicKey: cache não reutiliza chave entre mock e hml", async () => {
   setEnv();
   __resetVrClientCaches();
@@ -921,7 +1001,7 @@ Deno.test("vrFetch: logs ocultam identificadores de cartão e transação", asyn
   console.error = (...args: unknown[]) => logged.push(args.join(" "));
   const { restore } = stubFetch((url) => {
     if (url.includes("/cartoes/")) return new Response("{}", { status: 200 });
-    return new Response(JSON.stringify({ codigo: "01" }), { status: 404 });
+    return new Response(JSON.stringify({ codigo: "CODIGO_SENSIVEL_SENTINELA" }), { status: 404 });
   });
   try {
     await getTokenizedCard("secret-card-id");
@@ -930,6 +1010,7 @@ Deno.test("vrFetch: logs ocultam identificadores de cartão e transação", asyn
     assert(logged.some((line) => line.includes("/pagamentos/:id")));
     assert(!logged.join(" ").includes("secret-card-id"));
     assert(!logged.join(" ").includes("secret-transaction-id"));
+    assert(!logged.join(" ").includes("CODIGO_SENSIVEL_SENTINELA"));
   } finally {
     restore();
     console.log = originalLog;
