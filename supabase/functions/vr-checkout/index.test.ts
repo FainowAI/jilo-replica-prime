@@ -151,7 +151,7 @@ function buildDeps(overrides: Partial<VrCheckoutDeps> = {}): VrCheckoutDeps {
       delete: async () => {},
       status: async () => ({ status: "OPEN", order: null }),
     },
-    env: { VR_ENV: "mock", SHOPIFY_SHIPPING_VARIANT_ID: "gid://shopify/ProductVariant/999" },
+    env: { VR_ENV: "mock", VR_TOKEN_CHECKOUT_ENABLED: false, SHOPIFY_SHIPPING_VARIANT_ID: "gid://shopify/ProductVariant/999" },
     now: () => new Date(),
   };
   return { ...base, ...overrides };
@@ -179,6 +179,42 @@ Deno.test("400 quando o body tem campo extra (cartao)", async () => {
   assertEquals(res.status, 400);
   const json = await res.json();
   assertEquals(json.code, "invalid_body");
+});
+
+Deno.test("token path rejects mixed RSA fields", async () => {
+  const res = await handleVrCheckout(makeReq({ cartaoTokenId: "token-test" }), buildDeps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("token path remains closed by default before creating a draft", async () => {
+  const deps = buildDeps();
+  let draftCreated = false;
+  deps.draft.create = async () => {
+    draftCreated = true;
+    throw new Error("unexpected draft");
+  };
+  const res = await handleVrCheckout(makeReq({ keyId: undefined, cardEncrypted: undefined, cartaoTokenId: "token-test" }), deps);
+  assertEquals(res.status, 503);
+  assertEquals(draftCreated, false);
+});
+
+Deno.test("token path never opens in prod even when enabled", async () => {
+  const deps = buildDeps({ env: { VR_ENV: "prod", VR_TOKEN_CHECKOUT_ENABLED: true, SHOPIFY_SHIPPING_VARIANT_ID: null } });
+  const res = await handleVrCheckout(makeReq({ keyId: undefined, cardEncrypted: undefined, cartaoTokenId: "token-test" }), deps);
+  assertEquals(res.status, 503);
+});
+
+Deno.test("token path in HML passes only cartaoTokenId to the shared client", async () => {
+  const deps = buildDeps({ env: { VR_ENV: "hml", VR_TOKEN_CHECKOUT_ENABLED: true, SHOPIFY_SHIPPING_VARIANT_ID: null } });
+  let sent: unknown;
+  const originalCreatePayment = deps.vr.createPayment;
+  deps.vr.createPayment = async (params) => {
+    sent = params;
+    return originalCreatePayment(params);
+  };
+  const res = await handleVrCheckout(makeReq({ keyId: undefined, cardEncrypted: undefined, cartaoTokenId: "token-test" }), deps);
+  assertEquals(res.status, 200);
+  assertEquals(sent, { valorCents: HAPPY_CART.totalAmountCents, idTransacaoVan: "van-test-1", cartaoTokenId: "token-test" });
 });
 
 // ---------------------------------------------------------------------------

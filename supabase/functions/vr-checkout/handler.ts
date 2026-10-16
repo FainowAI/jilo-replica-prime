@@ -37,6 +37,7 @@ import {
   VrApiError,
   type ConsultaTransacao,
   type TransacaoAutorizada,
+  type VrPaymentParams,
   type VrReturnClass,
 } from "../_shared/vr-client.ts";
 import { completeDraftOrder, createDraftOrder, deleteDraftOrder, type DraftOrderInput } from "../_shared/shopify-draft-order.ts";
@@ -70,14 +71,19 @@ const CheckoutBodySchema = z
     deliveryMethod: z.enum(["uber_direct", "jilo_own", "lalamove"]),
     uberQuoteId: z.string().optional(),
     deliveryLabel: z.string().optional(),
-    keyId: z.string().min(1).max(64),
+    keyId: z.string().min(1).max(64).optional(),
     cardEncrypted: z
       .string()
       .max(1024)
-      .regex(/^[A-Za-z0-9+/]+={0,2}$/, "invalid_base64"),
+      .regex(/^[A-Za-z0-9+/]+={0,2}$/, "invalid_base64")
+      .optional(),
+    cartaoTokenId: z.string().trim().min(1).max(256).optional(),
     cpf: z.string().regex(/^\d{11}$/),
   })
-  .strict();
+  .strict()
+  .refine((body) => body.cartaoTokenId
+    ? !body.keyId && !body.cardEncrypted
+    : !!body.keyId && !!body.cardEncrypted);
 
 type CheckoutBody = z.infer<typeof CheckoutBodySchema>;
 
@@ -148,12 +154,7 @@ export interface VrCheckoutDeps {
   hasOtherCoupon(cart: StorefrontCart): boolean;
   isAreaDeliverable(uf: string, city: string): boolean;
   vr: {
-    createPayment(params: {
-      valorCents: number;
-      idTransacaoVan: string;
-      keyId: string;
-      cardEncrypted: string;
-    }): Promise<TransacaoAutorizada>;
+    createPayment(params: VrPaymentParams): Promise<TransacaoAutorizada>;
     getTransaction(idTransacaoOuVan: string): Promise<ConsultaTransacao>;
     refund(params: { idTransacao: string; valorCents: number }): Promise<{ noop: boolean }>;
     classifyReturnCode(codigo: string): { classe: VrReturnClass; userMessage: string };
@@ -167,6 +168,7 @@ export interface VrCheckoutDeps {
   };
   env: {
     VR_ENV: string;
+    VR_TOKEN_CHECKOUT_ENABLED: boolean;
     SHOPIFY_SHIPPING_VARIANT_ID: string | null;
   };
   now(): Date;
@@ -329,6 +331,12 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
   }
   const body: CheckoutBody = parsed.data;
 
+  // Token recebido do cliente só pode ser exercitado em HML, com gate explícito.
+  // A captura de PAN/CVV para produção ainda não tem contrato/escopo aprovado.
+  if (body.cartaoTokenId && (deps.env.VR_ENV !== "hml" || !deps.env.VR_TOKEN_CHECKOUT_ENABLED)) {
+    return jsonResponse({ code: "vr_unavailable", userMessage: "Pagamento com VR indisponível." }, 503, cors);
+  }
+
   if (!isValidCpf(body.cpf)) {
     return jsonResponse({ code: "invalid_cpf", userMessage: "CPF inválido." }, 422, cors);
   }
@@ -464,11 +472,13 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
   // 10. Cobrança na VR
   let vrResult: TransacaoAutorizada;
   try {
+    const card = body.cartaoTokenId
+      ? { cartaoTokenId: body.cartaoTokenId }
+      : { keyId: body.keyId!, cardEncrypted: body.cardEncrypted! };
     vrResult = await deps.vr.createPayment({
       valorCents,
       idTransacaoVan,
-      keyId: body.keyId,
-      cardEncrypted: body.cardEncrypted,
+      ...card,
     });
   } catch (err) {
     if (err instanceof VrApiError && err.code === "vr_timeout") {
@@ -677,6 +687,7 @@ export function buildDefaultDeps(): VrCheckoutDeps {
     draft: { create: createDraftOrder, complete: completeDraftOrder, delete: deleteDraftOrder, status: getDraftOrderStatus },
     env: {
       VR_ENV: Deno.env.get("VR_ENV") ?? "mock",
+      VR_TOKEN_CHECKOUT_ENABLED: Deno.env.get("VR_TOKEN_CHECKOUT_ENABLED") === "true",
       SHOPIFY_SHIPPING_VARIANT_ID: Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") || null,
     },
     now: () => new Date(),
