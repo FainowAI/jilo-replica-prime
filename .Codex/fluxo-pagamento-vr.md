@@ -8,6 +8,8 @@ Felipe de Pierro recomendou em 15/10 cartão tokenizado e dispensou `cartao_dado
 
 Guardas locais do runner: recusa ambiente diferente de `hml`; não registra PAN, CVV, documento, nome, token ou texto livre da resposta nas evidências; valida os identificadores persistidos; interrompe a suíte quando qualquer passo falha e grava a evidência para reconciliação. Se o pagamento tokenizado ficar incerto, não exclui o token automaticamente antes de verificar a transação e fazer limpeza controlada. Testes com stubs não substituem HML. Não executar cobranças reais.
 
+Ao criar draft orders para VR ou Cielo, `profiles.shopify_customer_id` é tratado como dado não confiável: antes de preencher `purchasingEntity`, o backend consulta a Shopify pelo GID canônico e compara o e-mail retornado ao e-mail autenticado usado no pedido. Se o GID for inválido ou apontar para outro e-mail, o draft segue apenas com o e-mail do comprador. Erro na consulta impede a criação do draft antes da cobrança. Isso protege o vínculo do pedido, mas não substitui a correção de permissão da coluna no Supabase nem a revisão independente de `customer-orders`.
+
 Fontes no repositório: `.claude/docs/eap_pagamento_vr.md`, `.claude/.work/pagamento-vr/tickets/06-homologacao.md`, `supabase/functions/_shared/vr-client.ts`, `supabase/functions/_hml/vr-homologacao.ts`, `supabase/functions/vr-checkout/handler.ts`.
 
 ## Verificação real HML em 2026-10-16

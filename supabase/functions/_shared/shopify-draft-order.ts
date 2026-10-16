@@ -76,6 +76,24 @@ const DRAFT_ORDER_CREATE_MUTATION = `
   }
 `;
 
+const CUSTOMER_EMAIL_QUERY = `
+  query DraftCustomerEmail($id: ID!) {
+    customer(id: $id) { id email }
+  }
+`;
+
+type AdminCall = <T>(query: string, variables?: Record<string, unknown>) => Promise<T>;
+
+/** A profile column is user writable: a valid GID alone does not establish ownership. */
+async function verifiedCustomerId(input: DraftOrderInput, admin: AdminCall): Promise<string | null> {
+  const id = input.customerId;
+  if (!id || !/^gid:\/\/shopify\/Customer\/\d+$/.test(id)) return null;
+  const data = await admin<{ customer: { id: string; email: string | null } | null }>(CUSTOMER_EMAIL_QUERY, { id });
+  return data.customer?.id === id && data.customer.email?.trim().toLowerCase() === input.email.trim().toLowerCase()
+    ? id
+    : null;
+}
+
 interface DraftOrderCreateResponse {
   draftOrderCreate?: {
     draftOrder?: { id: string; totalPriceSet: { shopMoney: { amount: string } } } | null;
@@ -83,7 +101,10 @@ interface DraftOrderCreateResponse {
   };
 }
 
-export async function createDraftOrder(input: DraftOrderInput): Promise<{ id: string; totalPriceCents: number }> {
+export async function createDraftOrder(
+  input: DraftOrderInput,
+  admin: AdminCall = callShopifyAdmin,
+): Promise<{ id: string; totalPriceCents: number }> {
   const lineItems = input.lines.map((line) => ({ variantId: line.variantId, quantity: line.quantity }));
 
   const draftInput: Record<string, unknown> = {
@@ -97,9 +118,10 @@ export async function createDraftOrder(input: DraftOrderInput): Promise<{ id: st
     tags: input.tags,
     customAttributes: Object.entries(input.customAttributes).map(([key, value]) => ({ key, value })),
   };
-  // C1: só amarra o draft a um GID canônico (o valor vem de profiles.shopify_customer_id).
-  if (input.customerId && /^gid:\/\/shopify\/Customer\/\d+$/.test(input.customerId)) {
-    draftInput.purchasingEntity = { customerId: input.customerId };
+  // C1: confira também o e-mail na Shopify; o GID do perfil pode ter sido alterado pelo usuário.
+  const customerId = await verifiedCustomerId(input, admin);
+  if (customerId) {
+    draftInput.purchasingEntity = { customerId };
   }
   if (input.discountCents && input.discountCents > 0) {
     draftInput.appliedDiscount = {
@@ -112,7 +134,7 @@ export async function createDraftOrder(input: DraftOrderInput): Promise<{ id: st
     draftInput.localizedFields = [{ key: "TAX_CREDENTIAL_BR", value: input.cpf }];
   }
 
-  const data = await callShopifyAdmin<DraftOrderCreateResponse>(DRAFT_ORDER_CREATE_MUTATION, { input: draftInput });
+  const data = await admin<DraftOrderCreateResponse>(DRAFT_ORDER_CREATE_MUTATION, { input: draftInput });
   const userErrors = data.draftOrderCreate?.userErrors ?? [];
   if (userErrors.length > 0) {
     console.error(`[shopify-draft-order] draftOrderCreate userErrors (${userErrors.length})`);
