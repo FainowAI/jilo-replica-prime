@@ -418,9 +418,9 @@ export async function getTransaction(idTransacaoOuVan: string): Promise<Consulta
 
 /**
  * Idempotente: consulta antes de estornar; no-op se já CANCELADA/CANCELAMENTO_PENDENTE.
- * `valorCents` menor que o valor total da transação = reembolso PARCIAL — a VR aceita e a
- * transação continua CONFIRMADA, então a guarda de idempotência acima não bloqueia um
- * segundo parcial (só bloqueia repetir um estorno TOTAL já efetivado).
+ * `valorCents` menor que o valor consultado solicita um estorno parcial. Em HML (16/10),
+ * após estornar 40% a consulta devolveu CANCELADA com valor igual ao estorno, não o
+ * saldo original. Não inferir saldo remanescente nem repetir estorno sem reconciliação.
  */
 export async function refund(
   params: { idTransacao: string; valorCents: number },
@@ -453,7 +453,8 @@ export interface TransacaoReserva {
   id_filiacao?: string;
   valor: number;
   data?: string;
-  status: VrTransactionStatus;
+  /** HML devolveu CONFIRMED antes e CANCELED após PATCH cancelar em 16/10. */
+  status: VrTransactionStatus | "CONFIRMED" | "CANCELED";
   codigo_retorno: string;
   codigo_autorizacao?: string;
   mensagem?: string;
