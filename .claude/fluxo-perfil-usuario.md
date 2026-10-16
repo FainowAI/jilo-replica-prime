@@ -145,4 +145,8 @@ Os 6 e-mails que o Supabase envia têm a identidade da Jiló e assunto em pt-BR.
 - Escopo de acesso depende de **confirmação de e-mail obrigatória** (hoje login é OAuth Google, e-mail já verificado). Se habilitarem signup e-mail/senha sem confirmação, revisar (spoofing de e-mail).
 - Validação de CPF não é implementada (campo TEXT livre) — débito técnico
 - A anon key do Supabase continua hardcoded em `client.ts` — débito de segurança
+
+### Guarda de vínculo Shopify (2026-10-16)
+
+`profiles.shopify_customer_id` ainda pode ser alterado pelo próprio usuário; formato GID canônico não comprova propriedade. Antes de buscar por `customer_id`, `customer-orders` consulta o cliente na Admin API e compara o ID e o e-mail da Shopify ao e-mail do JWT. Se a consulta falhar, se o GID for inválido ou se o e-mail divergir, a busca usa apenas o e-mail do JWT (com proteção da DSL de busca). Os drafts de VR/Cielo também só associam `purchasingEntity` quando ID e e-mail são confirmados. Os testes locais usam identidades sintéticas. Restringir a escrita da coluna no Supabase continua pendente e requer revisão das permissões e do backfill existente.
 - `AddressFormDialog` autopreenche rua/bairro/cidade/UF ao digitar um CEP de 8 dígitos, via `validateCep()` (ViaCEP) — reusa `cepValidator.ts`. Número/complemento continuam manuais (ViaCEP não os fornece). CEP inválido não bloqueia: usuário preenche manual.
