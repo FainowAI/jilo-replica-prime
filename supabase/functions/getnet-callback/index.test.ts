@@ -11,6 +11,7 @@ import {
 
 const SECRET = "S3cretS3cretS3cretS3cretS3cret_-ab"; // 34 chars, [A-Za-z0-9_-]
 const PREV = "Pr3vPr3vPr3vPr3vPr3vPr3vPr3vPr3v_-cd";
+const RSECRET = "R3concileR3concileR3concile_-xyz12"; // GETNET_RECONCILE_SECRET (distinto do segredo do path)
 const PAY = "11111111-2222-4333-8444-555555555555";
 const ORDER_ID = "rX6oAbCdEfGhIjKlMnOpQrStU"; // 25 chars
 const NOW = new Date("2026-10-13T15:00:00.000Z");
@@ -48,18 +49,33 @@ interface Spy {
   patches: { id: string; patch: CallbackPatch }[];
   forwarded: string[];
   bg: Promise<unknown>[];
+  /** `limit` de cada `listPending`. */
+  lists: number[];
+  /** ids de cada `claim` tentado. */
+  claims: string[];
+  heartbeats: string[];
 }
 
 interface Opts {
   env?: Partial<GetnetCallbackDeps["env"]>;
-  /** Resposta de `findOrders` por número da chamada (1, 2, ...). */
-  orders?: (n: number) => ShopifyOrderLite[];
+  /** Resposta de `findOrders` por número da chamada (1, 2, ...) e pelo payment id buscado. */
+  orders?: (n: number, paymentId: string) => ShopifyOrderLite[];
   markAsPaid?: () => Promise<{ ok: boolean }>;
   addTag?: () => Promise<void>;
   failInsert?: boolean;
   paidSince?: number;
   forward?: (u: string) => Promise<boolean>;
-  findThrows?: boolean;
+  /** true => `shopify_admin_http_429`; string => essa mensagem de erro. */
+  findThrows?: boolean | string;
+  failList?: boolean;
+  failCount?: boolean;
+  failHeartbeat?: boolean;
+  /** O claim sempre perde (outra execução já levou a linha). */
+  claimTaken?: boolean;
+  /** O claim dessa linha lança (falha de DB). */
+  claimThrowsFor?: string;
+  /** `listPending` só devolve depois que N chamadas chegaram (força a corrida entre duas execuções). */
+  listBarrier?: number;
 }
 
 function build(o: Opts = {}): Spy {
@@ -69,6 +85,11 @@ function build(o: Opts = {}): Spy {
   const patches: Spy["patches"] = [];
   const forwarded: string[] = [];
   const bg: Promise<unknown>[] = [];
+  const lists: number[] = [];
+  const claims: string[] = [];
+  const heartbeats: string[] = [];
+  const waiters: (() => void)[] = [];
+  const inQueue = (r: CallbackRow) => r.state === "received" || r.state === "pending";
   let finds = 0;
   const deps: GetnetCallbackDeps = {
     env: {
@@ -76,6 +97,7 @@ function build(o: Opts = {}): Spy {
       GETNET_CALLBACK_LIVE: "true",
       GETNET_CALLBACK_SECRET: SECRET,
       GETNET_CALLBACK_SECRET_PREV: null,
+      GETNET_RECONCILE_SECRET: RSECRET,
       GETNET_AUTOPAY_MAX_CENTS: null,
       GETNET_AUTOPAY_RECENCY_MIN: null,
       GETNET_AUTOPAY_MAX_PER_HOUR: null,
@@ -88,7 +110,7 @@ function build(o: Opts = {}): Spy {
         inserts.push(i);
         if (o.failInsert) throw new Error("getnet_callbacks_insert_failed:08006");
         if (rows.some((r) => r.getnet_payment_id === i.getnet_payment_id && r.status_getnet === i.status_getnet)) return { ok: false, code: "23505" };
-        const row: CallbackRow = { id: `row-${rows.length + 1}`, ...i, state: "received", attempts: 0 };
+        const row: CallbackRow = { id: `row-${rows.length + 1}`, ...i, state: "received", attempts: 0, error: null, received_at: NOW.toISOString(), locked_until: null };
         rows.push(row);
         return { ok: true, row };
       },
@@ -105,13 +127,51 @@ function build(o: Opts = {}): Spy {
         patches.push({ id, patch });
         Object.assign(rows.find((r) => r.id === id) ?? {}, patch);
       },
+      async listPending(limit) {
+        lists.push(limit);
+        if (o.failList) throw new Error("getnet_callbacks_list_failed");
+        // Como no SQL: attempts asc, received_at asc, limit. NÃO filtra por lease — o claim é a única autoridade.
+        const snap = rows
+          .filter(inQueue)
+          .sort((a, b) => a.attempts - b.attempts || a.received_at.localeCompare(b.received_at))
+          .slice(0, limit)
+          .map((r) => ({ ...r }));
+        if (o.listBarrier) {
+          await new Promise<void>((res) => {
+            waiters.push(res);
+            if (waiters.length >= o.listBarrier!) waiters.forEach((w) => w());
+          });
+        }
+        return snap;
+      },
+      // Atômico como o UPDATE condicional: confere e grava sem nenhum `await` no meio.
+      async claim(id, leaseUntilIso, nowIso) {
+        claims.push(id);
+        if (o.claimThrowsFor === id) throw new Error("getnet_callbacks_claim_failed");
+        const r = rows.find((x) => x.id === id);
+        if (o.claimTaken || !r || !inQueue(r) || (r.locked_until !== null && r.locked_until >= nowIso)) return null;
+        r.locked_until = leaseUntilIso;
+        return { ...r };
+      },
+      async countQueue() {
+        if (o.failCount) throw new Error("getnet_callbacks_count_failed");
+        return rows.filter(inQueue).length;
+      },
+      async countReceivedSince(sinceIso) {
+        if (o.failCount) throw new Error("getnet_callbacks_count_failed");
+        return rows.filter((r) => r.received_at > sinceIso).length;
+      },
+      async heartbeat(nowIso) {
+        if (o.failHeartbeat) throw new Error("getnet_callback_heartbeat_failed");
+        heartbeats.push(nowIso);
+      },
     },
     shopify: {
       async findOrders(paymentId) {
         calls.push(`find:${paymentId}`);
         finds++;
-        if (o.findThrows) throw new Error("shopify_admin_http_429");
-        return (o.orders ?? (() => [order()]))(finds);
+        if (o.findThrows) throw new Error(typeof o.findThrows === "string" ? o.findThrows : "shopify_admin_http_429");
+        return (o.orders ?? (() => [order()]))(finds, paymentId);
       },
       async markAsPaid(id) {
         calls.push(`mark:${id}`);
@@ -131,7 +191,7 @@ function build(o: Opts = {}): Spy {
     },
     now: () => NOW,
   };
-  return { deps, rows, calls, inserts, patches, forwarded, bg };
+  return { deps, rows, calls, inserts, patches, forwarded, bg, lists, claims, heartbeats };
 }
 
 async function run(s: Spy, u: string, method = "GET"): Promise<Response> {
@@ -383,6 +443,27 @@ Deno.test("casamento inexato / limites => needs_review SEM mutar (um caso por mo
   }
 });
 
+Deno.test("needs_review por gate com pedido achado grava shopify_order_id/name (alerta do 04); sem pedido, não", async () => {
+  const idName = (s: Spy) => ({ id: s.patches.at(-1)?.patch.shopify_order_id, name: s.patches.at(-1)?.patch.shopify_order_name });
+  const withOrder = { id: "gid://shopify/Order/1026", name: "#1026" };
+  const cases: [string, Opts, boolean][] = [
+    ["above_cap", { orders: () => [order({ totalOutstandingCents: 60001 })] }, true],
+    ["outside_recency", { orders: () => [order({ createdAt: new Date(NOW.getTime() - 33 * 3_600_000).toISOString() })] }, true],
+    ["breaker_open", { paidSince: 10 }, true],
+    ["order_changed", { orders: (n) => (n === 1 ? [order()] : []) }, true],
+    ["mark_paid_failed", { markAsPaid: async () => ({ ok: false }) }, true],
+    ["payment_id_mismatch", { orders: () => [order({ transactions: [] })] }, false], // casamento não provado: não grava pedido
+    ["order_ambiguous", { orders: () => [order(), order({ id: "gid://shopify/Order/2" })] }, false],
+  ];
+  for (const [code, opts, recorded] of cases) {
+    const s = build(opts);
+    await run(s, url({ ...GOOD_QUERY, amount: code === "above_cap" ? "60001" : "16994" }));
+    assertEquals(s.rows[0].state, "needs_review", code);
+    assertEquals(s.patches.at(-1)?.patch.error, code, code);
+    assertEquals(idName(s), recorded ? withOrder : { id: undefined, name: undefined }, code);
+  }
+});
+
 Deno.test("limites de borda: exatamente no teto, na recência e 9 auto-pagos ainda pagam", async () => {
   const s = build({ orders: () => [order({ totalOutstandingCents: 60000, createdAt: new Date(NOW.getTime() - 30 * 60_000).toISOString() })], paidSince: 9 });
   await run(s, url({ ...GOOD_QUERY, amount: "60000" }));
@@ -448,11 +529,12 @@ Deno.test("userError do orderMarkAsPaid: reconsulta; pago => done; senão needs_
 });
 
 Deno.test("falha transitória da Shopify => 200, pending com código curto e attempts+1, nada mutado", async () => {
-  const s = build({ findThrows: true });
+  // Ticket 02 (S-07d): 429/5xx/THROTTLED NÃO gastam tentativa (teste próprio abaixo); os demais erros transitórios gastam.
+  const s = build({ findThrows: "shopify_admin_bad_response" });
   assertEquals((await run(s, url())).status, 200);
   assertEquals(s.rows[0].state, "pending");
   assertEquals(s.rows[0].attempts, 1);
-  assertEquals(s.patches.at(-1)?.patch.error, "shopify_admin_http_429");
+  assertEquals(s.patches.at(-1)?.patch.error, "shopify_admin_bad_response");
   assertEquals(mutations(s), 0);
 });
 
@@ -561,4 +643,484 @@ Deno.test("repasse: nenhum nos caminhos 400, 404, sem query e INSERT falho", asy
   await run(s, url(null));
   await run(build({ env, failInsert: true }), url());
   assertEquals(s.forwarded.length, 0);
+});
+
+// ===========================================================================
+// Ticket 02 — reconcile (POST /reconcile), claim por lease, expiração, S-07 (teto de fila / orçamento inline), heartbeat
+// ===========================================================================
+
+const MIN = 60_000;
+const HOUR = 3_600_000;
+const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
+const BEARER = { Authorization: `Bearer ${RSECRET}` };
+
+let seq = 0;
+/** Linha já existente na tabela (cartão `pending` por padrão, achada pelo `ORDER_ID` do stub de `order()`). */
+function seed(s: Spy, over: Partial<CallbackRow> = {}): CallbackRow {
+  const n = String(++seq).padStart(4, "0");
+  const row: CallbackRow = {
+    id: `seed-${n}`,
+    getnet_payment_id: `aaaaaaaa-0000-4000-8000-00000000${n}`,
+    shopify_payment_id: ORDER_ID,
+    payment_type: "credit",
+    status_getnet: "APPROVED",
+    amount_cents: 16994,
+    state: "pending",
+    attempts: 1,
+    error: "order_not_found",
+    received_at: NOW.toISOString(),
+    locked_until: null,
+    ...over,
+  };
+  s.rows.push(row);
+  return row;
+}
+
+const reconcileReq = (headers: Record<string, string> = BEARER, method = "POST", path = "/functions/v1/getnet-callback/reconcile") =>
+  new Request(`http://localhost${path}`, { method, headers });
+const reconcile = (s: Spy) => handleGetnetCallback(reconcileReq(), s.deps);
+
+type Summary = Record<"checked" | "done" | "pending" | "needs_review" | "ignored" | "expired" | "skipped" | "errors", number>;
+const summary = async (res: Response): Promise<Summary> => {
+  const { ok: _ok, ...counters } = await res.json(); // `ok` é o único campo não-contador
+  return counters as Summary;
+};
+/** Pedido criado 10 s antes de o callback chegar (`receivedAgoMs` = há quanto tempo o callback chegou). */
+const orderFor = (receivedAgoMs: number, over: Partial<ShopifyOrderLite> = {}) => order({ createdAt: ago(receivedAgoMs + 10_000), ...over });
+
+// ---------------------------------------------------------------------------
+// Auth da rota (S-01, S-04.2): 404 uniforme, antes de tocar a fila
+// ---------------------------------------------------------------------------
+
+Deno.test("reconcile: Bearer ausente/errado/curto/de outro segredo => 404 sem listar, processar nem gravar heartbeat", async () => {
+  const s = build();
+  seed(s);
+  const bad: Record<string, string>[] = [
+    {},
+    { Authorization: "" },
+    { Authorization: "Bearer " },
+    { Authorization: "Bearer curto" },
+    { Authorization: `Bearer ${"x".repeat(34)}` },
+    { Authorization: `Bearer ${RSECRET.slice(0, -1)}` },
+    { Authorization: `Bearer ${RSECRET}x` },
+    { Authorization: RSECRET }, // sem o prefixo Bearer
+    { Authorization: `Basic ${RSECRET}` },
+    { Authorization: `Bearer ${SECRET}` }, // o segredo do path (o que a Getnet conhece) NÃO aciona o reconcile
+    { Authorization: `Bearer ${PREV}` },
+  ];
+  for (const h of bad) assertEquals((await handleGetnetCallback(reconcileReq(h), s.deps)).status, 404, JSON.stringify(h));
+  assertEquals(s.lists.length, 0);
+  assertEquals(s.claims.length, 0);
+  assertEquals(s.heartbeats.length, 0);
+  assertEquals(s.calls.length, 0);
+  assertEquals(s.rows[0].state, "pending");
+  // mesmo corpo 404 de qualquer outra negativa
+  const other = await run(build({ env: { GETNET_CALLBACK_ENABLED: null } }), url());
+  assertEquals(await (await handleGetnetCallback(reconcileReq({}), s.deps)).text(), await other.text());
+});
+
+Deno.test("reconcile: GETNET_RECONCILE_SECRET ausente/vazio/curto/fora do charset => 404 mesmo com Bearer 'igual' (S-01)", async () => {
+  for (const cfg of [null, "", "curto", "a".repeat(31), `${"a".repeat(31)}+`, `${"a".repeat(31)}%`, `${"a".repeat(31)} `]) {
+    const s = build({ env: { GETNET_RECONCILE_SECRET: cfg } });
+    seed(s);
+    assertEquals((await handleGetnetCallback(reconcileReq({ Authorization: `Bearer ${cfg ?? ""}` }), s.deps)).status, 404, `cfg=${cfg}`);
+    assertEquals((await handleGetnetCallback(reconcileReq({ Authorization: "Bearer " }), s.deps)).status, 404, `cfg=${cfg} vazio`);
+    assertEquals(s.lists.length, 0);
+    assertEquals(s.heartbeats.length, 0);
+  }
+});
+
+Deno.test("reconcile: só POST (GET/PUT/DELETE/HEAD/PATCH => 404), path exato e kill-switch (ausente ou != true => 404)", async () => {
+  const s = build();
+  seed(s);
+  for (const method of ["GET", "PUT", "DELETE", "HEAD", "PATCH"]) {
+    assertEquals((await handleGetnetCallback(reconcileReq(BEARER, method), s.deps)).status, 404, method);
+  }
+  // GET no /reconcile com query de callback não grava nada
+  assertEquals((await run(s, url(GOOD_QUERY, "reconcile"))).status, 404);
+  for (const path of ["/functions/v1/getnet-callback/reconcile/", "/functions/v1/getnet-callback/reconcile/extra", "/functions/v1/getnet-callback", "/functions/v1/getnet-callback/Reconcile", "/functions/v1/outra/reconcile"]) {
+    assertEquals((await handleGetnetCallback(reconcileReq(BEARER, "POST", path), s.deps)).status, 404, path);
+  }
+  for (const enabled of [null, "false", "TRUE", ""]) {
+    const off = build({ env: { GETNET_CALLBACK_ENABLED: enabled } });
+    seed(off);
+    assertEquals((await handleGetnetCallback(reconcileReq(), off.deps)).status, 404, `enabled=${enabled}`);
+    assertEquals(off.lists.length, 0);
+    assertEquals(off.heartbeats.length, 0);
+  }
+  assertEquals(s.inserts.length, 0);
+  assertEquals(s.lists.length, 0);
+  assertEquals(s.heartbeats.length, 0);
+  // sem /functions/v1 (o runtime remove o prefixo) também roteia
+  assertEquals((await handleGetnetCallback(reconcileReq(BEARER, "POST", "/getnet-callback/reconcile"), s.deps)).status, 200);
+});
+
+// ---------------------------------------------------------------------------
+// Cartão: reprocessa, recência por received_at, expiração
+// ---------------------------------------------------------------------------
+
+Deno.test("reconcile: cartão pending => done quando o pedido aparece (recência por received_at, não por now), lease liberado, sem repasse", async () => {
+  const received = 45 * MIN; // com now() como referência o pedido (45 min) cairia fora dos 30 min
+  const s = build({ orders: () => [orderFor(received)], env: { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb" } });
+  seed(s, { attempts: 2, received_at: ago(received) });
+  const res = await reconcile(s);
+  assertEquals(res.status, 200);
+  assertEquals(res.headers.get("Cache-Control"), "no-store");
+  assertEquals(await summary(res), { checked: 1, done: 1, pending: 0, needs_review: 0, ignored: 0, expired: 0, skipped: 0, errors: 0 });
+  assertEquals(s.rows[0].state, "done");
+  assertEquals(s.rows[0].locked_until, null);
+  assertEquals(s.calls[0], `find:${ORDER_ID}`);
+  assertEquals(s.calls.filter((c) => c.startsWith("mark:")), ["mark:gid://shopify/Order/1026"]);
+  assertEquals(s.calls.filter((c) => c.startsWith("tag:")), ["tag:gid://shopify/Order/1026:getnet-auto-pago"]);
+  assertEquals(s.forwarded.length, 0); // repasse é só da 1ª gravação (S-13)
+  assertEquals(s.patches.at(-1)?.patch.shopify_order_name, "#1026");
+});
+
+Deno.test("reconcile: os gates do 01 valem no reprocessamento (pedido criado 31 min antes do callback => outside_recency; teto; breaker)", async () => {
+  const cases: [string, Opts, Partial<CallbackRow>][] = [
+    ["outside_recency", { orders: () => [orderFor(10 * MIN + 31 * MIN)] }, { received_at: ago(10 * MIN) }],
+    ["above_cap", { orders: () => [orderFor(10 * MIN, { totalOutstandingCents: 60001 })] }, { received_at: ago(10 * MIN), amount_cents: 60001 }],
+    ["breaker_open", { paidSince: 10 }, { received_at: ago(10 * MIN) }],
+    ["amount_mismatch", { orders: () => [orderFor(10 * MIN, { totalOutstandingCents: 1 })] }, { received_at: ago(10 * MIN) }],
+  ];
+  for (const [code, opts, over] of cases) {
+    const s = build(opts);
+    seed(s, over);
+    await reconcile(s);
+    assertEquals(s.rows[0].state, "needs_review", code);
+    assertEquals(s.rows[0].error, code);
+    assertEquals(mutations(s), 0, code);
+  }
+});
+
+Deno.test("reconcile: pedido ainda não achado => continua pending, attempts+1, lease liberado", async () => {
+  const s = build({ orders: () => [] });
+  seed(s, { attempts: 2, received_at: ago(10 * MIN), locked_until: ago(MIN) }); // lease antigo (vencido) não bloqueia
+  const sum = await summary(await reconcile(s));
+  assertEquals(sum.pending, 1);
+  assertEquals(s.rows[0].state, "pending");
+  assertEquals(s.rows[0].attempts, 3);
+  assertEquals(s.rows[0].locked_until, null);
+  assertEquals(mutations(s), 0);
+});
+
+Deno.test("reconcile: cartão pending há > 2 h => needs_review credit_order_not_found sem consultar a Shopify; no limite (= 2 h) ainda tenta", async () => {
+  const s = build();
+  seed(s, { received_at: ago(2 * HOUR + 1000) });
+  const sum = await summary(await reconcile(s));
+  assertEquals(sum.expired, 1);
+  assertEquals(sum.needs_review, 1);
+  assertEquals(s.rows[0].state, "needs_review");
+  assertEquals(s.rows[0].error, "credit_order_not_found");
+  assertEquals(s.rows[0].locked_until, null);
+  assertEquals(s.calls.length, 0);
+  assertEquals(mutations(s), 0);
+
+  const edge = build({ orders: () => [] });
+  seed(edge, { received_at: ago(2 * HOUR) });
+  assertEquals((await summary(await reconcile(edge))).expired, 0);
+  assertEquals(edge.rows[0].state, "pending");
+  assertEquals(edge.calls.length, 1);
+});
+
+Deno.test("reconcile: linha `received` (gravada sem processar) é processada mesmo com > 2 h; só `pending` expira", async () => {
+  const s = build({ orders: () => [orderFor(3 * HOUR)] });
+  seed(s, { state: "received", attempts: 0, error: null, received_at: ago(3 * HOUR) });
+  const sum = await summary(await reconcile(s));
+  assertEquals(sum.expired, 0);
+  assertEquals(sum.done, 1);
+  assertEquals(s.rows[0].state, "done");
+});
+
+Deno.test("reconcile: Pix pending há > 24 h => needs_review pix_expired; dentro do prazo fica pending (attempts+1) sem tocar a Shopify; Pix received vira pending", async () => {
+  const s = build();
+  const expired = seed(s, { payment_type: "pix", error: "pix_pending", received_at: ago(24 * HOUR + 1000) });
+  const edge = seed(s, { payment_type: "pix", error: "pix_pending", received_at: ago(24 * HOUR) });
+  const live = seed(s, { payment_type: "pix", error: "pix_pending", received_at: ago(23 * HOUR) });
+  const fresh = seed(s, { payment_type: "pix", state: "received", attempts: 0, error: null, received_at: ago(MIN) });
+  const sum = await summary(await reconcile(s));
+  assertEquals(sum, { checked: 4, done: 0, pending: 3, needs_review: 1, ignored: 0, expired: 1, skipped: 0, errors: 0 });
+  assertEquals([expired.state, expired.error], ["needs_review", "pix_expired"]);
+  assertEquals([edge.state, edge.attempts], ["pending", 2]);
+  assertEquals([live.state, live.attempts], ["pending", 2]);
+  assertEquals([fresh.state, fresh.attempts], ["pending", 1]);
+  assertEquals(s.calls.length, 0); // Pix: nenhuma consulta nem mutação na Shopify neste ticket
+  assertEquals(s.rows.every((r) => r.locked_until === null), true);
+});
+
+Deno.test("reconcile: status != APPROVED que ficou `received` segue a regra do 01 (ignored; estorno após auto-pago => needs_review)", async () => {
+  const s = build();
+  seed(s, { state: "done", getnet_payment_id: PAY, received_at: ago(HOUR) });
+  const refund = seed(s, { state: "received", attempts: 0, error: null, getnet_payment_id: PAY, status_getnet: "REFUNDED" });
+  const denied = seed(s, { state: "received", attempts: 0, error: null, status_getnet: "DENIED", received_at: ago(MIN) });
+  const sum = await summary(await reconcile(s));
+  assertEquals([sum.needs_review, sum.ignored], [1, 1]);
+  assertEquals([refund.state, refund.error], ["needs_review", "refund_after_paid"]);
+  assertEquals(denied.state, "ignored");
+  assertEquals(s.calls.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// dry_run (handoff do 01)
+// ---------------------------------------------------------------------------
+
+Deno.test("reconcile: pending dry_run é reavaliada — sem LIVE continua dry_run; com LIVE paga (recência por received_at, fora da expiração de 2 h)", async () => {
+  const received = 5 * HOUR; // muito além dos 2 h do cartão
+  const base: Partial<CallbackRow> = { error: "dry_run", received_at: ago(received) };
+
+  const off = build({ env: { GETNET_CALLBACK_LIVE: null }, orders: () => [orderFor(received)] });
+  seed(off, base);
+  await reconcile(off);
+  assertEquals([off.rows[0].state, off.rows[0].error], ["pending", "dry_run"]);
+  assertEquals(mutations(off), 0);
+
+  const on = build({ orders: () => [orderFor(received)] });
+  seed(on, base);
+  assertEquals((await summary(await reconcile(on))).done, 1);
+  assertEquals(on.rows[0].state, "done");
+  assertEquals(mutations(on), 2);
+
+  const late = build({ orders: () => [orderFor(received + 31 * MIN)] }); // pedido criado 31 min antes do callback
+  seed(late, base);
+  await reconcile(late);
+  assertEquals([late.rows[0].state, late.rows[0].error], ["needs_review", "outside_recency"]);
+  assertEquals(mutations(late), 0);
+});
+
+// ---------------------------------------------------------------------------
+// S-07d: throttle não gasta tentativa
+// ---------------------------------------------------------------------------
+
+Deno.test("S-07d: 429 / 5xx / THROTTLED voltam a pending SEM incrementar attempts; os outros erros incrementam", async () => {
+  for (const [code, expected] of [
+    ["shopify_admin_http_429", 2],
+    ["shopify_admin_http_500", 2],
+    ["shopify_admin_http_503", 2],
+    ["shopify_admin_graphql_errors", 2], // é onde o THROTTLED do GraphQL (HTTP 200) chega via _shared
+    ["shopify_admin_http_401", 3],
+    ["shopify_admin_bad_response", 3],
+    ["Boom!", 3],
+  ] as [string, number][]) {
+    const s = build({ findThrows: code });
+    seed(s, { attempts: 2, received_at: ago(10 * MIN) });
+    const sum = await summary(await reconcile(s));
+    assertEquals(sum.pending, 1, code);
+    assertEquals(s.rows[0].state, "pending", code);
+    assertEquals(s.rows[0].attempts, expected, code);
+    assertEquals(s.rows[0].error, code === "Boom!" ? "unexpected_error" : code, code);
+    assertEquals(s.rows[0].locked_until, null, code);
+    assertEquals(mutations(s), 0, code);
+  }
+});
+
+Deno.test("S-07d: também no callback inline — 429 deixa a linha pending com attempts 0", async () => {
+  const s = build({ findThrows: true });
+  assertEquals((await run(s, url())).status, 200);
+  assertEquals([s.rows[0].state, s.rows[0].attempts, s.rows[0].error], ["pending", 0, "shopify_admin_http_429"]);
+});
+
+// ---------------------------------------------------------------------------
+// S-07a: ordem e lote
+// ---------------------------------------------------------------------------
+
+Deno.test("S-07a: processa em attempts asc, received_at asc", async () => {
+  const s = build({ orders: () => [] });
+  const mk = (id: string, attempts: number, receivedAgo: number) => seed(s, { shopify_payment_id: id, attempts, received_at: ago(receivedAgo) });
+  mk("ORDERAAAAAA", 1, 10 * MIN);
+  mk("ORDERBBBBBB", 0, 5 * MIN);
+  mk("ORDERCCCCCC", 0, 20 * MIN);
+  mk("ORDERDDDDDD", 2, 30 * MIN);
+  await reconcile(s);
+  assertEquals(s.calls, ["find:ORDERCCCCCC", "find:ORDERBBBBBB", "find:ORDERAAAAAA", "find:ORDERDDDDDD"]);
+});
+
+Deno.test("S-07e: no máximo 20 linhas por chamada; o resto fica intocado para a próxima", async () => {
+  const s = build({ orders: () => [] });
+  for (let i = 0; i < 25; i++) seed(s, { attempts: 0, received_at: ago((60 - i) * MIN) });
+  const sum = await summary(await reconcile(s));
+  assertEquals(s.lists, [20]);
+  assertEquals(sum.checked, 20);
+  assertEquals(s.calls.length, 20);
+  assertEquals(s.rows.filter((r) => r.attempts === 1).length, 20);
+  assertEquals(s.rows.filter((r) => r.attempts === 0).length, 5);
+  // as 20 mais antigas foram as processadas
+  assertEquals(s.rows.slice(0, 20).every((r) => r.attempts === 1), true);
+});
+
+// ---------------------------------------------------------------------------
+// S-09: claim por lease
+// ---------------------------------------------------------------------------
+
+Deno.test("S-09: duas execuções concorrentes sobre a mesma linha => 1 mutação (a perdedora conta `skipped`)", async () => {
+  const s = build({ listBarrier: 2 }); // as duas listam a linha ANTES de qualquer claim
+  seed(s, { received_at: ago(MIN) });
+  const [a, b] = await Promise.all([reconcile(s), reconcile(s)]);
+  const [sa, sb] = [await summary(a), await summary(b)];
+  assertEquals(s.claims.length, 2); // as duas tentaram
+  assertEquals(sa.done + sb.done, 1);
+  assertEquals(sa.skipped + sb.skipped, 1);
+  assertEquals(s.calls.filter((c) => c.startsWith("mark:")).length, 1);
+  assertEquals(s.calls.filter((c) => c.startsWith("tag:")).length, 1);
+  assertEquals(states(s), ["done"]);
+});
+
+Deno.test("S-09: lease vigente => skipped sem consultar a Shopify; lease vencido => processa", async () => {
+  const held = build();
+  seed(held, { received_at: ago(MIN), locked_until: ago(-MIN) }); // vence daqui a 1 min
+  const sum = await summary(await reconcile(held));
+  assertEquals([sum.checked, sum.skipped, sum.done], [1, 1, 0]);
+  assertEquals(held.calls.length, 0);
+  assertEquals(held.rows[0].state, "pending");
+
+  const expired = build();
+  seed(expired, { received_at: ago(MIN), locked_until: ago(MIN) });
+  assertEquals((await summary(await reconcile(expired))).done, 1);
+});
+
+Deno.test("S-09: o claim leva o lease de 2 min a partir de agora", async () => {
+  const leases: string[] = [];
+  const s = build({ orders: () => [] });
+  const claim = s.deps.db.claim;
+  s.deps.db.claim = async (id, leaseUntilIso, nowIso) => {
+    leases.push(leaseUntilIso);
+    return await claim(id, leaseUntilIso, nowIso);
+  };
+  seed(s, { received_at: ago(MIN) });
+  await reconcile(s);
+  assertEquals(leases, [new Date(NOW.getTime() + 2 * MIN).toISOString()]);
+});
+
+Deno.test("falha no claim de uma linha não derruba a varredura: conta `errors` e segue para a próxima", async () => {
+  const s = build();
+  const broken = seed(s, { received_at: ago(20 * MIN) });
+  const ok2 = seed(s, { received_at: ago(MIN) });
+  const orig = s.deps.db.claim;
+  s.deps.db.claim = async (id, l, n) => {
+    if (id === broken.id) throw new Error("getnet_callbacks_claim_failed");
+    return await orig(id, l, n);
+  };
+  const res = await reconcile(s);
+  assertEquals(res.status, 200);
+  const sum = await summary(res);
+  assertEquals([sum.checked, sum.errors, sum.done], [2, 1, 1]);
+  assertEquals([broken.state, ok2.state], ["pending", "done"]);
+  assertEquals(s.heartbeats.length, 1);
+});
+
+Deno.test("S-09: no callback inline o claim perdido (reconcile levou a linha) => 200 sem processar; ganho => lease liberado ao final", async () => {
+  const lost = build({ claimTaken: true });
+  assertEquals((await run(lost, url())).status, 200);
+  assertEquals(lost.rows[0].state, "received");
+  assertEquals(lost.calls.length, 0);
+  assertEquals(lost.claims.length, 1);
+
+  const won = build();
+  await run(won, url());
+  assertEquals(won.claims, ["row-1"]);
+  assertEquals([won.rows[0].state, won.rows[0].locked_until], ["done", null]);
+});
+
+// ---------------------------------------------------------------------------
+// S-10: corpo só com contadores, heartbeat
+// ---------------------------------------------------------------------------
+
+Deno.test("S-10: resposta só com contadores (sem ids, valores, nomes de pedido ou segredos) e logs sem segredo", async () => {
+  const s = build();
+  seed(s, { received_at: ago(MIN) });
+  seed(s, { received_at: ago(3 * HOUR) }); // expira
+  seed(s, { payment_type: "pix", error: "pix_pending", received_at: ago(MIN) });
+  const logged: string[] = [];
+  const [oLog, oErr] = [console.log, console.error];
+  console.log = (...a: unknown[]) => void logged.push(a.join(" "));
+  console.error = (...a: unknown[]) => void logged.push(a.join(" "));
+  let res: Response;
+  try {
+    res = await reconcile(s);
+  } finally {
+    console.log = oLog;
+    console.error = oErr;
+  }
+  const body = await res.json();
+  assertEquals(Object.keys(body).sort(), ["checked", "done", "errors", "expired", "ignored", "needs_review", "ok", "pending", "skipped"]);
+  assertEquals(body.ok, true);
+  for (const [k, v] of Object.entries(body)) if (k !== "ok") assertEquals(typeof v, "number", k);
+  const text = JSON.stringify(body) + logged.join("\n");
+  for (const needle of [ORDER_ID, PAY, "#1026", "gid:", SECRET, RSECRET, "Bearer"]) assertFalse(text.includes(needle), needle);
+});
+
+Deno.test("S-10: heartbeat gravado em toda execução autorizada, inclusive fila vazia; nunca em 404", async () => {
+  const empty = build();
+  const sum = await summary(await reconcile(empty));
+  assertEquals(sum, { checked: 0, done: 0, pending: 0, needs_review: 0, ignored: 0, expired: 0, skipped: 0, errors: 0 });
+  assertEquals(empty.heartbeats, [NOW.toISOString()]);
+
+  const busy = build();
+  seed(busy, { received_at: ago(MIN) });
+  await reconcile(busy);
+  assertEquals(busy.heartbeats, [NOW.toISOString()]);
+
+  await handleGetnetCallback(reconcileReq({}), busy.deps); // 404
+  assertEquals(busy.heartbeats.length, 1);
+});
+
+Deno.test("S-10: falha ao listar ou ao gravar o heartbeat => 500 (net._http_response mostra a falha), sem heartbeat falso", async () => {
+  const list = build({ failList: true });
+  const r1 = await reconcile(list);
+  assertEquals(r1.status, 500);
+  assertEquals(await r1.json(), { code: "internal_error" });
+  assertEquals(list.heartbeats.length, 0);
+
+  const hb = build({ failHeartbeat: true });
+  assertEquals((await reconcile(hb)).status, 500);
+});
+
+// ---------------------------------------------------------------------------
+// S-07b/c: o callback só grava sob fila cheia ou rajada; o reconcile consome
+// ---------------------------------------------------------------------------
+
+Deno.test("S-07c: fila > 500 (received|pending) => o GET só grava `received` e responde 200 (repasse segue); o reconcile processa depois", async () => {
+  const env = { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb" };
+  const full = build({ env });
+  for (let i = 0; i < 500; i++) seed(full, { received_at: ago(HOUR), locked_until: ago(-MIN) });
+  assertEquals((await run(full, url())).status, 200);
+  const row = full.rows.at(-1)!;
+  assertEquals([row.state, row.attempts], ["received", 0]);
+  assertEquals(full.calls.length, 0); // nenhuma chamada à Shopify no GET
+  assertEquals(full.claims.length, 0);
+  assertEquals(full.forwarded.length, 1); // o repasse à Getnet não é afetado
+
+  const sum = await summary(await reconcile(full)); // as 500 antigas estão com lease: só a nova é processada
+  assertEquals([sum.done, sum.skipped], [1, 19]);
+  assertEquals(row.state, "done");
+
+  // exatamente 500 (499 + a própria) ainda processa inline
+  const edge = build();
+  for (let i = 0; i < 499; i++) seed(edge, { received_at: ago(HOUR), locked_until: ago(-MIN) });
+  await run(edge, url());
+  assertEquals(edge.rows.at(-1)!.state, "done");
+});
+
+Deno.test("S-07b: > 30 callbacks no último minuto => o GET só grava `received`; 30 (contando o próprio) ainda processa", async () => {
+  const burst = build();
+  for (let i = 0; i < 30; i++) seed(burst, { state: "done", received_at: ago(10_000) });
+  assertEquals((await run(burst, url())).status, 200);
+  assertEquals(burst.rows.at(-1)!.state, "received");
+  assertEquals(burst.calls.length, 0);
+
+  const ok30 = build();
+  for (let i = 0; i < 29; i++) seed(ok30, { state: "done", received_at: ago(10_000) });
+  await run(ok30, url());
+  assertEquals(ok30.rows.at(-1)!.state, "done");
+
+  const old = build(); // rajada de 5 min atrás não conta
+  for (let i = 0; i < 40; i++) seed(old, { state: "done", received_at: ago(5 * MIN) });
+  await run(old, url());
+  assertEquals(old.rows.at(-1)!.state, "done");
+});
+
+Deno.test("S-07: erro ao contar fila/rajada => fail-closed: grava `received`, 200, sem tocar a Shopify", async () => {
+  const s = build({ failCount: true });
+  assertEquals((await run(s, url())).status, 200);
+  assertEquals(s.rows[0].state, "received");
+  assertEquals(s.calls.length, 0);
 });

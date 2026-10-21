@@ -15,7 +15,13 @@
  * `[getnet-callback] <etapa> <state> <getnet_payment_id>` (só depois de validado).
  *
  * Alerta de needs_review: neste ticket é `console.error` com prefixo fixo; a linha fica com `alerted_at` null
- * para o Flow/marcador (ticket 04). A rota `POST /reconcile` entra no ticket 02 (dispatch no topo do handler).
+ * para o Flow/marcador (ticket 04).
+ *
+ * Reprocessamento (ticket 02): `POST /functions/v1/getnet-callback/reconcile` com `Authorization: Bearer <GETNET_RECONCILE_SECRET>`
+ * (segredo DISTINTO do path, S-04.2), chamado pelo pg_cron a cada 5 min. Pega até 20 linhas `received|pending`
+ * (attempts asc, received_at asc), claim por lease em `locked_until` (S-09), reusa `processCallback`, expira
+ * cartão pending > 2 h e Pix pending > 24 h, responde só contadores e grava o heartbeat (S-10).
+ * S-07: sob fila > 500 ou > 30 callbacks/min o GET só grava `received` (o reconcile consome).
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -40,6 +46,9 @@ export interface CallbackRow {
   amount_cents: number;
   state: CallbackState;
   attempts: number;
+  error: string | null;
+  received_at: string;
+  locked_until: string | null;
 }
 
 export interface NewCallback {
@@ -57,6 +66,7 @@ export type CallbackPatch = Partial<{
   shopify_order_name: string;
   error: string;
   forwarded_at: string;
+  locked_until: string | null;
 }>;
 
 export interface ShopifyOrderLite {
@@ -77,6 +87,7 @@ export interface GetnetCallbackDeps {
     GETNET_CALLBACK_LIVE: string | null;
     GETNET_CALLBACK_SECRET: string | null;
     GETNET_CALLBACK_SECRET_PREV: string | null;
+    GETNET_RECONCILE_SECRET: string | null;
     GETNET_AUTOPAY_MAX_CENTS: string | null;
     GETNET_AUTOPAY_RECENCY_MIN: string | null;
     GETNET_AUTOPAY_MAX_PER_HOUR: string | null;
@@ -92,6 +103,19 @@ export interface GetnetCallbackDeps {
     /** Breaker (S-03.3): linhas credit + done com updated_at > since. Lança em erro (fail-closed). */
     countPaidSince(sinceIso: string): Promise<number>;
     update(id: string, patch: CallbackPatch): Promise<void>;
+    /** Reconcile: até `limit` linhas received|pending, ordem attempts asc, received_at asc. Só leitura (o claim é a autoridade). Lança em erro. */
+    listPending(limit: number): Promise<CallbackRow[]>;
+    /**
+     * Claim por lease (S-09), sem RPC: `UPDATE ... SET locked_until = leaseUntil WHERE id AND state IN (received, pending)
+     * AND (locked_until IS NULL OR locked_until < now) RETURNING *`. null = outra execução já levou (ou a linha saiu da fila).
+     */
+    claim(id: string, leaseUntilIso: string, nowIso: string): Promise<CallbackRow | null>;
+    /** Teto de fila (S-07c): linhas received|pending. Lança em erro. */
+    countQueue(): Promise<number>;
+    /** Orçamento inline (S-07b): linhas com received_at > since. Lança em erro. */
+    countReceivedSince(sinceIso: string): Promise<number>;
+    /** Heartbeat (S-10): upsert de `last_reconcile_at` em `getnet_callback_heartbeat` (id = 1). Lança em erro. */
+    heartbeat(nowIso: string): Promise<void>;
   };
   shopify: {
     /** `orders(query: $q)` por variável GraphQL; lança Error curto em falha. */
@@ -291,12 +315,16 @@ async function forwardCallback(row: CallbackRow, cb: Callback, deps: GetnetCallb
 
 export async function handleGetnetCallback(req: Request, deps: GetnetCallbackDeps): Promise<Response> {
   const env = deps.env;
-  // 1. Kill-switch e método (só GET aqui; POST /reconcile entra no ticket 02) — antes de tudo, 404 uniforme
-  if (env.GETNET_CALLBACK_ENABLED !== "true" || req.method !== "GET") return notFound();
+  // 1. Kill-switch antes de tudo (vale também para o reconcile), 404 uniforme
+  if (env.GETNET_CALLBACK_ENABLED !== "true") return notFound();
 
-  // 2. Path exato + segredo. Config inválida => 404 (S-01): nunca compara contra segredo ausente/curto.
+  // 2. Rota `/reconcile` (só POST, Bearer próprio) ou callback (só GET): path exato + segredo.
+  // Nenhum segredo válido do path colide com "reconcile" (SECRET_RE exige 32+ caracteres).
   const url = new URL(req.url);
   const segment = secretSegment(url.pathname);
+  if (segment === RECONCILE_SEGMENT) return req.method === "POST" ? await handleReconcile(req, deps) : notFound();
+  if (req.method !== "GET") return notFound();
+  // Config inválida => 404 (S-01): nunca compara contra segredo ausente/curto.
   if (segment === null) return notFound();
   const secret = env.GETNET_CALLBACK_SECRET;
   if (!secret || !SECRET_RE.test(secret)) {
@@ -340,7 +368,13 @@ export async function handleGetnetCallback(req: Request, deps: GetnetCallbackDep
       await handleDuplicate(cb, deps);
     } else {
       deps.waitUntil(forwardCallback(ins.row, cb, deps)); // só na 1ª gravação (S-13)
-      await processCallback(ins.row, cb, receivedAt, deps);
+      if (await inlineAllowed(deps, receivedAt)) {
+        // S-09: o lease vale também aqui — o reconcile não pega a linha no meio do processamento inline.
+        const row = await deps.db.claim(ins.row.id, leaseUntil(receivedAt), receivedAt.toISOString());
+        if (row) await processCallback(row, cb, receivedAt, deps);
+      } else {
+        console.log(`[getnet-callback] inline_deferred received ${cb.paymentId}`); // fica `received`; o reconcile consome
+      }
     }
   } catch {
     console.error(`[getnet-callback] process_failed - ${cb.paymentId}`);
@@ -363,12 +397,20 @@ async function handleDuplicate(cb: Callback, deps: GetnetCallbackDeps): Promise<
   await deps.db.update(existing.id, { state: "needs_review", error: "callback_conflict" });
 }
 
-async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date, deps: GetnetCallbackDeps): Promise<void> {
+/**
+ * Casamento + gates + pagamento de UMA linha. Chamada pelo callback (inline) e pelo reconcile (`receivedAt` = `row.received_at`,
+ * nunca `now()`: a recência mede o pedido contra a chegada do callback, não contra a hora do reprocessamento).
+ * Devolve o estado final da linha (os contadores do reconcile). Libera o lease (`locked_until: null`) a cada gravação.
+ */
+async function processCallback(row: CallbackRow, cb: Omit<Callback, "raw">, receivedAt: Date, deps: GetnetCallbackDeps): Promise<CallbackState> {
   const finish = async (state: CallbackState, etapa: string, patch: CallbackPatch = {}) => {
-    await deps.db.update(row.id, { state, ...patch });
+    await deps.db.update(row.id, { state, locked_until: null, ...patch });
     (state === "needs_review" ? console.error : console.log)(`[getnet-callback] ${etapa} ${state} ${cb.paymentId}`);
+    return state;
   };
-  const review = (code: string) => finish("needs_review", code, { error: code });
+  // Quando o casamento achou o pedido, a linha guarda id/nome dele (o alerta do ticket 04 precisa do nome); sem pedido, só o código.
+  const review = (code: string, o?: ShopifyOrderLite) =>
+    finish("needs_review", code, { error: code, ...(o && { shopify_order_id: o.id, shopify_order_name: o.name }) });
   const done = (etapa: string, o: ShopifyOrderLite) => finish("done", etapa, { shopify_order_id: o.id, shopify_order_name: o.name });
   const retryLater = (etapa: string, error: string) => finish("pending", etapa, { attempts: row.attempts + 1, error });
 
@@ -378,8 +420,11 @@ async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date,
       if (await deps.db.hasPaidApproval(cb.paymentId)) return await review("refund_after_paid");
       return await finish("ignored", "status_not_approved");
     }
-    // Pix: o pedido nasce no ticket 03; aqui só fica registrado.
-    if (cb.paymentType === "pix") return await finish("pending", "pix_pending");
+    // Pix: o pedido nasce no ticket 03; aqui só fica registrado. PONTO DE EXTENSÃO do 03: o casamento do Pix (abandoned checkout)
+    // entra aqui e vale para o callback e para o reconcile; S-12: re-checar o pedido nativo por payment_id antes de alertar.
+    // `retryLater` (attempts+1) e não `finish`: sem isso os Pix pendentes ficam para sempre na frente da fila (attempts asc) e
+    // empurram o cartão para fora das 20 vagas do reconcile.
+    if (cb.paymentType === "pix") return await retryLater("pix_pending", "pix_pending");
 
     const match = async () => evaluateOrders(await deps.shopify.findOrders(cb.orderId), cb);
     const m = await match();
@@ -391,12 +436,12 @@ async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date,
     const maxCents = intOr(deps.env.GETNET_AUTOPAY_MAX_CENTS, 60_000);
     const recencyMin = intOr(deps.env.GETNET_AUTOPAY_RECENCY_MIN, 30);
     const maxPerHour = intOr(deps.env.GETNET_AUTOPAY_MAX_PER_HOUR, 10);
-    if (m.order.totalOutstandingCents > maxCents) return await review("above_cap");
+    if (m.order.totalOutstandingCents > maxCents) return await review("above_cap", m.order);
     const ageMs = receivedAt.getTime() - Date.parse(m.order.createdAt);
-    if (!(ageMs <= recencyMin * 60_000)) return await review("outside_recency"); // NaN também cai aqui
+    if (!(ageMs <= recencyMin * 60_000)) return await review("outside_recency", m.order); // NaN também cai aqui
     // ponytail: leitura-depois-escrita; callbacks concorrentes podem ultrapassar o limite em poucas unidades. Aceito (limite é freio, não cota).
     const since = new Date(receivedAt.getTime() - 3_600_000).toISOString();
-    if ((await deps.db.countPaidSince(since)) >= maxPerHour) return await review("breaker_open");
+    if ((await deps.db.countPaidSince(since)) >= maxPerHour) return await review("breaker_open", m.order);
 
     // Dry-run (S-03.4): só muta com LIVE=true. Os gates acima já rodaram, então o log mostra a decisão real.
     // Estado `pending` + error=dry_run: o reconcile (ticket 02) pode reavaliar quando LIVE ligar.
@@ -405,7 +450,7 @@ async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date,
     // Reconsulta imediatamente antes de mutar: já pago => done sem mutar; qualquer outra mudança => humano.
     const fresh = await match();
     if (fresh.kind === "paid") return await done("already_paid", fresh.order);
-    if (fresh.kind === "not_found") return await review("order_changed");
+    if (fresh.kind === "not_found") return await review("order_changed", m.order);
     if (fresh.kind === "review") return await review(fresh.code);
 
     const res = await deps.shopify.markAsPaid(fresh.order.id);
@@ -413,7 +458,7 @@ async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date,
       // userError (ex.: "cannot be marked as paid"): se já está pago, é sucesso; senão humano.
       const again = await match();
       if (again.kind === "paid") return await done("already_paid", again.order);
-      return await review("mark_paid_failed");
+      return await review("mark_paid_failed", fresh.order);
     }
     try {
       await deps.shopify.addTag(fresh.order.id, AUTO_PAID_TAG); // best-effort
@@ -424,9 +469,117 @@ async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date,
   } catch (err) {
     // Falha transitória (Shopify/DB): a linha continua reprocessável. Só códigos curtos internos vão para `error`.
     const code = err instanceof Error && /^[a-z0-9_:]{1,60}$/.test(err.message) ? err.message : "unexpected_error";
-    await deps.db.update(row.id, { state: "pending", attempts: row.attempts + 1, error: code });
+    // S-07d: throttle/5xx da Shopify não gasta tentativa. ponytail: `_shared/shopify-admin-client.ts` (fora do meu escopo) devolve o
+    // THROTTLED do GraphQL (HTTP 200) como `shopify_admin_graphql_errors`, sem distinguir de erro permanente; tratar os dois como
+    // "não conta" é seguro porque a expiração (2 h) é por idade e `attempts` só ordena a fila.
+    const throttled = /^shopify_admin_(http_429|http_5\d\d|graphql_errors)$/.test(code);
+    await deps.db.update(row.id, { state: "pending", locked_until: null, attempts: throttled ? row.attempts : row.attempts + 1, error: code });
     console.error(`[getnet-callback] transient_error pending ${cb.paymentId}`);
+    return "pending";
   }
+}
+
+// ---------------------------------------------------------------------------
+// Fila, lease e reconcile (ticket 02)
+// ---------------------------------------------------------------------------
+
+const RECONCILE_SEGMENT = "reconcile";
+const RECONCILE_BATCH = 20; // N por chamada (S-07e): nada de loop sem limite
+const LEASE_MS = 2 * 60_000; // S-09: lease em locked_until; queda no meio do processamento se recupera sozinha
+const CREDIT_EXPIRY_MS = 2 * 3_600_000; // cartão pending há mais que isso => needs_review credit_order_not_found
+const PIX_EXPIRY_MS = 24 * 3_600_000; // Pix pending há mais que isso => needs_review pix_expired
+/** ponytail: constantes, não env — S-07 pede o freio, não a calibragem; o dono pode pedir env depois. */
+const QUEUE_CAP = 500; // S-07c: linhas received|pending
+const INLINE_PER_MIN = 30; // S-07b: callbacks recebidos no último minuto
+
+const leaseUntil = (from: Date) => new Date(from.getTime() + LEASE_MS).toISOString();
+
+/** Reconstrói o Callback a partir da linha (o reconcile não tem a query original; `raw` só serve ao repasse, que não roda aqui). */
+const rowToCallback = (r: CallbackRow): Omit<Callback, "raw"> => ({
+  orderId: r.shopify_payment_id,
+  paymentId: r.getnet_payment_id,
+  amountCents: r.amount_cents,
+  paymentType: r.payment_type,
+  status: r.status_getnet,
+});
+
+/**
+ * S-07: o GET só processa inline com fila ≤ 500 e ≤ 30 callbacks/min (a linha própria já conta). Contagens na própria tabela.
+ * Erro de contagem => false (fail-closed): a linha fica `received` e o reconcile cuida, sem tocar a Shopify.
+ */
+async function inlineAllowed(deps: GetnetCallbackDeps, now: Date): Promise<boolean> {
+  try {
+    const since = new Date(now.getTime() - 60_000).toISOString();
+    const [queue, lastMinute] = await Promise.all([deps.db.countQueue(), deps.db.countReceivedSince(since)]);
+    return queue <= QUEUE_CAP && lastMinute <= INLINE_PER_MIN;
+  } catch {
+    return false;
+  }
+}
+
+/** Bearer em tempo constante contra `GETNET_RECONCILE_SECRET`. Config ausente/curta/fora do charset => nega (S-01). */
+async function reconcileAuthorized(req: Request, secret: string | null): Promise<boolean> {
+  if (!secret || !SECRET_RE.test(secret)) {
+    console.error("[getnet-callback] reconcile_config_invalid 404 -");
+    return false;
+  }
+  const header = req.headers.get("Authorization") ?? "";
+  if (!header.startsWith("Bearer ")) return false;
+  return await safeEqual(header.slice(7), secret);
+}
+
+/** Uma linha já claimada: expira o que passou do prazo (antes de qualquer chamada à Shopify) ou reprocessa. */
+async function reconcileRow(row: CallbackRow, now: Date, deps: GetnetCallbackDeps): Promise<{ state: CallbackState; expired: boolean }> {
+  const receivedAt = new Date(row.received_at);
+  const ageMs = now.getTime() - receivedAt.getTime();
+  if (row.state === "pending") {
+    // Cartão `dry_run` fica fora da expiração: o pedido foi achado e a linha espera o LIVE (reavaliada com `received_at`).
+    const expiredCode =
+      row.payment_type === "pix"
+        ? ageMs > PIX_EXPIRY_MS && "pix_expired"
+        : row.error !== "dry_run" && ageMs > CREDIT_EXPIRY_MS && "credit_order_not_found";
+    if (expiredCode) {
+      await deps.db.update(row.id, { state: "needs_review", locked_until: null, error: expiredCode });
+      console.error(`[getnet-callback] ${expiredCode} needs_review ${row.getnet_payment_id}`);
+      return { state: "needs_review", expired: true };
+    }
+  }
+  return { state: await processCallback(row, rowToCallback(row), receivedAt, deps), expired: false };
+}
+
+/** POST /reconcile — resposta só com contadores (fica em `net._http_response`, S-10). */
+async function handleReconcile(req: Request, deps: GetnetCallbackDeps): Promise<Response> {
+  if (!(await reconcileAuthorized(req, deps.env.GETNET_RECONCILE_SECRET))) return notFound();
+
+  const sum = { checked: 0, done: 0, pending: 0, needs_review: 0, ignored: 0, expired: 0, skipped: 0, errors: 0 };
+  try {
+    const listed = await deps.db.listPending(RECONCILE_BATCH);
+    // Sequencial de propósito: o breaker (countPaidSince) é leitura-depois-escrita e a Admin API é compartilhada (S-07).
+    for (const item of listed) {
+      sum.checked++;
+      try {
+        const now = deps.now();
+        // Autoridade contra processamento duplo; usa a linha DEVOLVIDA (estado e attempts atuais), não a da listagem.
+        const row = await deps.db.claim(item.id, leaseUntil(now), now.toISOString());
+        if (!row) {
+          sum.skipped++;
+          continue;
+        }
+        const r = await reconcileRow(row, now, deps);
+        if (r.expired) sum.expired++;
+        if (r.state === "done" || r.state === "pending" || r.state === "needs_review" || r.state === "ignored") sum[r.state]++;
+      } catch {
+        sum.errors++; // a linha segue reprocessável (lease expira); o log da etapa já saiu
+      }
+    }
+    // Heartbeat em toda execução autorizada, inclusive fila vazia. Só depois da varredura: falha de DB => 500 e sem heartbeat.
+    await deps.db.heartbeat(deps.now().toISOString());
+  } catch {
+    console.error("[getnet-callback] reconcile_failed 500 -");
+    return respond({ code: "internal_error" }, 500);
+  }
+  console.log(`[getnet-callback] reconcile_done ok ${JSON.stringify(sum)}`);
+  return respond({ ok: true, ...sum }, 200);
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +625,7 @@ export function buildDefaultDeps(): GetnetCallbackDeps {
       GETNET_CALLBACK_LIVE: e("GETNET_CALLBACK_LIVE"),
       GETNET_CALLBACK_SECRET: e("GETNET_CALLBACK_SECRET"),
       GETNET_CALLBACK_SECRET_PREV: e("GETNET_CALLBACK_SECRET_PREV"),
+      GETNET_RECONCILE_SECRET: e("GETNET_RECONCILE_SECRET"),
       GETNET_AUTOPAY_MAX_CENTS: e("GETNET_AUTOPAY_MAX_CENTS"),
       GETNET_AUTOPAY_RECENCY_MIN: e("GETNET_AUTOPAY_RECENCY_MIN"),
       GETNET_AUTOPAY_MAX_PER_HOUR: e("GETNET_AUTOPAY_MAX_PER_HOUR"),
@@ -513,7 +667,46 @@ export function buildDefaultDeps(): GetnetCallbackDeps {
       },
       async update(id, patch) {
         const { error } = await client.from(T).update(patch).eq("id", id);
-        if (error) console.error(`[getnet-callback] update_failed - ${id}`);
+        if (error) throw new Error("getnet_callbacks_update_failed");
+      },
+      async listPending(limit) {
+        // A ordem (S-07a) e o limite ficam no SQL; o índice getnet_callbacks_pending_scan cobre (state, attempts, received_at).
+        const { data, error } = await client
+          .from(T)
+          .select("*")
+          .in("state", ["received", "pending"])
+          .order("attempts", { ascending: true })
+          .order("received_at", { ascending: true })
+          .limit(limit);
+        if (error) throw new Error("getnet_callbacks_list_failed");
+        return (data ?? []) as CallbackRow[];
+      },
+      async claim(id, leaseUntilIso, nowIso) {
+        // UPDATE condicional atômico (sem RPC, S-09). ISO gerado por nós (sem vírgula/parêntese), seguro dentro do or().
+        const { data, error } = await client
+          .from(T)
+          .update({ locked_until: leaseUntilIso })
+          .eq("id", id)
+          .in("state", ["received", "pending"])
+          .or(`locked_until.is.null,locked_until.lt.${nowIso}`)
+          .select()
+          .maybeSingle();
+        if (error) throw new Error("getnet_callbacks_claim_failed");
+        return (data as CallbackRow | null) ?? null;
+      },
+      async countQueue() {
+        const { count, error } = await client.from(T).select("id", { count: "exact", head: true }).in("state", ["received", "pending"]);
+        if (error) throw new Error("getnet_callbacks_count_failed");
+        return count ?? 0;
+      },
+      async countReceivedSince(sinceIso) {
+        const { count, error } = await client.from(T).select("id", { count: "exact", head: true }).gt("received_at", sinceIso);
+        if (error) throw new Error("getnet_callbacks_count_failed");
+        return count ?? 0;
+      },
+      async heartbeat(nowIso) {
+        const { error } = await client.from("getnet_callback_heartbeat").upsert({ id: 1, last_reconcile_at: nowIso });
+        if (error) throw new Error("getnet_callback_heartbeat_failed");
       },
     },
     shopify: {
