@@ -4,8 +4,8 @@
  * (o ticket 03 cria o pedido). Contrato: .claude/.work/getnet-callback/tickets/_map.md + security.md.
  *
  * GET /functions/v1/getnet-callback/<segredo>?order_id=&payment_id=&amount=&payment_type=credit|pix&status=
- * Ordem: kill-switch -> método -> segredo (config válida + path exato + PREV) -> query estrita ->
- * INSERT idempotente -> repasse (1ª gravação) -> processamento -> 200.
+ * Ordem: kill-switch -> método -> segredo (config válida + path exato + PREV) -> repasse da query ORIGINAL ao app
+ * da Getnet (sempre, antes de validar) -> query estrita -> INSERT idempotente -> processamento -> 200.
  *
  * Segurança (security.md): S-01 (config inválida => 404), S-02 (validação + busca por variável + checagem exata),
  * S-03 (teto, recência, breaker/h, estorno após auto-pago, LIVE explícito), S-04.1 (SECRET + SECRET_PREV),
@@ -175,7 +175,12 @@ const ok = () => respond({ ok: true }, 200);
 const KEYS = ["order_id", "payment_id", "amount", "payment_type", "status"] as const;
 type Key = (typeof KEYS)[number];
 
-const ORDER_ID_RE = /^[A-Za-z0-9]{10,64}$/;
+/**
+ * 13/10 veio o paymentId da Shopify (`rX6o…`, só alfanumérico); 20/10 a Getnet passou a mandar `XXXX-XXXX.0` / `XXXX_XX.0`
+ * e o regex antigo devolveu 400 aos callbacks reais. Aceita `.`, `_`, `-`; o 1º caractere alfanumérico impede que um `-`
+ * inicial vire negação na busca `payment_id:` (a checagem exata em evaluateOrders continua sendo a autoridade).
+ */
+const ORDER_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{5,63}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const AMOUNT_RE = /^[1-9]\d{0,8}$/;
 /**
@@ -190,7 +195,6 @@ interface Callback {
   amountCents: number;
   paymentType: PaymentType;
   status: string; // MAIÚSCULAS
-  raw: Record<Key, string>; // valores originais (já validados), só para o repasse
 }
 
 type Parsed = { kind: "empty" } | { kind: "invalid"; names: Key[]; amountShape?: string } | { kind: "ok"; cb: Callback };
@@ -228,7 +232,6 @@ function parseQuery(params: URLSearchParams): Parsed {
       amountCents: Number(raw.amount),
       paymentType: raw.payment_type as PaymentType,
       status,
-      raw,
     },
   };
 }
@@ -279,7 +282,7 @@ export function evaluateOrders(orders: ShopifyOrderLite[], cb: Pick<Callback, "o
 /** ponytail: sufixos aceitos para o destino do repasse (Getnet / herokuapp informado pela Getnet); ampliar só por decisão do dono. */
 const FORWARD_HOST_SUFFIXES = ["getnet.com.br", "herokuapp.com"];
 
-function forwardTarget(base: string, raw: Record<Key, string>): string | null {
+function forwardTarget(base: string, params: URLSearchParams): string | null {
   let u: URL;
   try {
     u = new URL(base);
@@ -290,22 +293,29 @@ function forwardTarget(base: string, raw: Record<Key, string>): string | null {
   if (u.protocol !== "https:" || u.username || u.password) return null;
   if (!FORWARD_HOST_SUFFIXES.some((s) => host === s || host.endsWith(`.${s}`))) return null;
   u.hash = "";
-  for (const k of KEYS) u.searchParams.set(k, raw[k]); // query reserializada a partir dos 5 parâmetros validados, sem o segredo
+  for (const [k, v] of params) u.searchParams.append(k, v); // query original da Getnet, intacta (o segredo está no path, não aqui)
   return u.toString();
 }
 
-async function forwardCallback(row: CallbackRow, cb: Callback, deps: GetnetCallbackDeps): Promise<void> {
-  const base = cb.paymentType === "credit" ? deps.env.GETNET_FORWARD_CREDIT_URL : deps.env.GETNET_FORWARD_PIX_URL;
-  if (!base) return;
+/**
+ * Repassa a query ORIGINAL ao app da Getnet antes da nossa validação (revisto em 21/10): um erro nosso de parsing nunca
+ * corta o app. Roda em toda entrega da Getnet (retentativas inclusive), como se a ponte não existisse. Nunca rejeita.
+ * O valor ainda não foi validado: o log leva só o tipo, nunca ids.
+ */
+async function forwardOriginal(params: URLSearchParams, deps: GetnetCallbackDeps): Promise<boolean> {
+  const type = params.get("payment_type");
+  const base = type === "credit" ? deps.env.GETNET_FORWARD_CREDIT_URL : type === "pix" ? deps.env.GETNET_FORWARD_PIX_URL : null;
+  if (!base) return false;
   try {
-    const target = forwardTarget(base, cb.raw);
+    const target = forwardTarget(base, params);
     if (!target) {
-      console.error(`[getnet-callback] forward_url_invalid ${row.state} ${cb.paymentId}`);
-      return;
+      console.error(`[getnet-callback] forward_url_invalid - ${type}`);
+      return false;
     }
-    if (await deps.forward(target)) await deps.db.update(row.id, { forwarded_at: deps.now().toISOString() });
+    return await deps.forward(target);
   } catch {
-    console.error(`[getnet-callback] forward_failed ${row.state} ${cb.paymentId}`);
+    console.error(`[getnet-callback] forward_failed - ${type}`);
+    return false;
   }
 }
 
@@ -340,6 +350,9 @@ export async function handleGetnetCallback(req: Request, deps: GetnetCallbackDep
   // 3. Query estrita (S-02). Sem nenhum parâmetro conhecido => 200 sem efeito (S-14).
   const parsed = parseQuery(url.searchParams);
   if (parsed.kind === "empty") return ok();
+  // Repasse antes de validar: 400, 500 e duplicado também chegam ao app da Getnet.
+  const forwarded = forwardOriginal(url.searchParams, deps);
+  deps.waitUntil(forwarded);
   if (parsed.kind === "invalid") {
     console.error(`[getnet-callback] bad_request 400 invalid=${parsed.names.join(",")}${parsed.amountShape ? ` amount_shape=${parsed.amountShape}` : ""}`);
     return respond({ code: "invalid_request" }, 400);
@@ -367,7 +380,14 @@ export async function handleGetnetCallback(req: Request, deps: GetnetCallbackDep
     if (!ins.ok) {
       await handleDuplicate(cb, deps);
     } else {
-      deps.waitUntil(forwardCallback(ins.row, cb, deps)); // só na 1ª gravação (S-13)
+      const rowId = ins.row.id;
+      deps.waitUntil(
+        forwarded
+          .then(async (delivered) => {
+            if (delivered) await deps.db.update(rowId, { forwarded_at: deps.now().toISOString() });
+          })
+          .catch(() => console.error(`[getnet-callback] forwarded_at_failed - ${cb.paymentId}`)),
+      );
       if (await inlineAllowed(deps, receivedAt)) {
         // S-09: o lease vale também aqui — o reconcile não pega a linha no meio do processamento inline.
         const row = await deps.db.claim(ins.row.id, leaseUntil(receivedAt), receivedAt.toISOString());
@@ -402,7 +422,7 @@ async function handleDuplicate(cb: Callback, deps: GetnetCallbackDeps): Promise<
  * nunca `now()`: a recência mede o pedido contra a chegada do callback, não contra a hora do reprocessamento).
  * Devolve o estado final da linha (os contadores do reconcile). Libera o lease (`locked_until: null`) a cada gravação.
  */
-async function processCallback(row: CallbackRow, cb: Omit<Callback, "raw">, receivedAt: Date, deps: GetnetCallbackDeps): Promise<CallbackState> {
+async function processCallback(row: CallbackRow, cb: Callback, receivedAt: Date, deps: GetnetCallbackDeps): Promise<CallbackState> {
   const finish = async (state: CallbackState, etapa: string, patch: CallbackPatch = {}) => {
     await deps.db.update(row.id, { state, locked_until: null, ...patch });
     (state === "needs_review" ? console.error : console.log)(`[getnet-callback] ${etapa} ${state} ${cb.paymentId}`);
@@ -494,8 +514,8 @@ const INLINE_PER_MIN = 30; // S-07b: callbacks recebidos no último minuto
 
 const leaseUntil = (from: Date) => new Date(from.getTime() + LEASE_MS).toISOString();
 
-/** Reconstrói o Callback a partir da linha (o reconcile não tem a query original; `raw` só serve ao repasse, que não roda aqui). */
-const rowToCallback = (r: CallbackRow): Omit<Callback, "raw"> => ({
+/** Reconstrói o Callback a partir da linha (o reconcile não tem a query original; o repasse não roda aqui). */
+const rowToCallback = (r: CallbackRow): Callback => ({
   orderId: r.shopify_payment_id,
   paymentId: r.getnet_payment_id,
   amountCents: r.amount_cents,
@@ -741,8 +761,9 @@ export function buildDefaultDeps(): GetnetCallbackDeps {
     waitUntil(p) {
       const rt = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } }).EdgeRuntime;
       if (rt?.waitUntil) rt.waitUntil(p);
-      // ponytail: fora do Edge Runtime (deno serve local) a promise segue solta; ela nunca rejeita (forwardCallback captura tudo).
+      // ponytail: fora do Edge Runtime (deno serve local) a promise segue solta; ela nunca rejeita (forwardOriginal captura tudo).
     },
     now: () => new Date(),
   };
 }
+

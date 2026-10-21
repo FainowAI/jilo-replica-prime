@@ -278,7 +278,7 @@ Deno.test("S-14: segredo certo sem query (ou só chaves desconhecidas) => 200 {o
 // Validação de entrada (S-02) — 400 nunca grava, consulta nem repassa
 // ---------------------------------------------------------------------------
 
-Deno.test("S-02: parâmetros inválidos/injeção/chave repetida/ausente => 400 sem gravar, consultar ou repassar", async () => {
+Deno.test("S-02: parâmetros inválidos/injeção/chave repetida/ausente => 400 sem gravar nem consultar", async () => {
   const cases: [string, Record<string, string> | string][] = [
     ["order_id com OR", { ...GOOD_QUERY, order_id: "x OR name:#1030 aaaaaaaa" }],
     ["order_id com espaço", { ...GOOD_QUERY, order_id: "aaaaaaaaaa bbbbbbbbbb" }],
@@ -288,6 +288,8 @@ Deno.test("S-02: parâmetros inválidos/injeção/chave repetida/ausente => 400 
     ["order_id dois-pontos", { ...GOOD_QUERY, order_id: "payment_id:aaaaaaaaaa" }],
     ["order_id curto", { ...GOOD_QUERY, order_id: "abc" }],
     ["order_id longo", { ...GOOD_QUERY, order_id: "a".repeat(65) }],
+    ["order_id começando com hífen (negação na busca)", { ...GOOD_QUERY, order_id: "-TroAR6NU.0" }],
+    ["order_id com barra", { ...GOOD_QUERY, order_id: "TroA/R6NU.0" }],
     ["payment_id não UUID", { ...GOOD_QUERY, payment_id: "not-a-uuid" }],
     ["payment_id UUID com lixo", { ...GOOD_QUERY, payment_id: `${PAY}x` }],
     ["amount decimal (reais)", { ...GOOD_QUERY, amount: "169.94" }],
@@ -306,13 +308,42 @@ Deno.test("S-02: parâmetros inválidos/injeção/chave repetida/ausente => 400 
     ["parâmetro ausente", (() => { const { status: _s, ...rest } = GOOD_QUERY; return rest; })()],
     ["só order_id", { order_id: ORDER_ID }],
   ];
-  const s = build({ env: { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb" } });
+  const s = build();
   for (const [name, q] of cases) {
     assertEquals((await run(s, url(q))).status, 400, name);
   }
   assertEquals(s.inserts.length, 0);
   assertEquals(s.calls.length, 0);
-  assertEquals(s.forwarded.length, 0);
+});
+
+Deno.test("order_id no formato de 20/10 (`XXXX-XXXX.0`, `XXXX_XX.0`) é aceito: grava, 200 (antes dava 400)", async () => {
+  const s = build();
+  for (const [i, orderId] of ["TroA-R6NU.0", "XZ7Gpt_FO.0", ORDER_ID].entries()) {
+    const res = await run(s, url({ ...GOOD_QUERY, order_id: orderId, payment_id: `${i}1111111-2222-4333-8444-555555555555` }));
+    assertEquals(res.status, 200, orderId);
+  }
+  assertEquals(s.inserts.map((i) => i.shopify_payment_id), ["TroA-R6NU.0", "XZ7Gpt_FO.0", ORDER_ID]);
+});
+
+Deno.test("callback real de 20/10 (query completa da Getnet, dados trocados): 200, gravado e repassado intacto ao app", async () => {
+  const real =
+    "payment_type=credit&customer_id=00000000000&order_id=TroA-R6NU.0&payment_id=37834494-849b-4779-9f0c-bba993a97ef3&amount=47093" +
+    "&status=APPROVED&number_installments=1&acquirer_transaction_id=000000000001&authorization_timestamp=2026-10-20T17%3A01%3A17.000Z" +
+    "&brand=mastercard&terminal_nsu=000001&authorization_code=000000000000000001";
+  const credit = "https://getnet-config-prod-x.herokuapp.com/shopify-middleware/order/webhooks/credit";
+  const s = build({ env: { GETNET_FORWARD_CREDIT_URL: credit }, orders: () => [] });
+  assertEquals((await run(s, url(real))).status, 200);
+  assertEquals(s.inserts[0], {
+    getnet_payment_id: "37834494-849b-4779-9f0c-bba993a97ef3",
+    shopify_payment_id: "TroA-R6NU.0",
+    payment_type: "credit",
+    status_getnet: "APPROVED",
+    amount_cents: 47093,
+  });
+  assertEquals(states(s), ["pending"]); // sem pedido na Shopify: fica para o reconcile (e depois needs_review)
+  assertEquals(s.forwarded, [`${credit}?${real}`]); // todos os parâmetros, na ordem original, sem o segredo
+  assertFalse(s.forwarded[0].includes(SECRET));
+  assert(typeof (s.rows[0] as unknown as Record<string, unknown>).forwarded_at === "string");
 });
 
 Deno.test("S-16/S-17: 400 loga só NOMES dos parâmetros e o formato do amount, nunca valores", async () => {
@@ -334,14 +365,14 @@ Deno.test("S-16/S-17: 400 loga só NOMES dos parâmetros e o formato do amount, 
 // Idempotência (S-08)
 // ---------------------------------------------------------------------------
 
-Deno.test("S-08: INSERT falho != 23505 => 500, nada consultado nem repassado", async () => {
+Deno.test("S-08: INSERT falho != 23505 => 500, nada consultado (o repasse ao app já saiu)", async () => {
   const s = build({ failInsert: true, env: { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb" } });
   assertEquals((await run(s, url())).status, 500);
   assertEquals(s.calls.length, 0);
-  assertEquals(s.forwarded.length, 0);
+  assertEquals(s.forwarded.length, 1);
 });
 
-Deno.test("duplicado igual => 200 sem efeito (sem nova consulta, sem novo repasse)", async () => {
+Deno.test("duplicado igual => 200 sem nova consulta; o repasse acompanha cada entrega da Getnet", async () => {
   const s = build({ env: { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb" } });
   assertEquals((await run(s, url())).status, 200);
   const findsAfterFirst = s.calls.length;
@@ -349,7 +380,7 @@ Deno.test("duplicado igual => 200 sem efeito (sem nova consulta, sem novo repass
   assertEquals((await run(s, url())).status, 200);
   assertEquals(s.rows.length, 1);
   assertEquals(s.calls.length, findsAfterFirst);
-  assertEquals(s.forwarded.length, 1); // repasse só na 1ª gravação (S-13)
+  assertEquals(s.forwarded.length, 2); // a retentativa da Getnet também chega ao app, como chegaria sem a ponte
   assertEquals(mutations(s), 2); // 1x mark + 1x tag (do 1º callback)
 });
 
@@ -592,7 +623,7 @@ Deno.test("S-03.5: status != APPROVED DEPOIS de auto-pago => needs_review (refun
 // Repasse (S-13)
 // ---------------------------------------------------------------------------
 
-Deno.test("repasse: 1ª gravação, query reserializada dos 5 parâmetros, sem segredo, por tipo; grava forwarded_at", async () => {
+Deno.test("repasse: query original (inclusive parâmetros extras da Getnet), sem segredo, por tipo; grava forwarded_at", async () => {
   const s = build({
     env: { GETNET_FORWARD_CREDIT_URL: "https://jilo.herokuapp.com/getnet/credit?token=abc", GETNET_FORWARD_PIX_URL: "https://pix.getnet.com.br/cb" },
   });
@@ -603,8 +634,8 @@ Deno.test("repasse: 1ª gravação, query reserializada dos 5 parâmetros, sem s
   assertEquals(u.searchParams.get("token"), "abc"); // query já presente na base da Getnet sobrevive
   assertEquals(
     [...u.searchParams.keys()].sort(),
-    ["amount", "order_id", "payment_id", "payment_type", "status", "token"],
-  ); // parâmetro extra do chamador não vaza para a Getnet
+    ["amount", "extra", "order_id", "payment_id", "payment_type", "status", "token"],
+  ); // a query da Getnet volta para a Getnet inteira (o app pode precisar de authorization_code etc.)
   assertEquals(u.searchParams.get("order_id"), ORDER_ID);
   assertEquals(u.searchParams.get("payment_id"), PAY);
   assertFalse(s.forwarded[0].includes(SECRET));
@@ -635,14 +666,22 @@ Deno.test("repasse: destino inválido (http, host alheio, credenciais, lixo) ou 
   }
 });
 
-Deno.test("repasse: nenhum nos caminhos 400, 404, sem query e INSERT falho", async () => {
+Deno.test("repasse: nenhum em 404 (segredo errado), sem query ou payment_type desconhecido", async () => {
   const env = { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb", GETNET_FORWARD_PIX_URL: "https://x.getnet.com.br/pix" };
   const s = build({ env });
-  await run(s, url({ ...GOOD_QUERY, amount: "1.5" }));
   await run(s, url(GOOD_QUERY, "x".repeat(34)));
   await run(s, url(null));
-  await run(build({ env, failInsert: true }), url());
+  await run(s, url({ ...GOOD_QUERY, payment_type: "debit" }));
   assertEquals(s.forwarded.length, 0);
+});
+
+Deno.test("repasse ANTES de validar: 400 nosso ainda entrega a query original ao app, sem gravar forwarded_at", async () => {
+  const s = build({ env: { GETNET_FORWARD_CREDIT_URL: "https://x.getnet.com.br/cb", GETNET_FORWARD_PIX_URL: "https://x.getnet.com.br/pix" } });
+  assertEquals((await run(s, url({ ...GOOD_QUERY, amount: "1.5" }))).status, 400);
+  assertEquals((await run(s, url({ ...GOOD_QUERY, payment_type: "pix", order_id: "x y" }))).status, 400);
+  assertEquals(s.forwarded.map((u) => new URL(u).pathname), ["/cb", "/pix"]);
+  assertEquals(new URL(s.forwarded[0]).searchParams.get("amount"), "1.5");
+  assertEquals(s.inserts.length, 0);
 });
 
 // ===========================================================================
@@ -1124,3 +1163,4 @@ Deno.test("S-07: erro ao contar fila/rajada => fail-closed: grava `received`, 20
   assertEquals(s.rows[0].state, "received");
   assertEquals(s.calls.length, 0);
 });
+
