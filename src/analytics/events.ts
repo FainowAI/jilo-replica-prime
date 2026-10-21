@@ -10,6 +10,8 @@
  */
 import { track } from "./track";
 
+export type MetodoLogin = "senha" | "google";
+
 export const analytics = {
   /** Abre a página de produto. */
   produtoVisualizado: (p: { handle: string; grupo?: string | null; preco?: number | null }) =>
@@ -34,11 +36,15 @@ export const analytics = {
     metodoPagamento?: string | null;
   }) => track("checkout iniciado", p),
 
-  /** Signup concluído com sucesso. Sem propriedades (sem PII). */
-  cadastroConcluido: () => track("cadastro concluído"),
+  /** Signup concluído com sucesso. Só o método (sem PII). */
+  cadastroConcluido: (p?: { metodo?: MetodoLogin }) => track("cadastro concluído", p),
 
-  /** Login efetuado com sucesso. Sem propriedades (sem PII). */
-  loginEfetuado: () => track("login efetuado"),
+  /** Login efetuado com sucesso. Só o método (sem PII). */
+  loginEfetuado: (p?: { metodo?: MetodoLogin }) => track("login efetuado", p),
+
+  /** Falha de login/cadastro, com o motivo normalizado (nunca o e-mail nem a mensagem crua). */
+  loginFalhou: (p: { metodo: MetodoLogin; motivo: "credenciais" | "nao_confirmado" | "limite" | "outro" }) =>
+    track("login falhou", p),
 
   /** Cria um endereço. UF/cidade não são PII identificável isolada; sem rua/CEP. */
   enderecoCadastrado: (p: { uf: string; cidade: string; deliverable?: boolean }) =>

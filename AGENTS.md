@@ -42,6 +42,7 @@ E-commerce da marca Jilo (DaJu Alimentação) — marmitas artesanais congeladas
 - `.Codex/fluxo-perfil-usuario.md` — Perfil de usuário no Supabase
 - `.Codex/fluxo-kits.md` — Kits temáticos e Kit Livre, descontos progressivos
 - `.Codex/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
+- `.Codex/fluxo-pagamento-vr.md` - Checkout VR, homologação e bloqueios de produção
 
 ## Regra de atualização
 Sempre que uma sessão do Codex modificar um fluxo documentado, ela DEVE atualizar o arquivo `.Codex/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.Codex/fluxo-[nome].md` e registrar aqui.

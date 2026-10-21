@@ -32,6 +32,7 @@ Como aplicar:
 - `npm run test` — testes unitários
 - `npm run seed` — seed de produtos no Shopify (requer SHOPIFY_ADMIN_TOKEN)
 - `npm run seed:collections` — criação de collections no Shopify
+- `npm run auth:emails` — publica `supabase/templates/*.html` como e-mails do Supabase Auth (requer SUPABASE_ACCESS_TOKEN)
 
 ## Rotas
 | Rota | Página | Descrição |
@@ -75,6 +76,7 @@ Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuá
 5. Tabelas só de backend (`webhook_events`, `shopify_admin_tokens`): sem acesso a `anon`/`authenticated` — deny explícito (`USING(false)`) e acesso só via service_role.
 6. **Lembre-se:** uma resposta `200 []` (array vazio) com a anon key é o comportamento CORRETO e seguro do RLS — o PostgREST não retorna 403, retorna lista vazia. Vazamento de verdade é `200` retornando **linhas**. Para auditar, simule: `set local role anon; select count(*) from public.<t>;` deve dar 0 para tabelas de usuário.
 7. Após qualquer migration que mexa em tabelas/policies, rode `get_advisors(type: security)` e confira que nenhuma tabela ficou exposta.
+8. **RLS por linha não protege coluna.** Se o dono da linha pode gravar uma coluna que uma edge usa com `service_role` (ex.: `profiles.shopify_customer_id` virando filtro da Admin API), ele injeta o que quiser. Revogue o UPDATE de tabela e dê UPDATE só nas colunas editáveis (`grant update (col, ...)`), e valide o formato na edge. Foi o incidente C1 de 13/10/2026.
 
 ## Gotchas globais
 - O catálogo NÃO está no Supabase — está no Shopify. Qualquer mudança em produtos é feita via Shopify Admin ou scripts de seed.

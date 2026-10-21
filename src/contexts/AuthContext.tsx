@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { identifyUser, resetAnalytics } from "@/analytics/posthog";
 import { analytics } from "@/analytics/events";
-import { EMAIL_ALREADY_REGISTERED } from "@/lib/authHint";
+import { EMAIL_ALREADY_REGISTERED, authErrorKind } from "@/lib/authHint";
 
 interface AuthContextType {
   user: User | null;
@@ -11,6 +11,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: Error | null }>;
+  resendConfirmation: (email: string) => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -63,7 +64,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) analytics.loginEfetuado(); // B.2.2 — sem PII
+    // B.2.2 — sem PII: só o método e o motivo normalizado (nunca e-mail nem mensagem crua).
+    if (error) analytics.loginFalhou({ metodo: "senha", motivo: authErrorKind(error) });
+    else analytics.loginEfetuado({ metodo: "senha" });
     return { error };
   };
 
@@ -80,7 +83,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!error && data.user && data.user.identities?.length === 0) {
       return { error: new Error(EMAIL_ALREADY_REGISTERED) };
     }
-    if (!error) analytics.cadastroConcluido(); // B.2.2 — sem PII
+    if (!error) analytics.cadastroConcluido({ metodo: "senha" }); // B.2.2 — sem PII
+    return { error };
+  };
+
+  // Reenvia o e-mail de confirmação do cadastro (o link leva a /conta).
+  const resendConfirmation = async (email: string) => {
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/conta` },
+    });
     return { error };
   };
 
@@ -106,7 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, resetPassword, updatePassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, resendConfirmation, resetPassword, updatePassword, signOut }}>
       {children}
     </AuthContext.Provider>
   );

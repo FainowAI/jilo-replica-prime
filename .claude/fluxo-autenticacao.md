@@ -26,9 +26,11 @@ Detalhes técnicos:
 - **`googleAuth.ts` faz `initialize` UMA vez por página, com UM nonce compartilhado** entre prompt e botões. `initialize` é singleton global — nonces diferentes por consumidor fariam o último vencer e quebrar a validação de nonce do Supabase. Este é o ponto crítico de correção do módulo.
 - Nonce: bruto para o `signInWithIdToken`, hasheado (SHA-256 hex) para o Google.
 - Login efetuado dispara `SIGNED_IN` no `AuthContext` normalmente — customer-sync e PostHog identify já cobertos, nenhuma mudança no listener.
+- **Conta nova x login (13/10):** `signInWithIdToken` cria conta nova em silêncio para qualquer Gmail que não bata com um e-mail existente (e-mails diferentes nunca se juntam no Supabase). `isNewAccount(user)` (`created_at` < 60 s) decide o toast: conta nova → "Criamos sua conta com <e-mail>. Já tinha conta com outro e-mail? Saia e entre com ele." (8 s) + `cadastroConcluido({metodo:'google'})`; login → "Você entrou como <e-mail>." + `loginEfetuado({metodo:'google'})`. O e-mail só aparece no toast, nunca em log/analytics. Falha → `loginFalhou({metodo:'google'})` e `console.warn` com `name` + `code`.
+- `use_fedcm_for_prompt` foi removido do `initialize` (13/10): o Google o marcou como deprecated e ignorado.
 - Fail-soft: qualquer erro (script, credential, signIn) vira `console.warn`, sem toast de erro nem quebra de página. Sem `VITE_PUBLIC_GOOGLE_CLIENT_ID`, tudo é no-op silencioso (prompt não dispara, botão não renderiza).
 - Requer `VITE_PUBLIC_GOOGLE_CLIENT_ID` (OAuth Web Client ID do Google Cloud, público) — vazio por padrão no `.env`.
-- **Limitação FedCM:** o One Tap nativo não pode ser recentralizado quando `use_fedcm_for_prompt: true` (o navegador controla posição). Por isso o "destaque central" é o `GoogleLoginPopup` (Dialog próprio), não o One Tap reposicionado.
+- **Limitação FedCM:** o One Tap nativo não pode ser recentralizado (com FedCM o navegador controla a posição). Por isso o "destaque central" é o `GoogleLoginPopup` (Dialog próprio), não o One Tap reposicionado.
 
 ## Regras de negócio
 1. Senha mínima: 6 caracteres

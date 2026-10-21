@@ -92,12 +92,39 @@ A área do cliente Jilo é um sistema completo de gestão pessoal, acessível vi
 4. Renderiza: itens, timeline derivada, resumo de valores, endereço de entrega, link de rastreio (se houver)
 5. Sem ações de edição — tudo read-only
 
-## Login/cadastro por e-mail e senha + dica de conta Google
-Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDialog`) junto com o Google.
-- Quem criou a conta com Google não tem senha. Ao falhar o login com "Invalid login credentials", o front chama `getLoginHint(email)` (`src/lib/authHint.ts`) -> edge `auth-login-hint` (pública, `verify_jwt=false`, fail-soft) -> RPC `auth_email_login_hint` (SECURITY DEFINER, só `service_role`; anon/authenticated não podem chamar, evita enumeração).
-- Dica `google` (conta com provedor Google, com ou sem senha) => alerta verde acima do botão Google ("Este e-mail foi cadastrado com o Google..."); null/timeout (4s) => "E-mail ou senha incorretos. Se você criou a conta com o Google, use o botão “Entrar com Google”.". Resposta só `{hint:'google'|null}`; a edge limita 5 consultas/IP/10 min (memória por instância) e impõe piso de ~300ms de latência (anti-enumeração).
-- Signup com e-mail já existente: o Supabase não dá erro e devolve `user.identities = []`; `AuthContext.signUp` devolve o erro `email_already_registered` (sem disparar `cadastroConcluido`), e a UI mostra o alerta Google ou "Este e-mail já tem cadastro. Faça login.".
-- Mapeamento hint -> mensagem é a função pura `authNotice` (testada em `authHint.test.ts`).
+## Login/cadastro por e-mail e senha (mensagens fixas, reenvio de confirmação) — revisto em 13/10
+Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDialog`) junto com o Google. Casos reais que motivaram a revisão (13/10): conta Google sem senha tentando senha; recadastro com e-mail existente (sucesso falso, sem e-mail); "Email not confirmed" cru em inglês; 2º cadastro em < 60 s (429 e o novo e-mail invalida o link do primeiro); modal da compra abrindo em "Criar conta"; `AuthDialog` que não fechava no login Google. Diagnóstico completo em `.claude/.work/login-google-shopify/plan.md` (enquanto existir).
+- **Mensagens fixas, iguais para todos** (`src/lib/authHint.ts`): `authErrorKind(error)` classifica por `error.code` (fallback na mensagem em inglês / status 429) em `credenciais | nao_confirmado | limite | outro`; `authNotice(context, error, email)` devolve o texto. Nunca mostrar a mensagem crua do Supabase. Nenhuma tela diz se o e-mail existe ou qual método ele usa (o Supabase já devolve o mesmo `invalid_credentials` para senha errada e conta sem senha).
+- **Dica de conta Google desativada (13/10, auditoria M1):** a edge `auth-login-hint` virou oráculo (o limite em memória não segurava: 46 de 46 consultas respondidas). Hoje é um stub (v8) que sempre responde `{hint:null}` só para o front antigo não quebrar; a RPC `auth_email_login_hint` foi removida (migration `20261013221839`). Apagar a edge no painel quando este front estiver publicado.
+- **E-mail não confirmado:** texto pt-BR + botão "Reenviar e-mail" (`AuthContext.resendConfirmation` → `auth.resend({type:'signup'})`, `src/components/ResendConfirmation.tsx`) com contagem de 60 s (o Supabase aceita 1 envio por endereço a cada 60 s). Só aparece depois de `email_not_confirmed`, que o Supabase só devolve com a senha certa.
+- **Pós-cadastro:** o `AuthDialog` e `/cadastro` não fecham/navegam; mostram "Confirme seu e-mail" (`ConfirmEmailNotice`) com reenviar (já em cooldown) e "Já confirmei, entrar". Isso evita o 2º cadastro.
+- **Signup com e-mail já existente:** `user.identities = []` → `AuthContext.signUp` devolve `email_already_registered` (sem `cadastroConcluido`) → mensagem fixa e troca para o modo login.
+- **`AuthDialog` fecha sozinho quando `user` aparece** (efeito + cleanup de desmontagem que avisa o pai). Cobre o login pelo botão Google dentro do modal. Os modais da compra (`DeliveryAddressSelector`, `Carrinho`) abrem em modo **login**.
+- **Analytics:** `login efetuado`/`cadastro concluído` levam `metodo` (`senha`|`google`); falha vira `login falhou` com `metodo` + `motivo` normalizado. Nunca e-mail nem mensagem crua.
+
+## Esqueci a senha
+- Entradas: link "Esqueci a senha" no `AuthDialog` (modal do cabeçalho, carrinho e seletor de endereço; só no modo login, fecha o modal) e na página `/login`. Os dois levam o e-mail digitado em `state.email` e `/recuperar-senha` já abre preenchida. Até 2026-10-13 o link só existia em `/login`, e quase ninguém passava por lá.
+- `/recuperar-senha` chama `resetPassword` → `resetPasswordForEmail` com `redirectTo` `<origin>/redefinir-senha`. A mensagem é neutra ("Se existir uma conta…") para não revelar se o e-mail tem conta. Dispara o template `recovery`.
+- `/redefinir-senha` espera a sessão de recuperação (evento `PASSWORD_RECOVERY`) e grava a nova senha com `updatePassword`. No GoTrue, abrir o link de recuperação deve confirmar o e-mail de quem ficou preso em "Email not confirmed" (a confirmar no primeiro caso real).
+- O `redirectTo` precisa estar no `uri_allow_list` do Supabase (`https://jilomarmitas.com/**` está). Em localhost não está: o link cairia no `site_url`, então não teste o envio pelo dev server.
+
+## E-mails de autenticação (templates do Supabase Auth)
+Os 6 e-mails que o Supabase envia têm a identidade da Jiló e assunto em pt-BR. A fonte da verdade são os arquivos em `supabase/templates/`. Publicação: `SUPABASE_ACCESS_TOKEN=sbp_... npm run auth:emails` (`scripts/publish-auth-emails.ts`). O script faz PATCH em `/v1/projects/{ref}/config/auth` só das chaves `mailer_subjects_*`/`mailer_templates_*_content` e relê os valores para conferir.
+| Template | Assunto | Variáveis | Disparo |
+|---|---|---|---|
+| `confirmation` | Confirmar conta - JILO | `{{ .ConfirmationURL }}` | `signUp` (cadastro e-mail/senha) |
+| `recovery` | Redefinir senha - JILO | `{{ .ConfirmationURL }}` | "Esqueci minha senha" → `/redefinir-senha` |
+| `magic_link` | Seu link de acesso - JILO | `{{ .ConfirmationURL }}` | `signInWithOtp` (sem botão no site hoje) |
+| `email_change` | Confirmar troca de e-mail - JILO | `{{ .Email }}`, `{{ .NewEmail }}`, `{{ .ConfirmationURL }}` | `updateUser({email})`. Com secure email change ligado, vai para o endereço antigo E o novo, por isso o texto serve aos dois |
+| `invite` | Seu convite para a Jiló - JILO | `{{ .ConfirmationURL }}` | "Invite user" no painel |
+| `reauthentication` | Seu código de confirmação - JILO | `{{ .Token }}` (8 dígitos) | ação sensível que exige reautenticação |
+- Molde: `confirmation.html`. Os outros 5 copiam a estrutura dele e mudam só o texto (o `reauthentication` troca botão e link pelo bloco do código).
+- NUNCA usar `{{ .SiteURL }}` em href: o `site_url` do projeto está `jilomarmitas.com`, sem `https://`. Link fixo para o site é `https://jilomarmitas.com`.
+- Links e códigos valem 1 hora (`mailer_otp_exp` = 3600).
+- As 7 notificações de segurança (senha alterada, e-mail alterado, MFA, identidade vinculada etc.) seguem no padrão do Supabase em inglês, mas estão DESLIGADAS (`mailer_notifications_*_enabled=false`). Se alguém ligar, criar o template antes.
+- Remetente: desde 2026-10-13 o envio sai pela **Resend** (SMTP `smtp.resend.com:465`, usuário `resend`) como `Jiló <nao-responda@jilomarmitas.com>`. A configuração foi feita pela integração nativa Resend → Supabase (OAuth na org "Jilo-marmitas"), que criou na Resend a API key "Supabase Integration" e a gravou como `smtp_pass`. Limite no Supabase: 25 e-mails/h (`rate_limit_email_sent`). Plano Free da Resend: 100/dia e 3.000/mês.
+- Domínio na Resend: `jilomarmitas.com`, região São Paulo, sem rastreamento de clique/abertura (ele reescreveria os links de confirmação). DNS na Hostinger da Jiló: TXT `resend._domainkey` (DKIM), CNAME `send` → `send.forge.rmta.net`, CNAME `rsend` → `rsend-sae1.forge.rmta.net` e TXT `_dmarc` `v=DMARC1; p=none;`. O domínio NÃO recebe e-mail (sem MX na raiz), por isso o remetente é `nao-responda@`.
+- Rollback: no painel do Supabase, Authentication → Emails → SMTP Settings, desligar "Enable custom SMTP" volta ao remetente padrão do Supabase (2/h).
 
 ## Integrações
 | Integração | Tipo | Descrição |
@@ -118,4 +145,8 @@ Cadastro e login por e-mail/senha estão ativos (`/cadastro`, `/login`, `AuthDia
 - Escopo de acesso depende de **confirmação de e-mail obrigatória** (hoje login é OAuth Google, e-mail já verificado). Se habilitarem signup e-mail/senha sem confirmação, revisar (spoofing de e-mail).
 - Validação de CPF não é implementada (campo TEXT livre) — débito técnico
 - A anon key do Supabase continua hardcoded em `client.ts` — débito de segurança
+
+### Guarda de vínculo Shopify (2026-10-16)
+
+O campo `profiles.shopify_customer_id` foi gravável pelo próprio usuário no estado verificado em 13/10; formato GID canônico não comprova propriedade. Antes de buscar por `customer_id`, `customer-orders` consulta o cliente na Admin API e compara o ID e o e-mail da Shopify ao e-mail do JWT. Se a consulta falhar, se o GID for inválido ou se o e-mail divergir, a busca usa apenas o e-mail do JWT (com proteção da DSL de busca). Os drafts de VR/Cielo também só associam `purchasingEntity` quando ID e e-mail são confirmados. Os testes locais usam identidades sintéticas. A migration `20261013215411_profiles_trava_shopify_customer_id.sql` já consta do repositório; sua aplicação no Supabase Jiló e a revisão dos vínculos existentes não foram verificadas nesta sessão.
 - `AddressFormDialog` autopreenche rua/bairro/cidade/UF ao digitar um CEP de 8 dígitos, via `validateCep()` (ViaCEP) — reusa `cepValidator.ts`. Número/complemento continuam manuais (ViaCEP não os fornece). CEP inválido não bloqueia: usuário preenche manual.

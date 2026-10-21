@@ -1,8 +1,15 @@
-import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync } from "node:crypto";
 import { __resetVrClientCaches } from "../_shared/vr-client.ts";
-import { runHomologacao, runPreflight } from "./vr-homologacao.ts";
+import { normalizeTestCardExpiry, runHomologacao, runPreflight } from "./vr-homologacao.ts";
+
+Deno.test("validade de teste: converte MM/AA da VR para AAMM e preserva AAMM", () => {
+  assertEquals(normalizeTestCardExpiry("11/39"), "3911");
+  assertEquals(normalizeTestCardExpiry("3911"), "3911");
+  assertThrows(() => normalizeTestCardExpiry("13/39"), Error, "mês válido");
+  assertThrows(() => normalizeTestCardExpiry("11/2039"), Error, "MM/AA ou AAMM");
+});
 
 // ponytail: valores sentinela em vez de PAN/CVV/nome/documento "realistas" — evita falsos
 // positivos/negativos na checagem de vazamento (dígitos curtos colidem com ids/valores).
@@ -111,7 +118,7 @@ Deno.test("runPreflight: token e chave autorizados passam sem cartao", async () 
   });
   try {
     const result = await runPreflight();
-    assertEquals(result, { ok: true, message: "OK token + chave pública (key_id=key-hml-sentinel)" });
+    assertEquals(result, { ok: true, message: "OK token + chave pública completa" });
   } finally {
     restore();
     cleanEnv();
@@ -146,7 +153,7 @@ function fullSuccessHandler(publicKeyPem: string): FetchHandler {
       const item = { id: nextId("tx"), valor: body.valor, status: "CONFIRMADA" };
       transactions.set(item.id, item);
       transactions.set(body.id_transacao_van, item);
-      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, codigo_retorno: "00", codigo_autorizacao: "AUTH1" }), { status: 201 });
+      return new Response(JSON.stringify({ id_transacao: item.id, valor: item.valor, codigo_retorno: "00", codigo_autorizacao: "AUTH1", mensagem: "ECO_SENSIVEL_SENTINELA" }), { status: 201 });
     }
     const refundId = url.match(/\/transacoes\/pagamentos\/([^/]+)\/estornos$/)?.[1];
     if (refundId && init?.method === "POST") {
@@ -226,13 +233,13 @@ Deno.test("runHomologacao: 6 cenários ok, evidências sem PAN/CVV/documento/nom
     }
 
     const serialized = JSON.stringify(evidencias);
-    assert(!serializedLeaksSecrets(serialized), "evidências (retorno) vazaram dado sensível");
+    assert(!serializedLeaksSecrets(serialized, ["ECO_SENSIVEL_SENTINELA"]), "evidências (retorno) vazaram dado sensível");
 
     const files = [...Deno.readDirSync(tmpDir)];
     assertEquals(files.length, 2);
     for (const f of files) {
       const content = await Deno.readTextFile(`${tmpDir}/${f.name}`);
-      assert(!serializedLeaksSecrets(content), `arquivo ${f.name} vazou dado sensível`);
+      assert(!serializedLeaksSecrets(content, ["ECO_SENSIVEL_SENTINELA"]), `arquivo ${f.name} vazou dado sensível`);
     }
   } finally {
     restore();
@@ -241,7 +248,7 @@ Deno.test("runHomologacao: 6 cenários ok, evidências sem PAN/CVV/documento/nom
   }
 });
 
-Deno.test("runHomologacao: bloqueia cenários HML sem contrato RSA antes de qualquer fetch", async () => {
+Deno.test("runHomologacao: bloqueia cenários HML sem contrato de tokenização ou RSA antes de qualquer fetch", async () => {
   setEnv();
   __resetVrClientCaches();
   let fetchCalled = false;
@@ -250,7 +257,7 @@ Deno.test("runHomologacao: bloqueia cenários HML sem contrato RSA antes de qual
     throw new Error("não deveria chamar fetch sem contrato RSA");
   });
   try {
-    await assertRejects(() => runHomologacao(), Error, "contrato oficial do RSA");
+    await assertRejects(() => runHomologacao(), Error, "confirmar tokenização inicial e escopo");
     assertEquals(fetchCalled, false);
   } finally {
     restore();
@@ -258,7 +265,7 @@ Deno.test("runHomologacao: bloqueia cenários HML sem contrato RSA antes de qual
   }
 });
 
-Deno.test("runHomologacao: código de retorno recusado falha e não tenta outro padding", async () => {
+Deno.test("runHomologacao: pagamento não comprovado interrompe a suíte e grava evidência", async () => {
   setEnv();
   __resetVrClientCaches();
   seq = 0;
@@ -276,10 +283,45 @@ Deno.test("runHomologacao: código de retorno recusado falha e não tenta outro 
   });
   const tmpDir = await Deno.makeTempDir();
   try {
-    const evidencias = await runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" });
-    const confirmacao = evidencias.find((e) => e.cenario === "confirmacao" && e.passo === "createPayment");
+    await assertRejects(() => runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" }), Error, "interromper e reconciliar");
+    const file = [...Deno.readDirSync(tmpDir)].find((item) => item.name.endsWith(".json"));
+    assert(file);
+    const evidencias = JSON.parse(await Deno.readTextFile(`${tmpDir}/${file.name}`)).evidencias;
+    const confirmacao = evidencias.find((e: { cenario: string; passo: string }) => e.cenario === "confirmacao" && e.passo === "createPayment");
     assertEquals(confirmacao?.ok, false);
-    assertEquals(paymentCalls, 4, "cada cenário de pagamento faz uma tentativa; não há retry RSA");
+    assertEquals(paymentCalls, 1, "não inicia outra operação financeira após resultado incerto");
+  } finally {
+    restore();
+    cleanEnv();
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+Deno.test("runHomologacao: eco do cartão em identificador da VR não entra na evidência", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  seq = 0;
+  const { publicKey } = generateTestKeyPair();
+  const success = fullSuccessHandler(publicKey);
+  let firstPayment = true;
+  const { restore } = stubFetch((url, init) => {
+    if (firstPayment && url.endsWith("/transacoes/pagamentos") && init?.method === "POST") {
+      firstPayment = false;
+      return new Response(JSON.stringify({ id_transacao: SENTINEL.numero, valor: 1000, codigo_retorno: "00" }), { status: 201 });
+    }
+    return success(url, init);
+  });
+  const tmpDir = await Deno.makeTempDir();
+  try {
+    await assertRejects(() => runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" }), Error, "interromper e reconciliar");
+    const file = [...Deno.readDirSync(tmpDir)].find((item) => item.name.endsWith(".json"));
+    assert(file);
+    const evidencias = JSON.parse(await Deno.readTextFile(`${tmpDir}/${file.name}`)).evidencias;
+    const confirmacao = evidencias.find((e: { cenario: string; passo: string }) => e.cenario === "confirmacao" && e.passo === "createPayment");
+    assertEquals(confirmacao?.ok, false);
+    for (const file of Deno.readDirSync(tmpDir)) {
+      assert(!serializedLeaksSecrets(await Deno.readTextFile(`${tmpDir}/${file.name}`)));
+    }
   } finally {
     restore();
     cleanEnv();
@@ -302,9 +344,49 @@ Deno.test("runHomologacao: consulta pendente não aprova confirmação", async (
   });
   const tmpDir = await Deno.makeTempDir();
   try {
-    const evidencias = await runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" });
-    const consulta = evidencias.find((e) => e.cenario === "confirmacao" && e.passo === "getTransaction");
+    await assertRejects(() => runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" }), Error, "interromper e reconciliar");
+    const file = [...Deno.readDirSync(tmpDir)].find((item) => item.name.endsWith(".json"));
+    assert(file);
+    const evidencias = JSON.parse(await Deno.readTextFile(`${tmpDir}/${file.name}`)).evidencias;
+    const consulta = evidencias.find((e: { cenario: string; passo: string }) => e.cenario === "confirmacao" && e.passo === "getTransaction");
     assertEquals(consulta?.ok, false);
+    assertEquals(evidencias.some((e: { cenario: string }) => e.cenario !== "confirmacao"), false);
+  } finally {
+    restore();
+    cleanEnv();
+    await Deno.remove(tmpDir, { recursive: true });
+  }
+});
+
+Deno.test("runHomologacao: pagamento tokenizado incerto não exclui token", async () => {
+  setEnv();
+  __resetVrClientCaches();
+  seq = 0;
+  const { publicKey } = generateTestKeyPair();
+  const success = fullSuccessHandler(publicKey);
+  let tokenPaymentCalls = 0;
+  let tokenDeletes = 0;
+  const { restore } = stubFetch((url, init) => {
+    if (url.includes("/cartoes/") && init?.method === "DELETE") tokenDeletes++;
+    if (url.endsWith("/transacoes/pagamentos") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      if (body.cartao_token_id) {
+        tokenPaymentCalls++;
+        return new Response("{}", { status: 504 });
+      }
+    }
+    return success(url, init);
+  });
+  const tmpDir = await Deno.makeTempDir();
+  try {
+    await assertRejects(() => runHomologacao({ out: tmpDir, testOnlyRsaPadding: "oaep-sha256" }), Error, "interromper e reconciliar");
+    assertEquals(tokenPaymentCalls, 1);
+    assertEquals(tokenDeletes, 0);
+    const file = [...Deno.readDirSync(tmpDir)].find((item) => item.name.endsWith(".json"));
+    assert(file);
+    const evidencias = JSON.parse(await Deno.readTextFile(`${tmpDir}/${file.name}`)).evidencias;
+    assertEquals(evidencias.at(-1)?.passo, "createPayment(cartaoTokenId)");
+    assertEquals(evidencias.at(-1)?.ok, false);
   } finally {
     restore();
     cleanEnv();
