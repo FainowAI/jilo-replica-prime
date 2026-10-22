@@ -20,8 +20,8 @@ const renderDialog = () =>
   );
 
 // Preenche nome + CPF válido + mês/ano e envia o form (fireEvent.submit pula a validação nativa de `required`).
-const fillAndSubmit = (mes: string, ano: string) => {
-  fireEvent.change(document.querySelector("input.bp-sop-cardholdername")!, { target: { value: "FULANO DE TAL" } });
+const fillAndSubmit = (mes: string, ano: string, nome = "FULANO DE TAL") => {
+  fireEvent.change(document.querySelector("input.bp-sop-cardholdername")!, { target: { value: nome } });
   fireEvent.change(screen.getByText("CPF do titular").parentElement!.querySelector("input")!, {
     target: { value: "529.982.247-25" },
   });
@@ -34,7 +34,8 @@ describe("AleloCardDialog (H5)", () => {
   it("campos do cartão são DOM não controlado com classes SOP e ph-no-capture", () => {
     renderDialog();
     const num = document.querySelector<HTMLInputElement>("input.bp-sop-cardnumber")!;
-    const cvv = document.querySelector<HTMLInputElement>("input.bp-sop-cardcvvc")!;
+    // O script do SOP lê `.bp-sop-cardcvv` (com `cardcvvc` ele recusava todo cartão).
+    const cvv = document.querySelector<HTMLInputElement>("input.bp-sop-cardcvv")!;
     expect(document.querySelector("input.bp-sop-cardholdername")).toBeTruthy();
     expect(document.querySelector("input.bp-sop-cardexpirationdate")).toBeTruthy();
     expect(cvv.type).toBe("text");
@@ -137,5 +138,44 @@ describe("AleloCardDialog — validade em Mês + Ano", () => {
     renderDialog();
     fillAndSubmit("7", "2099");
     await waitFor(() => expect(valorNoSop).toBe("07/2099"));
+  });
+});
+
+describe("AleloCardDialog — o que o script do SOP lê", () => {
+  beforeEach(() => vi.mocked(getSopToken).mockReset());
+  afterEach(() => {
+    delete (window as Window & { bpSop_silentOrderPost?: unknown }).bpSop_silentOrderPost;
+  });
+
+  // Regras copiadas de bpSop_validateData (silentorderpost-1.0.min.js, lido em 22/10/2026).
+  const read = (cls: string) => document.querySelector<HTMLInputElement>(`.${cls}`)?.value ?? "null";
+  const passesSop = () => ({
+    holder: /^[a-zA-Z ]{1,64}$/.test(read("bp-sop-cardholdername")),
+    number: /^[0-9]{1,19}$/.test(read("bp-sop-cardnumber")),
+    expiry: /^(0[1-9]|1[0-2])\/([0-9]{4})$/.test(read("bp-sop-cardexpirationdate")),
+    cvv: /^([0-9]{3}|[0-9]{4})$/.test(read("bp-sop-cardcvv")),
+  });
+
+  it("nome com acento, número com espaços e CVV passam na validação do SOP", async () => {
+    vi.mocked(getSopToken).mockResolvedValue({ accessToken: "tok", environment: "sandbox" } as never);
+    let noSop: ReturnType<typeof passesSop> | undefined;
+    (window as Window & { bpSop_silentOrderPost?: unknown }).bpSop_silentOrderPost = vi.fn(() => {
+      noSop = passesSop();
+    });
+    renderDialog();
+    fireEvent.change(document.querySelector("input.bp-sop-cardnumber")!, { target: { value: "5067 2200 0000 0000" } });
+    fireEvent.change(document.querySelector("input.bp-sop-cardcvv")!, { target: { value: "123" } });
+    fillAndSubmit("7", "2099", "Antônio da Conceição");
+    await waitFor(() => expect(noSop).toEqual({ holder: true, number: true, expiry: true, cvv: true }));
+  });
+
+  it("onInvalid mostra qual campo o SOP recusou", async () => {
+    vi.mocked(getSopToken).mockResolvedValue({ accessToken: "tok", environment: "sandbox" } as never);
+    (window as Window & { bpSop_silentOrderPost?: unknown }).bpSop_silentOrderPost = vi.fn(
+      (o: { onInvalid: (f: { Field: string }[]) => void }) => o.onInvalid([{ Field: "bp-sop-cardcvv" }]),
+    );
+    renderDialog();
+    fillAndSubmit("7", "2099");
+    expect(await screen.findByText("Confira o CVV (3 ou 4 números no verso do cartão).")).toBeTruthy();
   });
 });
