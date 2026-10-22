@@ -25,9 +25,7 @@
  * service key. Log = passos, códigos de resposta e ids não sensíveis.
  */
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { encryptCard as encryptCardFront } from "../../../src/lib/vr/rsa.ts";
 import { handleVrCheckout, buildDefaultDeps, type VrCheckoutDeps } from "../vr-checkout/handler.ts";
-import { getPublicKey } from "../_shared/vr-client.ts";
 import { getCart } from "../_shared/storefront-cart.ts";
 import { deleteDraftOrder } from "../_shared/shopify-draft-order.ts";
 import { callShopifyAdmin } from "../_shared/shopify-admin-client.ts";
@@ -331,18 +329,6 @@ async function getQaJwt(serviceClient: SupabaseClient, anonClient: SupabaseClien
   return accessToken;
 }
 
-async function buildCardEncrypted(): Promise<{ keyId: string; cardEncrypted: string }> {
-  const { key_id, public_key } = await getPublicKey();
-  const cardEncrypted = await encryptCardFront(public_key, {
-    nome: TEST_CARD.nome,
-    numero_cartao: TEST_CARD.numero_cartao,
-    data_expiracao: TEST_CARD.data_expiracao,
-    cvv: TEST_CARD.cvv,
-    documento: TEST_CARD.documento,
-  });
-  return { keyId: key_id, cardEncrypted };
-}
-
 function buildRequest(jwt: string, body: Record<string, unknown>): Request {
   return new Request("http://localhost/vr-checkout", {
     method: "POST",
@@ -399,8 +385,7 @@ async function checkCustomerOrdersLists(ctx: Ctx, orderName: string): Promise<bo
 interface Ctx {
   serviceClient: SupabaseClient;
   jwt: string;
-  keyId: string;
-  cardEncrypted: string;
+  card: { nome: string; numero_cartao: string; data_expiracao: string; cvv: string };
   cpf: string;
   deps: VrCheckoutDeps;
   fakeVr: FakeVr;
@@ -443,7 +428,7 @@ async function runApprovedFlowScenario(
   const paymentsBefore = ctx.fakeVr.state.payments.length;
   try {
     const cartId = await createCart(lines);
-    const body = { cartId, selectedAddressId: ctx.addressId, keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf, ...bodyExtra };
+    const body = { cartId, selectedAddressId: ctx.addressId, card: ctx.card, cpf: ctx.cpf, ...bodyExtra };
     const res = await handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps);
     const json = await res.json();
     checks.push(check("status 200", res.status === 200, `status=${res.status} body=${JSON.stringify(json)}`));
@@ -455,7 +440,8 @@ async function runApprovedFlowScenario(
     const orderIdGid = json.orderId as string;
 
     checks.push(check("fake recebeu exatamente 1 pagamento", ctx.fakeVr.state.payments.length - paymentsBefore === 1));
-    const fakePayment = ctx.fakeVr.state.payments[ctx.fakeVr.state.payments.length - 1];
+    checks.push(check("token do cartao apagado (nenhum vivo na VR falsa)", ctx.fakeVr.state.tokens.length === 0));
+    const fakePayment =ctx.fakeVr.state.payments[ctx.fakeVr.state.payments.length - 1];
 
     const cartAfter = await getCart(cartId);
     const cartTotal = cartAfter?.totalAmountCents;
@@ -558,7 +544,7 @@ async function runDeclineScenario(ctx: Ctx, name: string, outcome: FakeVrOutcome
   try {
     const cartId = await createCart([{ merchandiseId: VARIANTS[0], quantity: 7 }]);
     ctx.fakeVr.state.nextOutcome = outcome;
-    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf };
+    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", card: ctx.card, cpf: ctx.cpf };
     const res = await handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps);
     const json = await res.json();
     checks.push(check("status 402", res.status === 402, `status=${res.status} body=${JSON.stringify(json)}`));
@@ -593,7 +579,7 @@ async function scenarioDuploClique(ctx: Ctx): Promise<ScenarioResult> {
   const paymentsBefore = ctx.fakeVr.state.payments.length;
   try {
     const cartId = await createCart([{ merchandiseId: VARIANTS[0], quantity: 7 }]);
-    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf };
+    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", card: ctx.card, cpf: ctx.cpf };
     const [r1, r2] = await Promise.all([
       handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps),
       handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps),
@@ -628,7 +614,7 @@ async function scenarioFalhaCompleteEstorno(ctx: Ctx): Promise<ScenarioResult> {
   try {
     const cartId = await createCart([{ merchandiseId: VARIANTS[0], quantity: 7 }]);
     ctx.injector.failNextComplete = true;
-    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf };
+    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", card: ctx.card, cpf: ctx.cpf };
     const res = await handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps);
     const json = await res.json();
     checks.push(check("status 502 order_failed_refunded", res.status === 502 && json.code === "order_failed_refunded", `status=${res.status} body=${JSON.stringify(json)}`));
@@ -661,7 +647,7 @@ async function scenarioTimeoutReconciliado(ctx: Ctx): Promise<ScenarioResult> {
   try {
     const cartId = await createCart([{ merchandiseId: VARIANTS[0], quantity: 7 }]);
     ctx.fakeVr.state.nextOutcome = "timeout";
-    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf };
+    const body = { cartId, selectedAddressId: ctx.addressId, deliveryMethod: "jilo_own", card: ctx.card, cpf: ctx.cpf };
     // Este cenário demora ~30s de verdade: vrFetch aborta em VR_TIMEOUT_MS e o
     // handler reconcilia via getTransaction (a VR falsa já tinha CONFIRMADA gravado).
     console.log("[e2e] timeout_reconciliado: aguardando ~30s (VR_TIMEOUT_MS)...");
@@ -703,7 +689,7 @@ async function scenarioEnderecoForaArea(ctx: Ctx): Promise<ScenarioResult> {
     tempAddressId = inserted.id;
 
     const cartId = `gid://shopify/Cart/e2e-fora-area-${Date.now()}`;
-    const body = { cartId, selectedAddressId: tempAddressId, deliveryMethod: "jilo_own", keyId: ctx.keyId, cardEncrypted: ctx.cardEncrypted, cpf: ctx.cpf };
+    const body = { cartId, selectedAddressId: tempAddressId, deliveryMethod: "jilo_own", card: ctx.card, cpf: ctx.cpf };
     const res = await handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps);
     const json = await res.json();
     checks.push(
@@ -730,8 +716,7 @@ async function scenarioEnderecoAlheio(ctx: Ctx): Promise<ScenarioResult> {
       cartId,
       selectedAddressId: crypto.randomUUID(),
       deliveryMethod: "jilo_own",
-      keyId: ctx.keyId,
-      cardEncrypted: ctx.cardEncrypted,
+      card: ctx.card,
       cpf: ctx.cpf,
     };
     const res = await handleVrCheckout(buildRequest(ctx.jwt, body), ctx.deps);
@@ -896,16 +881,12 @@ async function main(): Promise<void> {
     console.log("[e2e] autenticando QA via magic link...");
     const jwt = await getQaJwt(serviceClient, anonClient, QA_EMAIL);
 
-    console.log("[e2e] obtendo chave publica da VR falsa e cifrando cartao de teste...");
-    const { keyId, cardEncrypted } = await buildCardEncrypted();
-
     // buildDefaultDeps() reaproveitado entre cenários — só fecha sobre caches de módulo
     // (token VR, token Admin, chave pública), sem estado por-requisição que precise renovar.
     const ctx: Ctx = {
       serviceClient,
       jwt,
-      keyId,
-      cardEncrypted,
+      card: { nome: TEST_CARD.nome, numero_cartao: TEST_CARD.numero_cartao, data_expiracao: TEST_CARD.data_expiracao, cvv: TEST_CARD.cvv },
       cpf: TEST_CARD.documento,
       deps: buildDefaultDeps(),
       fakeVr,

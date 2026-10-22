@@ -363,7 +363,7 @@ export interface TransacaoAutorizada {
   mensagem?: string;
 }
 
-/** Uma via de cartão por chamada: cartão cifrado (fluxo atual do checkout) OU token salvo (homologação). */
+/** Uma via de cartão por chamada: token descartável (fluxo atual do checkout) OU cartão cifrado (homologação). */
 export type VrPaymentParams = {
   valorCents: number;
   idTransacaoVan: string;
@@ -495,10 +495,12 @@ export async function settleReservation(params: {
 // ---------------------------------------------------------------------------
 // Tokenização de cartão
 //
-// Não é usada no caminho do checkout do site (regra G4: sem cartão salvo na v1);
-// existe só para a homologação exigida pela VR (funcionalidade 5/5). O PAN viaja em
-// claro (protegido só pelo TLS) do servidor da function até a VR — não chamar a
-// partir do checkout sem antes revisar o escopo PCI-DSS do projeto.
+// Usada no checkout do site (`vr-checkout`, decisão do dono em 2026-10-21, após a VR
+// recomendar cartão tokenizado): o token é descartável — criado, usado no pagamento e
+// apagado na mesma requisição (regra G4: sem cartão salvo na v1). O PAN viaja em claro
+// (protegido só pelo TLS) do cliente até a function e da function até a VR; nunca
+// persistir nem logar PAN, CVV, nome, validade nem o `cartao_token_id`. Também serve à
+// homologação da VR (funcionalidade 5/5).
 // ---------------------------------------------------------------------------
 
 export interface VrTokenizeCardInput {

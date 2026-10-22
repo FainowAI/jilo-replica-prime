@@ -1,12 +1,19 @@
-# Pagamento VR — estado verificado em 2026-10-16
+# Pagamento VR — estado em 2026-10-22
 
-O cliente escolhe VR no carrinho somente quando `VITE_VR_ENABLED=true`. O checkout atual cifra o cartão no navegador com a chave pública obtida por `vr-public-key`; `vr-checkout` exige `keyId` e `cardEncrypted`, cria um draft na Shopify, confere o total do carrinho, chama a API Captura e completa o pedido após aprovação. A integração não está validada para produção e a flag rastreada permanece desligada.
+O cliente escolhe VR no carrinho somente quando `VITE_VR_ENABLED=true` (hoje `false`). Desde 21/10 (PR #24) o cartão é **tokenizado no servidor**: o dialog envia `card {nome, numero_cartao, data_expiracao AAMM, cvv}` + `cpf` ao `vr-checkout`. Ele valida JWT, limites, Luhn e validade, endereço, carrinho e PIX5, cria o draft e confere o total. Depois faz `POST /cartoes`, paga com `cartao_token_id` e apaga o token num `finally`. Nada de cartão ou token vai para log, banco ou analytics. A via RSA (`vr-public-key`, `keyId`/`cardEncrypted`) saiu do checkout e só resta no runner de homologação.
 
-O cliente compartilhado aceita também `cartaoTokenId` em pagamento e reserva, mas o checkout do site não usa essa via. O runner `_hml/vr-homologacao.ts` cobre as funcionalidades exigidas pela VR em testes com fetch simulado; a CLI financeira permanece bloqueada. Em 16/10, probes controlados em HML confirmaram tokenização, pagamento e estorno total com cartão de teste. Reserva e estorno parcial tiveram respostas cuja semântica ainda depende de confirmação da VR; efetivação de reserva não foi executada.
+Decisão do dono (21/10): o número do cartão pode passar pela edge em trânsito (TLS), seguindo a recomendação da VR de 15/10 (Felipe de Pierro: usar token e dispensar a cifragem, que nenhum parceiro usa). Consequência: escopo PCI maior. Limites anti-teste-de-cartão:
+- 5 recusas por usuário a cada 15 min;
+- 8 tentativas por usuário, contadas depois do insert;
+- breaker global de 30 recusas em 10 min, incluindo as recusas de tokenização.
 
-O `vr-checkout` aceita um `cartaoTokenId` já obtido, exclusivamente quando `VR_ENV=hml` e `VR_TOKEN_CHECKOUT_ENABLED=true` no servidor. A flag nova tem padrão `false`; o caminho tokenizado retorna 503 antes de draft ou cobrança fora dessas condições. O frontend não cria nem envia token e continua usando RSA. Isso permite testar a orquestração com stubs sem capturar PAN/CVV no backend; não é habilitação de produção nem solução de captura de cartão.
+Em 16/10, probes em HML confirmaram tokenização, pagamento e estorno total com o cartão de teste. Ficaram dúvidas sobre o que a consulta devolve depois da reserva (CONFIRMED/CANCELED) e do estorno parcial de 40% (CANCELADA com o valor parcial); foram perguntadas à VR no rascunho de 21/10. A App de produção foi aprovada no portal em 15/10. Para ligar faltam:
+- os secrets de produção;
+- o `VR_ID_FILIACAO` de produção (148822 é só HML);
+- o espelhamento dos Extra fields;
+- a VR aceitar as evidências.
 
-Felipe de Pierro recomendou em 15/10 cartão tokenizado e dispensou `cartao_dados_criptografados` nesse fluxo. As notas locais do Swagger Captura 2.4.0 indicam que o primeiro `POST /cartoes` recebe dados do cartão em JSON; esse passo funcionou em HML com a massa oficial de teste em 16/10. Antes de levar o fluxo ao checkout, confirmar o contrato vigente e o tratamento permitido dos dados com a VR; confirmar também a aceitação do token como evidência das cinco funcionalidades. A aprovação cadastral de uma App de produção não comprova pagamentos.
+Teste ponta a ponta contra a HML real: `_hml/vr-checkout-hml-live.ts` (cria 1 pedido `vr-test`, estorna e cancela com restock). Em 22/10 às 00h15 a HML da VR respondia 503 em tudo; rodar de novo.
 
 Guardas locais do runner: recusa ambiente diferente de `hml`; não registra PAN, CVV, documento, nome, token ou texto livre da resposta nas evidências; valida os identificadores persistidos; interrompe a suíte quando qualquer passo falha e grava a evidência para reconciliação. Se o pagamento tokenizado ficar incerto, não exclui o token automaticamente antes de verificar a transação e fazer limpeza controlada. Testes com stubs não substituem HML. Não executar cobranças reais.
 
