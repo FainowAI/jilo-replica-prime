@@ -81,6 +81,7 @@ Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuá
 ## Gotchas globais
 - O catálogo NÃO está no Supabase — está no Shopify. Qualquer mudança em produtos é feita via Shopify Admin ou scripts de seed.
 - O Storefront Access Token está hardcoded em `src/lib/shopify.ts` — é um token público (Storefront), mas deve ser movido para .env em produção.
+- Quando a versão pedida da Storefront API sai de suporte, a Shopify serve a mais antiga suportada sem avisar. Em out/2026 a `2025-07` passou a ser servida como `2026-01`, e o `discountCodes` virou `[String!]!`: os cupons (PIX5, BEMVINDO10) pararam de aplicar sem erro visível (PR #23). Confira o header `x-shopify-api-version` e mantenha `SHOPIFY_API_VERSION` igual ao que é servido.
 - O carrinho sincroniza com Shopify Cart API — se o cart expirar no Shopify, o store local limpa automaticamente (`cartNotFound` handler).
 - Pix 5% = cupom real `PIX5` (classe ORDER, incide no frete) aplicado no cart via `cartDiscountCodesUpdate`; o front só espelha `cart.cost.totalAmount` (R79/R80). O "Pix 5%" nos cards de produto é só preview (×0,95).
 - A tabela `profiles` no Supabase tem RLS ativa — cada usuário só vê/edita o próprio perfil (policies escopadas a `authenticated`). Veja a seção "Segurança de RLS".
