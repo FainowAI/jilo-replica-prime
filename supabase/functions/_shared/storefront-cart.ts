@@ -6,7 +6,7 @@
  */
 
 const SHOPIFY_STORE_DOMAIN = "jnutg9-u2.myshopify.com";
-const SHOPIFY_API_VERSION = "2025-07";
+const SHOPIFY_API_VERSION = "2026-01";
 const STOREFRONT_URL = `https://${SHOPIFY_STORE_DOMAIN}/api/${SHOPIFY_API_VERSION}/graphql.json`;
 // ponytail: token Storefront é público por natureza (mesmo valor hardcoded em
 // src/lib/shopify.ts); ler de env só permite trocar sem redeploy.
@@ -68,7 +68,7 @@ const CART_FULL_QUERY = `
 `;
 
 const CART_DISCOUNT_CODES_UPDATE_MUTATION = `
-  mutation cartDiscountCodesUpdate($cartId: ID!, $discountCodes: [String!]) {
+  mutation cartDiscountCodesUpdate($cartId: ID!, $discountCodes: [String!]!) {
     cartDiscountCodesUpdate(cartId: $cartId, discountCodes: $discountCodes) {
       cart { id }
       userErrors { field message }
