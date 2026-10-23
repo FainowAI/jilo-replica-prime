@@ -83,4 +83,3 @@ create policy "Deny anon and authenticated on getnet_callback_heartbeat"
   to anon, authenticated
   using (false)
   with check (false);
-

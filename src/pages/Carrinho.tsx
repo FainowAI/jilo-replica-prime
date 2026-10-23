@@ -892,7 +892,7 @@ const Carrinho = () => {
               setPendingCheckout(false);
             }
           }}
-          initialMode="signup"
+          initialMode="login"
         />
       </main>
 

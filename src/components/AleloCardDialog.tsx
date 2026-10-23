@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import CardExpiryFields from "@/components/CardExpiryFields";
 import { useCartStore } from "@/stores/cartStore";
 import { useProfile } from "@/hooks/useProfile";
 import { isValidCpf, formatCpf, onlyDigits } from "@/lib/vr/card";
@@ -12,6 +13,8 @@ import {
   GENERIC_ERROR_MESSAGE,
   type AleloCheckoutInput,
 } from "@/lib/alelo/client";
+import { composeExpiry } from "@/lib/alelo/expiry";
+import { SOP_CLASS, sopHolderName, sopInvalidMessage, type SopInvalidField } from "@/lib/alelo/sop";
 
 interface AleloCardDialogProps {
   open: boolean;
@@ -28,8 +31,8 @@ interface SopOptions {
   language: string;
   cardType: string;
   onSuccess: (r: { PaymentToken?: string }) => void;
-  onError: () => void;
-  onInvalid: () => void;
+  onError: (r?: { Code?: number | string }) => void;
+  onInvalid: (fields?: SopInvalidField[]) => void;
 }
 type SopWindow = Window & { bpSop_silentOrderPost?: (o: SopOptions) => void };
 
@@ -52,13 +55,16 @@ const labelCls = "text-xs font-semibold text-[#6b6b6b] font-sans block mb-1";
 const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps) => {
   const navigate = useNavigate();
   const { data: profile } = useProfile();
-  // H5: nome/número/validade/CVV NÃO são state — ficam no DOM (classes bp-sop-*) e o SOP os lê direto.
-  // Só o CPF (não é dado de cartão) é controlado.
+  // H5: nome/número/CVV NÃO são state — ficam no DOM (classes bp-sop-*) e o SOP os lê direto.
+  // Só o CPF e mês/ano da validade (não são PAN/CVV) são controlados; o SOP lê a validade de um input
+  // oculto (expiryRef) preenchido com "MM/AAAA" no submit — o teclado numérico do celular não tem "/".
   const nameRef = useRef<HTMLInputElement>(null);
   const numberRef = useRef<HTMLInputElement>(null);
   const expiryRef = useRef<HTMLInputElement>(null);
   const cvvRef = useRef<HTMLInputElement>(null);
   const [cpf, setCpf] = useState("");
+  const [mes, setMes] = useState("");
+  const [ano, setAno] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 202 payment_pending: trava novo pagamento enquanto o diálogo estiver aberto.
@@ -71,6 +77,8 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
 
   const clearCardFields = () => {
     for (const r of [nameRef, numberRef, expiryRef, cvvRef]) if (r.current) r.current.value = "";
+    setMes("");
+    setAno("");
   };
 
   const handleClose = (next: boolean) => {
@@ -93,6 +101,14 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
     if (submitting || pending) return;
     if (!nameRef.current?.value.trim()) return setError("Informe o nome impresso no cartão.");
     if (!isValidCpf(cpf)) return setError("CPF inválido.");
+    const expiry = composeExpiry(mes, ano);
+    if (!expiry) return setError("Confira a validade do cartão (mês e ano).");
+    if (expiryRef.current) expiryRef.current.value = expiry; // o SOP lê "MM/AAAA" deste input
+    // O SOP lê os valores direto do DOM e recusa espaço no número/CVV e acento no nome: normaliza aqui.
+    nameRef.current.value = sopHolderName(nameRef.current.value);
+    if (numberRef.current) numberRef.current.value = onlyDigits(numberRef.current.value);
+    if (cvvRef.current) cvvRef.current.value = onlyDigits(cvvRef.current.value);
+    if (!nameRef.current.value) return setError("Confira o nome no cartão (só letras, sem acento).");
     setError(null);
     setSubmitting(true);
     try {
@@ -122,12 +138,14 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
             fail(err instanceof AleloCheckoutError ? err.userMessage : GENERIC_ERROR_MESSAGE);
           }
         },
-        // Nunca repassar/logar a resposta do SOP (traz PAN mascarado/BIN).
-        onError: () => {
+        // Nunca repassar/logar a resposta do SOP (traz PAN mascarado/BIN): só o status HTTP vai para a tela.
+        onError: (r) => {
           clearCardFields();
-          fail("Não foi possível validar o cartão. Confira os dados e tente novamente.");
+          const code = r?.Code ? ` (código ${r.Code})` : "";
+          fail(`Não foi possível validar o cartão. Confira os dados e tente novamente.${code}`);
         },
-        onInvalid: () => fail("Confira os dados do cartão."),
+        // O array traz só o nome do campo e um texto fixo do script, sem o valor digitado.
+        onInvalid: (fields) => fail(sopInvalidMessage(fields)),
       });
     } catch (err) {
       // Falha de script/token: sem fallback para campo de cartão próprio.
@@ -153,7 +171,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
               autoComplete="cc-name"
               maxLength={50}
               required
-              className={`${inputCls} bp-sop-cardholdername`}
+              className={`${inputCls} ${SOP_CLASS.holder}`}
             />
           </div>
           <div>
@@ -163,25 +181,32 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
               type="text"
               inputMode="numeric"
               autoComplete="cc-number"
-              maxLength={19}
+              maxLength={23} // 19 dígitos + espaços; os espaços saem no submit
               required
-              className={`${inputCls} bp-sop-cardnumber`}
+              className={`${inputCls} ${SOP_CLASS.number}`}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>Validade (MM/AAAA)</label>
-              <input
-                ref={expiryRef}
-                type="text"
-                inputMode="numeric"
-                autoComplete="cc-exp"
-                placeholder="MM/AAAA"
-                maxLength={7}
-                required
-                className={`${inputCls} bp-sop-cardexpirationdate`}
-              />
-            </div>
+          {/* Campo oculto que o SOP lê (não é type="hidden" para o script enxergá-lo como input de texto). */}
+          <input
+            ref={expiryRef}
+            type="text"
+            aria-hidden="true"
+            tabIndex={-1}
+            readOnly
+            autoComplete="off"
+            className={`sr-only ${SOP_CLASS.expiry}`}
+          />
+          {/* O script ignora a opção cardType e só lê este campo (aceita CreditCard ou DebitCard). Alelo = débito. */}
+          <input
+            type="text"
+            aria-hidden="true"
+            tabIndex={-1}
+            readOnly
+            value="DebitCard"
+            className={`sr-only ${SOP_CLASS.cardType}`}
+          />
+          <div className="grid grid-cols-3 gap-2">
+            <CardExpiryFields mes={mes} ano={ano} onMesChange={setMes} onAnoChange={setAno} />
             <div>
               <label className={labelCls}>CVV</label>
               <input
@@ -194,7 +219,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
                 style={{ WebkitTextSecurity: "disc" } as CSSProperties}
                 maxLength={4}
                 required
-                className={`${inputCls} bp-sop-cardcvvc`}
+                className={`${inputCls} ${SOP_CLASS.cvv}`}
               />
             </div>
           </div>

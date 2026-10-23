@@ -1,17 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
 import { useCartStore } from "@/stores/cartStore";
 import { useProfile } from "@/hooks/useProfile";
-import {
-  luhnValid,
-  isValidCpf,
-  expiryToAAMM,
-  formatCardNumber,
-  formatCpf,
-  onlyDigits,
-} from "@/lib/vr/card";
+import CardExpiryFields from "@/components/CardExpiryFields";
+import { composeExpiry } from "@/lib/alelo/expiry";
+import { luhnValid, isValidCpf, formatCardNumber, formatCpf, onlyDigits } from "@/lib/vr/card";
 import { payWithVr, VrCheckoutError, type VrCheckoutInput } from "@/lib/vr/client";
 
 interface VrCardDialogProps {
@@ -20,13 +15,12 @@ interface VrCardDialogProps {
   checkout: VrCheckoutInput;
 }
 
-const EMPTY_FORM = { nome: "", numero: "", validade: "", cvv: "", cpf: "" };
+const EMPTY_FORM = { nome: "", numero: "", mes: "", ano: "", cvv: "", cpf: "" };
 
-// Máscara simples MM/AA enquanto o usuário digita.
-const formatExpiry = (raw: string) => {
-  const digits = onlyDigits(raw).slice(0, 4);
-  if (digits.length <= 2) return digits;
-  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+/** Mês/ano (mesma regra do Alelo: vencido ou inválido → null) → "AAMM" que a VR espera. */
+const toAAMM = (mes: string, ano: string): string | null => {
+  const mmAaaa = composeExpiry(mes, ano);
+  return mmAaaa ? `${mmAaaa.slice(5, 7)}${mmAaaa.slice(0, 2)}` : null;
 };
 
 const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
@@ -62,7 +56,7 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
     if (!form.nome.trim()) return "Informe o nome impresso no cartão.";
     const numDigits = onlyDigits(form.numero);
     if (numDigits.length !== 16 || !luhnValid(numDigits)) return "Número de cartão inválido.";
-    if (!expiryToAAMM(form.validade)) return "Validade inválida.";
+    if (!toAAMM(form.mes, form.ano)) return "Confira a validade do cartão (mês e ano).";
     if (onlyDigits(form.cvv).length !== 3) return "CVV inválido.";
     if (!isValidCpf(form.cpf)) return "CPF inválido.";
     return null;
@@ -76,7 +70,7 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
       setError(validationError);
       return;
     }
-    const aamm = expiryToAAMM(form.validade)!;
+    const aamm = toAAMM(form.mes, form.ano)!;
     setError(null);
     setSubmitting(true);
     try {
@@ -117,7 +111,7 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
             <label className="text-xs font-semibold text-[#6b6b6b] font-sans block mb-1">Nome no cartão</label>
             <input
               type="text"
-              autoComplete="off"
+              autoComplete="cc-name"
               value={form.nome}
               onChange={(e) => setForm((f) => ({ ...f, nome: e.target.value }))}
               maxLength={50}
@@ -131,7 +125,7 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
             <input
               type="text"
               inputMode="numeric"
-              autoComplete="off"
+              autoComplete="cc-number"
               value={formatCardNumber(form.numero)}
               onChange={(e) => setForm((f) => ({ ...f, numero: onlyDigits(e.target.value).slice(0, 16) }))}
               maxLength={19}
@@ -140,27 +134,22 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-[#6b6b6b] font-sans block mb-1">Validade (MM/AA)</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="MM/AA"
-                value={form.validade}
-                onChange={(e) => setForm((f) => ({ ...f, validade: formatExpiry(e.target.value) }))}
-                maxLength={5}
-                required
-                className="w-full px-3 py-2 border border-[#e8e8e4] rounded-lg text-sm font-sans focus:outline-none focus:border-[#1e3a1e]"
-              />
-            </div>
+          <div className="grid grid-cols-3 gap-2">
+            <CardExpiryFields
+              mes={form.mes}
+              ano={form.ano}
+              onMesChange={(mes) => setForm((f) => ({ ...f, mes }))}
+              onAnoChange={(ano) => setForm((f) => ({ ...f, ano }))}
+            />
             <div>
               <label className="text-xs font-semibold text-[#6b6b6b] font-sans block mb-1">CVV</label>
               <input
-                type="password"
+                // type="text" + máscara por CSS: type="password" faz o gerenciador de senhas
+                // autopreencher login salvo no CVV (mesmo achado do Alelo, 12/10).
+                type="text"
                 inputMode="numeric"
-                autoComplete="off"
+                autoComplete="cc-csc"
+                style={{ WebkitTextSecurity: "disc" } as CSSProperties}
                 value={form.cvv}
                 onChange={(e) => setForm((f) => ({ ...f, cvv: onlyDigits(e.target.value).slice(0, 3) }))}
                 maxLength={3}

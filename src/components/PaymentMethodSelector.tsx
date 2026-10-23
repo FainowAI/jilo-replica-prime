@@ -8,7 +8,8 @@ export type PaymentMethod = "pix" | "vr" | "alelo" | "credit";
 
 // VR só aparece com VITE_VR_ENABLED=true (.env) — fica escondido até a homologação na VR.
 const VR_ENABLED = import.meta.env.VITE_VR_ENABLED === "true";
-// Alelo (via Cielo) idem: só com VITE_ALELO_ENABLED=true, até a Alelo habilitar o EC.
+// Alelo (via Cielo): aparece para todos com VITE_ALELO_ENABLED=true (aberta em 13/10).
+// Quem pode pagar é decidido no servidor (ALELO_ENABLED + ALELO_QA_EMAILS, se preenchida).
 const ALELO_ENABLED = import.meta.env.VITE_ALELO_ENABLED === "true";
 
 // PIX5 vale para PIX, VR e Alelo.

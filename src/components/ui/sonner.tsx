@@ -9,7 +9,8 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
-      className="toaster group"
+      // ph-no-capture: toasts podem mostrar o e-mail da conta ("Você entrou como…") e o replay do PostHog não mascara texto.
+      className="toaster group ph-no-capture"
       toastOptions={{
         classNames: {
           toast:

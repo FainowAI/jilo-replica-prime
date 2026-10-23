@@ -11,7 +11,11 @@
  * `serve` real em `./index.ts` (o entrypoint fica separado para que o teste
  * importe este módulo sem abrir porta).
  *
- * Nunca logar: body, cartão criptografado, endereço, email ou CPF. Log só
+ * O cartão chega em claro (TLS) e é tokenizado aqui na VR (`POST /cartoes`); o
+ * token paga e é apagado em seguida (`DELETE /cartoes/{id}`). Nada é persistido.
+ *
+ * Nunca logar: body, cartão em claro (número, CVV, nome, validade), o
+ * `cartao_token_id`, endereço, email ou CPF. Log só
  * `[vr-checkout] <etapa> <status>` + `id_transacao_van`.
  *
  * ponytail: `cartId` não é verificado como pertencente ao usuário — o cart
@@ -31,17 +35,36 @@ import { hasOtherCoupon, hasPixCoupon, validateCartForVr, type VrGateInput, type
 import {
   classifyReturnCode,
   createPayment,
+  deleteTokenizedCard,
   getTransaction,
   newIdTransacaoVan,
   refund,
+  tokenizeCard,
   VrApiError,
   type ConsultaTransacao,
+  type CriacaoCartaoRetorno,
   type TransacaoAutorizada,
+  type VrPaymentParams,
   type VrReturnClass,
+  type VrTokenizeCardInput,
 } from "../_shared/vr-client.ts";
 import { completeDraftOrder, createDraftOrder, deleteDraftOrder, type DraftOrderInput } from "../_shared/shopify-draft-order.ts";
 import { getDraftOrderStatus } from "../_shared/cielo-support.ts";
 import { isValidCpf } from "../_shared/cpf.ts";
+
+/** Luhn (espelho de src/lib/vr/card.ts; o Deno não importa do front). */
+function luhnValid(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -49,6 +72,10 @@ import { isValidCpf } from "../_shared/cpf.ts";
 
 const RATE_LIMIT_DECLINES = 5;
 const RATE_LIMIT_WINDOW_MIN = 15;
+// Tentativas (qualquer status) por usuário na mesma janela, contadas DEPOIS do insert: segura
+// rajadas concorrentes com carts diferentes, que passariam todas pela checagem de recusas
+// (auditoria 21/10, A1 — testador de cartão).
+const RATE_LIMIT_ATTEMPTS = 8;
 // ponytail: threshold do circuit breaker global — sugestão da auditoria de segurança
 // (security.md, A4), a confirmar com o dono do produto antes de produção.
 const VR_BREAKER_DECLINES = 30;
@@ -58,9 +85,10 @@ const VR_BREAKER_WINDOW_MIN = 10;
 const STALE_AUTHORIZING_MIN = 5;
 
 // ---------------------------------------------------------------------------
-// Body (zod, strict — campo extra tipo `cartao` vira 400 por construção; `cpf`
-// (só dígitos, obrigatório) é aceito e vira o CPF do comprador no draft order —
-// achado 2026-09-25, ver shopify-draft-order.ts)
+// Body (zod, strict — campo extra (inclusive os antigos `keyId`/`cardEncrypted`/
+// `cartaoTokenId`) vira 400 por construção; `cpf` (só dígitos, obrigatório) é
+// aceito e vira o CPF do comprador no draft order — achado 2026-09-25, ver
+// shopify-draft-order.ts; `card` (AAMM) é tokenizado no servidor — 2026-10-21)
 // ---------------------------------------------------------------------------
 
 const CheckoutBodySchema = z
@@ -70,12 +98,15 @@ const CheckoutBodySchema = z
     deliveryMethod: z.enum(["uber_direct", "jilo_own", "lalamove"]),
     uberQuoteId: z.string().optional(),
     deliveryLabel: z.string().optional(),
-    keyId: z.string().min(1).max(64),
-    cardEncrypted: z
-      .string()
-      .max(1024)
-      .regex(/^[A-Za-z0-9+/]+={0,2}$/, "invalid_base64"),
     cpf: z.string().regex(/^\d{11}$/),
+    card: z
+      .object({
+        nome: z.string().trim().min(1).max(50),
+        numero_cartao: z.string().regex(/^\d{16}$/),
+        data_expiracao: z.string().regex(/^\d{4}$/),
+        cvv: z.string().regex(/^\d{3}$/),
+      })
+      .strict(),
   })
   .strict();
 
@@ -133,6 +164,7 @@ export interface VrCheckoutDb {
   getLiveByCartId(cartId: string): Promise<VrTransactionRow | null>;
   update(id: string, patch: Partial<Omit<VrTransactionRow, "id" | "created_at" | "updated_at">>): Promise<void>;
   countRecentUserDeclinesOrErrors(userId: string, sinceIso: string): Promise<number>;
+  countRecentUserAttempts(userId: string, sinceIso: string): Promise<number>;
   countRecentGlobalDeclines(sinceIso: string): Promise<number>;
   getOwnAddress(addressId: string, userId: string): Promise<OwnAddress | null>;
   getShopifyCustomerId(userId: string): Promise<string | null>;
@@ -148,12 +180,9 @@ export interface VrCheckoutDeps {
   hasOtherCoupon(cart: StorefrontCart): boolean;
   isAreaDeliverable(uf: string, city: string): boolean;
   vr: {
-    createPayment(params: {
-      valorCents: number;
-      idTransacaoVan: string;
-      keyId: string;
-      cardEncrypted: string;
-    }): Promise<TransacaoAutorizada>;
+    tokenizeCard(card: VrTokenizeCardInput): Promise<CriacaoCartaoRetorno>;
+    deleteTokenizedCard(cartaoId: string): Promise<void>;
+    createPayment(params: VrPaymentParams): Promise<TransacaoAutorizada>;
     getTransaction(idTransacaoOuVan: string): Promise<ConsultaTransacao>;
     refund(params: { idTransacao: string; valorCents: number }): Promise<{ noop: boolean }>;
     classifyReturnCode(codigo: string): { classe: VrReturnClass; userMessage: string };
@@ -333,6 +362,20 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     return jsonResponse({ code: "invalid_cpf", userMessage: "CPF inválido." }, 422, cors);
   }
 
+  // Cartão: Luhn + validade AAMM (mês 1-12, não vencido, até 20 anos) antes de qualquer efeito —
+  // lixo não chega à VR nem gasta a cota de tentativas (auditoria 21/10, M2).
+  const mesValidade = Number(body.card.data_expiracao.slice(2));
+  const anoValidade = 2000 + Number(body.card.data_expiracao.slice(0, 2));
+  const anoMesAtual = now.getUTCFullYear() * 100 + now.getUTCMonth() + 1;
+  if (
+    !luhnValid(body.card.numero_cartao) ||
+    mesValidade < 1 || mesValidade > 12 ||
+    anoValidade * 100 + mesValidade < anoMesAtual ||
+    anoValidade > now.getUTCFullYear() + 20
+  ) {
+    return jsonResponse({ code: "invalid_card", userMessage: "Dados do cartão inválidos." }, 422, cors);
+  }
+
   // 5. Endereço: precisa ser do usuário e estar em área atendida
   const address = await deps.db.getOwnAddress(body.selectedAddressId, user.id);
   if (!address) {
@@ -409,6 +452,16 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     txId = retryInsert.row.id;
   }
 
+  // Insert-then-check: conta a própria linha e as concorrentes que já entraram.
+  if ((await deps.db.countRecentUserAttempts(user.id, rateLimitSince)) > RATE_LIMIT_ATTEMPTS) {
+    await deps.db.update(txId, { status: "error", error: "rate_limited:429" });
+    return jsonResponse(
+      { code: "too_many_attempts", userMessage: "Muitas tentativas. Aguarde alguns minutos e tente novamente." },
+      429,
+      cors,
+    );
+  }
+
   // 9. Draft order (antes de cobrar — auditoria A1)
   // Todas as alocações (Kit por linha + PIX5/cupom por ordem) viram UM desconto fixo de
   // ordem — o FIXED_AMOUNT por linha da Shopify é por unidade (ver shopify-draft-order.ts).
@@ -461,15 +514,41 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     );
   }
 
-  // 10. Cobrança na VR
+  // 10. Tokeniza o cartão na VR (não é cobrança). Falha: apaga o draft e não chama o pagamento.
+  let cartaoTokenId: string;
+  try {
+    ({ cartao_token_id: cartaoTokenId } = await deps.vr.tokenizeCard({
+      numero_cartao: body.card.numero_cartao,
+      nome_impressao: body.card.nome,
+      cvv: body.card.cvv,
+      mes_validade: mesValidade,
+      ano_validade: anoValidade,
+    }));
+  } catch (err) {
+    const code = err instanceof VrApiError ? err.code : "vr_bad_response";
+    const status = err instanceof VrApiError ? err.status ?? 0 : 0;
+    await deps.draft.delete(draft.id);
+    await deps.db.update(txId, { status: "error", error: `vr_tokenize_failed:${code}:${status}` });
+    console.error(`[vr-checkout] tokenize_failed ${idTransacaoVan}`);
+    // Só 400/404/422 da VR = cartão inválido; 401/403/429/5xx/rede = falha nossa ou da VR (auditoria B4).
+    if (status === 400 || status === 404 || status === 422) {
+      return jsonResponse(
+        { code: "declined", classe: "negado", userMessage: "Cartão VR recusado. Confira os dados e tente novamente." },
+        402,
+        cors,
+      );
+    }
+    return jsonResponse(
+      { code: "vr_error", userMessage: "Não foi possível processar o pagamento agora. Tente novamente em instantes." },
+      502,
+      cors,
+    );
+  }
+
+  // 10b. Cobrança na VR. O token é descartável: apagado best-effort ao fim, qualquer que seja o desfecho.
   let vrResult: TransacaoAutorizada;
   try {
-    vrResult = await deps.vr.createPayment({
-      valorCents,
-      idTransacaoVan,
-      keyId: body.keyId,
-      cardEncrypted: body.cardEncrypted,
-    });
+    vrResult = await deps.vr.createPayment({ valorCents, idTransacaoVan, cartaoTokenId });
   } catch (err) {
     if (err instanceof VrApiError && err.code === "vr_timeout") {
       let consulta: ConsultaTransacao | null = null;
@@ -506,6 +585,12 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
         502,
         cors,
       );
+    }
+  } finally {
+    try {
+      await deps.vr.deleteTokenizedCard(cartaoTokenId);
+    } catch {
+      console.error(`[vr-checkout] token_delete_failed ${idTransacaoVan}`);
     }
   }
 
@@ -621,11 +706,20 @@ export function buildDefaultDeps(): VrCheckoutDeps {
         .gte("created_at", sinceIso);
       return count ?? 0;
     },
-    async countRecentGlobalDeclines(sinceIso) {
+    async countRecentUserAttempts(userId, sinceIso) {
       const { count } = await serviceClient
         .from("vr_transactions")
         .select("id", { count: "exact", head: true })
-        .eq("status", "declined")
+        .eq("user_id", userId)
+        .gte("created_at", sinceIso);
+      return count ?? 0;
+    },
+    async countRecentGlobalDeclines(sinceIso) {
+      // Recusa na tokenização (status error) também conta: é o sinal de teste de cartão (auditoria M1).
+      const { count } = await serviceClient
+        .from("vr_transactions")
+        .select("id", { count: "exact", head: true })
+        .or("status.eq.declined,error.like.vr_tokenize_failed*")
         .gte("created_at", sinceIso);
       return count ?? 0;
     },
@@ -673,7 +767,7 @@ export function buildDefaultDeps(): VrCheckoutDeps {
     hasPixCoupon,
     hasOtherCoupon,
     isAreaDeliverable,
-    vr: { createPayment, getTransaction, refund, classifyReturnCode, newIdTransacaoVan },
+    vr: { tokenizeCard, deleteTokenizedCard, createPayment, getTransaction, refund, classifyReturnCode, newIdTransacaoVan },
     draft: { create: createDraftOrder, complete: completeDraftOrder, delete: deleteDraftOrder, status: getDraftOrderStatus },
     env: {
       VR_ENV: Deno.env.get("VR_ENV") ?? "mock",

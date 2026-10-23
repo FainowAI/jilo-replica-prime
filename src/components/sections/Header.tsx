@@ -120,7 +120,7 @@ const Header = () => {
           {user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button aria-label="Minha conta" className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+                <button aria-label="Minha conta" className="p-2 hover:opacity-70 transition-opacity">
                   <UserCircle2 className="h-5 w-5" />
                 </button>
               </DropdownMenuTrigger>
@@ -150,7 +150,7 @@ const Header = () => {
             </DropdownMenu>
           ) : (
             <>
-              <button onClick={() => setAuthDialogOpen(true)} aria-label="Entrar ou cadastrar" className="p-2 hover:opacity-70 transition-opacity hidden sm:block">
+              <button onClick={() => setAuthDialogOpen(true)} aria-label="Entrar ou cadastrar" className="p-2 hover:opacity-70 transition-opacity">
                 <User className="h-5 w-5" />
               </button>
               <AuthDialog open={authDialogOpen} onOpenChange={setAuthDialogOpen} />

@@ -1,35 +1,37 @@
-import { supabase } from "@/integrations/supabase/client";
-
-export type LoginHint = "google" | null;
-export type AuthNotice = { google: boolean; message: string };
+export type AuthErrorKind = "credenciais" | "nao_confirmado" | "limite" | "outro";
+/** `resendTo`: quando preenchido, a tela oferece "Reenviar e-mail" para esse endereço. */
+export type AuthNotice = { message: string; resendTo?: string };
 
 export const EMAIL_ALREADY_REGISTERED = "email_already_registered";
 
-const GOOGLE_MSG =
-  "Este e-mail foi cadastrado com o Google e não tem senha. Toque em “Entrar com Google” para acessar sua conta.";
+// Mensagens fixas, iguais para todo mundo: não revelam se o e-mail existe nem qual método de login ele usa.
+const MSG_CREDENCIAIS =
+  "E-mail ou senha incorretos. Se você criou a conta com o Google, use o botão “Entrar com Google”. Se esqueceu a senha, toque em “Esqueci a senha”.";
+const MSG_JA_CADASTRADO =
+  "Este e-mail já tem cadastro. Entre com sua senha ou com o Google. Se esqueceu a senha, toque em “Esqueci a senha”.";
+const MSG_LIMITE = "Muitas tentativas. Aguarde um minuto e tente de novo.";
+export const MSG_GENERICA = "Não foi possível entrar agora. Tente de novo em instantes.";
 
-/** Mapeia a dica do servidor para o aviso na tela (puro, testável). */
-export function authNotice(context: "login" | "signup", hint: LoginHint): AuthNotice {
-  if (context === "login") {
-    if (hint === "google") return { google: true, message: GOOGLE_MSG };
-    return {
-      google: false,
-      message: "E-mail ou senha incorretos. Se você criou a conta com o Google, use o botão “Entrar com Google”.",
-    };
-  }
-  if (hint) return { google: true, message: GOOGLE_MSG };
-  return { google: false, message: "Este e-mail já tem cadastro. Faça login." };
+/** Classifica o erro do Supabase Auth (puro). Usa `code`; sem ele, cai para a mensagem em inglês. */
+export function authErrorKind(
+  error: { code?: string; status?: number; message?: string } | null | undefined,
+): AuthErrorKind {
+  if (!error) return "outro";
+  const { code, status, message } = error;
+  if (code === "invalid_credentials" || (!code && message === "Invalid login credentials")) return "credenciais";
+  if (code === "email_not_confirmed" || (!code && message === "Email not confirmed")) return "nao_confirmado";
+  if (code === "over_email_send_rate_limit" || code === "over_request_rate_limit" || status === 429) return "limite";
+  return "outro";
 }
 
-/** Nunca lança; cai para null após 4s para não travar o loading. */
-export async function getLoginHint(email: string): Promise<LoginHint> {
-  try {
-    const call = supabase.functions
-      .invoke("auth-login-hint", { body: { email } })
-      .then(({ data }) => (data?.hint === "google" ? ("google" as const) : null));
-    const timeout = new Promise<null>((r) => setTimeout(() => r(null), 4000));
-    return await Promise.race([call, timeout]);
-  } catch {
-    return null;
+/** Erro de login/cadastro → aviso na tela (nunca a mensagem crua do Supabase). */
+export function authNotice(context: "login" | "signup", error: Error, email: string): AuthNotice {
+  if (context === "signup" && error.message === EMAIL_ALREADY_REGISTERED) return { message: MSG_JA_CADASTRADO };
+  const kind = authErrorKind(error);
+  if (kind === "nao_confirmado") {
+    return { message: `Seu e-mail ainda não foi confirmado. Enviamos um link para ${email}.`, resendTo: email };
   }
+  if (kind === "credenciais") return { message: MSG_CREDENCIAIS };
+  if (kind === "limite") return { message: MSG_LIMITE };
+  return { message: MSG_GENERICA };
 }

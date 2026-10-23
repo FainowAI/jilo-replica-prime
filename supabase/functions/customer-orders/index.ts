@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
+import { verifiedCustomerNumericId } from "./ownership.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -35,6 +36,12 @@ const CUSTOMER_ORDERS_QUERY = `
         fulfillments(first: 5) { createdAt trackingInfo { number url company } }
       } }
     }
+  }
+`;
+
+const CUSTOMER_EMAIL_QUERY = `
+  query CustomerOwnerEmail($id: ID!) {
+    customer(id: $id) { id email }
   }
 `;
 
@@ -115,6 +122,16 @@ async function callShopifyAdmin(payload: object, isRetry = false): Promise<Respo
   }
 
   return res;
+}
+
+async function lookupCustomerEmail(id: string): Promise<{ id: string; email: string | null } | null> {
+  const res = await callShopifyAdmin({ query: CUSTOMER_EMAIL_QUERY, variables: { id } });
+  if (!res.ok) return null;
+  const body = await res.json() as {
+    data?: { customer?: { id: string; email: string | null } | null };
+    errors?: unknown[];
+  };
+  return body.errors?.length ? null : body.data?.customer ?? null;
 }
 
 function toCents(amount: string | undefined | null): number {
@@ -303,9 +320,13 @@ serve(async (req) => {
     }
 
     // 2. Montar o filtro de busca amarrado à identidade do JWT.
-    // Preferimos customer_id (inteiro vindo da Shopify, não-injetável) usando o
-    // vínculo já estabelecido por shopify-customer-sync. E-mail é só fallback
-    // para usuários ainda não sincronizados, com guard contra a DSL de busca.
+    // O GID do perfil só é aceito se a Shopify confirmar que pertence ao mesmo e-mail.
+    if (!isSafeEmail(user.email)) {
+      return new Response(JSON.stringify({ error: "Invalid user email" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: profile } = await serviceClient
       .from("profiles")
@@ -315,21 +336,18 @@ serve(async (req) => {
 
     // ponytail: 2 queries no pior caso; unificar com OR na DSL se virar gargalo
     let result: OrdersResult;
-    if (profile?.shopify_customer_id) {
-      // gid://shopify/Customer/123 → 123
-      const customerNumericId = String(profile.shopify_customer_id).split("/").pop();
+    const customerNumericId = await verifiedCustomerNumericId(
+      profile?.shopify_customer_id,
+      user.email,
+      lookupCustomerEmail,
+    );
+    if (customerNumericId) {
       result = await fetchOrders(`customer_id:${customerNumericId}`);
       // Pedido feito como guest com o mesmo e-mail não tem customer_id: cai no e-mail.
-      if (result.ok && !result.orders.length && isSafeEmail(user.email)) {
+      if (result.ok && !result.orders.length) {
         result = await fetchOrders(`email:${user.email}`);
       }
     } else {
-      if (!isSafeEmail(user.email)) {
-        return new Response(JSON.stringify({ error: "Invalid user email" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       result = await fetchOrders(`email:${user.email}`);
     }
 

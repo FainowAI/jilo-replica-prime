@@ -1,14 +1,13 @@
 /**
  * Testes do dublê `fake-vr.ts` — 100% offline (sem `fetch` real, sem VR de
  * verdade). Cobre o round-trip de criptografia com `encryptCardData`
- * (back-end, os dois paddings) e com `encryptCard` (front-end, `src/lib/vr/rsa.ts`,
- * só OAEP-SHA256), os três outcomes (`approve`/`decline`/`timeout`), consulta
- * por `id_transacao_van` e estorno.
+ * (back-end, os dois paddings), a tokenização (`POST /cartoes` → pagamento com
+ * token → `DELETE /cartoes/{id}`), os três outcomes (`approve`/`decline`/`timeout`),
+ * consulta por `id_transacao_van` e estorno.
  */
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import { createFakeVr, type FakeVr } from "./fake-vr.ts";
 import { encryptCardData, type VrCardInput } from "../_shared/vr-client.ts";
-import { encryptCard as encryptCardFront, type VrCardPlain } from "../../../src/lib/vr/rsa.ts";
 
 const CAPTURE_BASE = "https://api-devportal.vr.com.br/captura/v2";
 
@@ -79,29 +78,6 @@ Deno.test("round-trip PKCS#1 v1.5 via encryptCardData aprova e registra o paddin
   const json = await res.json();
   assertEquals(json.codigo_retorno, "00");
   assertEquals(fake.state.payments[0].padding, "pkcs1");
-});
-
-// ---------------------------------------------------------------------------
-// Round-trip com a criptografia do FRONT (src/lib/vr/rsa.ts) — prova
-// compatibilidade front -> back mesmo contra a VR falsa.
-// ---------------------------------------------------------------------------
-
-Deno.test("round-trip com encryptCard do front (rsa.ts) aprova", async () => {
-  const fake = createFakeVr();
-  const { key_id, public_key } = await getPublicKey(fake);
-  const cardFront: VrCardPlain = {
-    nome: SAMPLE_CARD.nome,
-    numero_cartao: SAMPLE_CARD.numero_cartao,
-    data_expiracao: SAMPLE_CARD.data_expiracao,
-    cvv: SAMPLE_CARD.cvv,
-    documento: SAMPLE_CARD.documento!,
-  };
-  const cardEncrypted = await encryptCardFront(public_key, cardFront);
-  const res = await postPayment(fake, paymentBody({ idTransacaoVan: "van-front", keyId: key_id, cardEncrypted }));
-  assertEquals(res.status, 201);
-  const json = await res.json();
-  assertEquals(json.codigo_retorno, "00");
-  assertEquals(fake.state.payments[0].padding, "oaep-sha256");
 });
 
 // ---------------------------------------------------------------------------
@@ -248,4 +224,46 @@ Deno.test("OAuth grant-code e access-token respondem shapes esperados", async ()
   assertEquals(typeof tokenJson.access_token, "string");
   assertEquals(typeof tokenJson.refresh_token, "string");
   assertEquals(tokenJson.expires_in, 3600);
+});
+
+// ---------------------------------------------------------------------------
+// Tokenização (checkout atual): POST /cartoes -> pagamento com token -> DELETE /cartoes/{id}
+// ---------------------------------------------------------------------------
+
+Deno.test("tokeniza, paga com cartao_token_id e apaga o token (token apagado nao paga mais)", async () => {
+  const fake = createFakeVr();
+  const created = fake.handle(`${CAPTURE_BASE}/cartoes`, {
+    method: "POST",
+    body: JSON.stringify({ numero_cartao: "4111111111111111", nome_impressao: "QA VR TESTE", cvv: "123", mes_validade: 8, ano_validade: 2030 }),
+  });
+  assert(created);
+  const createdRes = await created;
+  assertEquals(createdRes.status, 201);
+  const { cartao_token_id } = await createdRes.json();
+
+  const pay = async () =>
+    await postPayment(fake, JSON.stringify({ valor: 1000, id_filiacao: "148822", id_transacao_van: "van-token", quantidade_parcelas: 1, cartao_token_id }));
+  const paid = await pay();
+  assertEquals(paid.status, 201);
+  assertEquals((await paid.json()).codigo_retorno, "00");
+  assertEquals(fake.state.payments[0].padding, "token");
+
+  const del = fake.handle(`${CAPTURE_BASE}/cartoes/${cartao_token_id}`, { method: "DELETE" });
+  assert(del);
+  assertEquals((await del).status, 204);
+  assertEquals(fake.state.tokens.length, 0);
+  assertEquals(fake.state.deletedTokens, [cartao_token_id]);
+
+  assertEquals((await pay()).status, 400);
+});
+
+Deno.test("POST /cartoes com mes_validade fora de 1-12 retorna 400", async () => {
+  const fake = createFakeVr();
+  const res = fake.handle(`${CAPTURE_BASE}/cartoes`, {
+    method: "POST",
+    body: JSON.stringify({ numero_cartao: "4111111111111111", nome_impressao: "QA", cvv: "123", mes_validade: 13, ano_validade: 2030 }),
+  });
+  assert(res);
+  assertEquals((await res).status, 400);
+  assertEquals(fake.state.tokens.length, 0);
 });

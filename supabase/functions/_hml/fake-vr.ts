@@ -34,7 +34,7 @@ export interface FakeVrPaymentRecord {
   id_transacao_van: string;
   valor: number;
   status: FakeVrTransactionStatus;
-  padding: "oaep-sha256" | "pkcs1";
+  padding: "oaep-sha256" | "pkcs1" | "token";
 }
 
 export interface FakeVrRefundRecord {
@@ -47,6 +47,9 @@ export interface FakeVrState {
   nextOutcome: FakeVrOutcome;
   payments: FakeVrPaymentRecord[];
   refunds: FakeVrRefundRecord[];
+  /** Tokens de cartão vivos (criados por POST /cartoes e ainda não apagados) — só o id, nunca o cartão. */
+  tokens: string[];
+  deletedTokens: string[];
   keyId: string;
   publicKeyBase64Der: string;
 }
@@ -119,6 +122,7 @@ function validateCardFields(card: FakeCardFields): boolean {
   return nomeOk && numeroOk && dataOk && cvvOk && documentoOk;
 }
 
+let tokenSeq = 0;
 let idSeq = 0;
 function nextTransactionId(): string {
   idSeq += 1;
@@ -142,6 +146,8 @@ export function createFakeVr(): FakeVr {
     nextOutcome: "approve",
     payments: [],
     refunds: [],
+    tokens: [],
+    deletedTokens: [],
     keyId: "fake-key-1",
     publicKeyBase64Der,
   };
@@ -170,29 +176,39 @@ export function createFakeVr(): FakeVr {
       return json({ codigo: "63", mensagem: "corpo invalido" }, 400);
     }
 
-    const cipherB64 = payload.cartao_dados_criptografados;
-    if (typeof cipherB64 !== "string" || !cipherB64) {
-      return json({ codigo: "63", mensagem: "cartao ausente" }, 400);
-    }
+    let padding: FakeVrPaymentRecord["padding"];
+    if (typeof payload.cartao_token_id === "string") {
+      // via token descartável (checkout atual): vale só se foi criado via POST /cartoes e ainda não apagado
+      if (!state.tokens.includes(payload.cartao_token_id)) {
+        return json({ codigo: "63", mensagem: "token de cartao invalido" }, 400);
+      }
+      padding = "token";
+    } else {
+      const cipherB64 = payload.cartao_dados_criptografados;
+      if (typeof cipherB64 !== "string" || !cipherB64) {
+        return json({ codigo: "63", mensagem: "cartao ausente" }, 400);
+      }
 
-    const decrypted = tryDecrypt(privateKey as string, cipherB64);
-    if (!decrypted) {
-      console.log("[fake-vr] captura decrypt falhou padding=nenhum campos_ok=false");
-      return json({ codigo: "63", mensagem: "nao foi possivel decifrar" }, 400);
-    }
+      const decrypted = tryDecrypt(privateKey as string, cipherB64);
+      if (!decrypted) {
+        console.log("[fake-vr] captura decrypt falhou padding=nenhum campos_ok=false");
+        return json({ codigo: "63", mensagem: "nao foi possivel decifrar" }, 400);
+      }
 
-    let card: FakeCardFields;
-    try {
-      card = JSON.parse(decrypted.plaintext);
-    } catch {
-      console.log(`[fake-vr] captura decrypt padding=${decrypted.padding} campos_ok=false (json invalido)`);
-      return json({ codigo: "63", mensagem: "json invalido" }, 400);
-    }
+      let card: FakeCardFields;
+      try {
+        card = JSON.parse(decrypted.plaintext);
+      } catch {
+        console.log(`[fake-vr] captura decrypt padding=${decrypted.padding} campos_ok=false (json invalido)`);
+        return json({ codigo: "63", mensagem: "json invalido" }, 400);
+      }
 
-    const camposOk = validateCardFields(card);
-    console.log(`[fake-vr] captura decrypt padding=${decrypted.padding} campos_ok=${camposOk}`);
-    if (!camposOk) {
-      return json({ codigo: "63", mensagem: "dados do cartao invalidos" }, 400);
+      const camposOk = validateCardFields(card);
+      console.log(`[fake-vr] captura decrypt padding=${decrypted.padding} campos_ok=${camposOk}`);
+      if (!camposOk) {
+        return json({ codigo: "63", mensagem: "dados do cartao invalidos" }, 400);
+      }
+      padding = decrypted.padding;
     }
 
     const idTransacaoVan = typeof payload.id_transacao_van === "string" ? payload.id_transacao_van : nextTransactionId();
@@ -209,7 +225,7 @@ export function createFakeVr(): FakeVr {
         id_transacao_van: idTransacaoVan,
         valor,
         status: "CONFIRMADA",
-        padding: decrypted.padding,
+        padding,
       });
       return await new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -237,13 +253,42 @@ export function createFakeVr(): FakeVr {
     const idTransacao = nextTransactionId();
     if (outcome.startsWith("decline:")) {
       const codigoRetorno = outcome.slice("decline:".length);
-      state.payments.push({ id_transacao: idTransacao, id_transacao_van: idTransacaoVan, valor, status: "NEGADA", padding: decrypted.padding });
+      state.payments.push({ id_transacao: idTransacao, id_transacao_van: idTransacaoVan, valor, status: "NEGADA", padding });
       return json({ id_transacao: idTransacao, valor, codigo_retorno: codigoRetorno }, 201);
     }
 
     // approve
-    state.payments.push({ id_transacao: idTransacao, id_transacao_van: idTransacaoVan, valor, status: "CONFIRMADA", padding: decrypted.padding });
+    state.payments.push({ id_transacao: idTransacao, id_transacao_van: idTransacaoVan, valor, status: "CONFIRMADA", padding });
     return json({ id_transacao: idTransacao, valor, codigo_retorno: "00", codigo_autorizacao: "123456" }, 201);
+  }
+
+  async function handleTokenizeCard(init: RequestInit | undefined): Promise<Response> {
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(bodyOf(init));
+    } catch {
+      return json({ codigo: "63", mensagem: "corpo invalido" }, 400);
+    }
+    const okCard =
+      typeof payload.numero_cartao === "string" && /^\d{16}$/.test(payload.numero_cartao) &&
+      typeof payload.nome_impressao === "string" && payload.nome_impressao.trim().length > 0 &&
+      typeof payload.cvv === "string" && /^\d{3}$/.test(payload.cvv) &&
+      Number.isInteger(payload.mes_validade) && (payload.mes_validade as number) >= 1 && (payload.mes_validade as number) <= 12 &&
+      Number.isInteger(payload.ano_validade) && (payload.ano_validade as number) >= 2000;
+    if (!okCard) return json({ codigo: "63", mensagem: "dados do cartao invalidos" }, 400);
+    // Só o id do token é guardado — nunca PAN/CVV/nome/validade.
+    tokenSeq += 1;
+    const token = `fake-token-${tokenSeq}`;
+    state.tokens.push(token);
+    return json({ cartao_token_id: token, mensagens: [] }, 201);
+  }
+
+  function handleDeleteCard(cartaoId: string): Response {
+    const idx = state.tokens.indexOf(cartaoId);
+    if (idx < 0) return json({ codigo: "04", mensagem: "cartao nao encontrado" }, 404);
+    state.tokens.splice(idx, 1);
+    state.deletedTokens.push(cartaoId);
+    return new Response(null, { status: 204 });
   }
 
   async function handleGetTransaction(idOrVan: string): Promise<Response> {
@@ -286,6 +331,10 @@ export function createFakeVr(): FakeVr {
     if (method === "POST" && path === "/oauth/access-token") return handleAccessToken();
     if (method === "GET" && path === "/captura/v2/chaves/chave-publica") return handlePublicKey();
     if (method === "POST" && path === "/captura/v2/transacoes/pagamentos") return handleCreatePayment(init);
+    if (method === "POST" && path === "/captura/v2/cartoes") return handleTokenizeCard(init);
+
+    const cardMatch = path.match(/^\/captura\/v2\/cartoes\/([^/]+)$/);
+    if (method === "DELETE" && cardMatch) return Promise.resolve(handleDeleteCard(decodeURIComponent(cardMatch[1])));
 
     const getMatch = path.match(/^\/captura\/v2\/transacoes\/pagamentos\/([^/]+)$/);
     if (method === "GET" && getMatch) return handleGetTransaction(decodeURIComponent(getMatch[1]));

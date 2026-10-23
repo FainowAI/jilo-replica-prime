@@ -41,4 +41,3 @@ select cron.schedule(
   ) as request_id;
   $cron$
 );
-

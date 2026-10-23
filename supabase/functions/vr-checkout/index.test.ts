@@ -12,6 +12,7 @@ import {
   type VrCheckoutDeps,
   type VrTransactionRow,
 } from "./handler.ts";
+import { VrApiError } from "../_shared/vr-client.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -41,9 +42,8 @@ const VALID_BODY = {
   cartId: HAPPY_CART.id,
   selectedAddressId: "11111111-1111-1111-1111-111111111111",
   deliveryMethod: "jilo_own",
-  keyId: "key-1",
-  cardEncrypted: "YWJjZGVmZw==",
   cpf: "52998224725",
+  card: { nome: "QA VR TESTE", numero_cartao: "4111111111111111", data_expiracao: "3008", cvv: "123" },
 };
 
 function makeReq(bodyOverrides: Record<string, unknown> = {}, authHeader: string | null = "Bearer test-token"): Request {
@@ -98,6 +98,9 @@ function makeFakeDb(): { db: VrCheckoutDb; rows: VrTransactionRow[] } {
     async countRecentUserDeclinesOrErrors() {
       return 0;
     },
+    async countRecentUserAttempts(userId) {
+      return rows.filter((r) => r.user_id === userId).length;
+    },
     async countRecentGlobalDeclines() {
       return 0;
     },
@@ -134,6 +137,8 @@ function buildDeps(overrides: Partial<VrCheckoutDeps> = {}): VrCheckoutDeps {
     hasOtherCoupon: () => false,
     isAreaDeliverable: () => true,
     vr: {
+      tokenizeCard: async () => ({ cartao_token_id: "tok-test", mensagens: [] }),
+      deleteTokenizedCard: async () => {},
       createPayment: async () => ({
         id_transacao: "vr-1",
         valor: HAPPY_CART.totalAmountCents,
@@ -179,6 +184,147 @@ Deno.test("400 quando o body tem campo extra (cartao)", async () => {
   assertEquals(res.status, 400);
   const json = await res.json();
   assertEquals(json.code, "invalid_body");
+});
+
+Deno.test("400 quando o body traz os campos antigos keyId/cardEncrypted/cartaoTokenId", async () => {
+  for (const extra of [{ keyId: "key-1" }, { cardEncrypted: "YWJjZGVmZw==" }, { cartaoTokenId: "tok" }]) {
+    const res = await handleVrCheckout(makeReq(extra), buildDeps());
+    assertEquals(res.status, 400);
+  }
+});
+
+Deno.test("400 quando o card nao tem o formato esperado", async () => {
+  const res = await handleVrCheckout(makeReq({ card: { ...VALID_BODY.card, cvv: "12" } }), buildDeps());
+  assertEquals(res.status, 400);
+});
+
+Deno.test("422 invalid_card quando a validade tem mes 13, sem criar draft", async () => {
+  const deps = buildDeps();
+  let draftCreated = false;
+  deps.draft.create = async () => {
+    draftCreated = true;
+    throw new Error("unexpected draft");
+  };
+  const res = await handleVrCheckout(makeReq({ card: { ...VALID_BODY.card, data_expiracao: "3013" } }), deps);
+  assertEquals(res.status, 422);
+  assertEquals((await res.json()).code, "invalid_card");
+  assertEquals(draftCreated, false);
+});
+
+// ---------------------------------------------------------------------------
+// Tokenização do cartão (token descartável: cria -> paga -> apaga)
+// ---------------------------------------------------------------------------
+
+Deno.test("tokeniza com mes/ano, paga so com o token e apaga o token", async () => {
+  const deps = buildDeps();
+  let tokenized: unknown;
+  let sent: unknown;
+  const deleted: string[] = [];
+  deps.vr.tokenizeCard = async (card) => {
+    tokenized = card;
+    return { cartao_token_id: "token-test", mensagens: [] };
+  };
+  deps.vr.createPayment = async (params) => {
+    sent = params;
+    return { id_transacao: "vr-1", valor: HAPPY_CART.totalAmountCents, codigo_retorno: "00" };
+  };
+  deps.vr.deleteTokenizedCard = async (id) => {
+    deleted.push(id);
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 200);
+  assertEquals(tokenized, {
+    numero_cartao: "4111111111111111",
+    nome_impressao: "QA VR TESTE",
+    cvv: "123",
+    mes_validade: 8,
+    ano_validade: 2030,
+  });
+  assertEquals(sent, { valorCents: HAPPY_CART.totalAmountCents, idTransacaoVan: "van-test-1", cartaoTokenId: "token-test" });
+  assertEquals(deleted, ["token-test"]);
+});
+
+Deno.test("recusa na VR (codigo_retorno != 00) ainda apaga o token", async () => {
+  const deps = buildDeps();
+  const deleted: string[] = [];
+  deps.vr.createPayment = async () => ({ id_transacao: "vr-1", valor: HAPPY_CART.totalAmountCents, codigo_retorno: "16" });
+  deps.vr.deleteTokenizedCard = async (id) => {
+    deleted.push(id);
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 402);
+  assertEquals(deleted, ["tok-test"]);
+});
+
+Deno.test("erro no createPayment (502) ainda apaga o token", async () => {
+  const deps = buildDeps();
+  const deleted: string[] = [];
+  deps.vr.createPayment = async () => {
+    throw new VrApiError({ code: "vr_http_500", status: 500 });
+  };
+  deps.vr.deleteTokenizedCard = async (id) => {
+    deleted.push(id);
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 502);
+  assertEquals(deleted, ["tok-test"]);
+});
+
+Deno.test("tokenizacao 4xx => 402, draft apagado, linha error e createPayment nao chamado", async () => {
+  const { db, rows } = makeFakeDb();
+  const deps = buildDeps({ db });
+  let draftDeleted = false;
+  let paid = false;
+  let tokenDeleted = false;
+  deps.draft.delete = async () => {
+    draftDeleted = true;
+  };
+  deps.vr.tokenizeCard = async () => {
+    throw new VrApiError({ code: "vr_http_400", status: 400, mensagem: "cartao 4111111111111111 invalido" });
+  };
+  deps.vr.createPayment = async () => {
+    paid = true;
+    throw new Error("unexpected payment");
+  };
+  deps.vr.deleteTokenizedCard = async () => {
+    tokenDeleted = true;
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 402);
+  const json = await res.json();
+  assertEquals(json.code, "declined");
+  assertEquals(json.classe, "negado");
+  assertEquals(draftDeleted, true);
+  assertEquals(paid, false);
+  assertEquals(tokenDeleted, false);
+  const row = rows.find((r) => r.cart_id === HAPPY_CART.id)!;
+  assertEquals(row.status, "error");
+  assertEquals(row.error, "vr_tokenize_failed:vr_http_400:400");
+});
+
+Deno.test("tokenizacao com erro de rede/5xx => 502 vr_error, draft apagado", async () => {
+  const deps = buildDeps();
+  let draftDeleted = false;
+  deps.draft.delete = async () => {
+    draftDeleted = true;
+  };
+  deps.vr.tokenizeCard = async () => {
+    throw new VrApiError({ code: "vr_http_503", status: 503 });
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 502);
+  assertEquals((await res.json()).code, "vr_error");
+  assertEquals(draftDeleted, true);
+});
+
+Deno.test("falha ao apagar o token nao muda a resposta 200", async () => {
+  const deps = buildDeps();
+  deps.vr.deleteTokenizedCard = async () => {
+    throw new VrApiError({ code: "vr_http_500", status: 500 });
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 200);
+  assertEquals((await res.json()).orderName, "#1001");
 });
 
 // ---------------------------------------------------------------------------
@@ -532,4 +678,37 @@ Deno.test("503 quando o breaker global estourou", async () => {
   assertEquals(res.status, 503);
   const json = await res.json();
   assertEquals(json.code, "vr_unavailable");
+});
+
+Deno.test("rajada: tentativa acima do limite depois do insert vira 429 sem tokenizar", async () => {
+  const deps = buildDeps();
+  deps.db.countRecentUserAttempts = async () => 9;
+  let tokenized = false;
+  deps.vr.tokenizeCard = async () => {
+    tokenized = true;
+    return { cartao_token_id: "tok", mensagens: [] };
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 429);
+  assertEquals(tokenized, false);
+});
+
+Deno.test("cartão com Luhn inválido ou vencido vira 422 antes de qualquer efeito", async () => {
+  for (const card of [
+    { ...VALID_BODY.card, numero_cartao: "4111111111111112" },
+    { ...VALID_BODY.card, data_expiracao: "2001" },
+  ]) {
+    const res = await handleVrCheckout(makeReq({ card }), buildDeps());
+    assertEquals(res.status, 422);
+    assertEquals((await res.json()).code, "invalid_card");
+  }
+});
+
+Deno.test("403 da VR na tokenização é falha nossa (502), não cartão recusado", async () => {
+  const deps = buildDeps();
+  deps.vr.tokenizeCard = async () => {
+    throw new VrApiError({ code: "vr_http_403", status: 403, mensagem: "x" });
+  };
+  const res = await handleVrCheckout(makeReq(), deps);
+  assertEquals(res.status, 502);
 });

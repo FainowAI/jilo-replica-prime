@@ -146,7 +146,7 @@ const DeliveryAddressSelector = ({
         <AuthDialog
           open={authDialogOpen}
           onOpenChange={setAuthDialogOpen}
-          initialMode="signup"
+          initialMode="login"
         />
       </div>
     );

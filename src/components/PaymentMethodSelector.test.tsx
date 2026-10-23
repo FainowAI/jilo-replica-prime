@@ -22,7 +22,7 @@ describe("PaymentMethodSelector", () => {
     expect(screen.getByText("Cartão de crédito")).toBeTruthy();
   });
 
-  it("mostra Alelo com a flag ligada", async () => {
+  it("mostra Alelo para todos com a flag ligada, sem link nem parâmetro", async () => {
     vi.stubEnv("VITE_ALELO_ENABLED", "true");
     await renderSelector();
     expect(screen.getByText("Alelo Refeição / Alimentação")).toBeTruthy();

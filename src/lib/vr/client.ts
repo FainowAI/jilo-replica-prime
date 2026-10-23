@@ -1,7 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
-import { encryptCard, type VrCardPlain } from "@/lib/vr/rsa";
-
-export type { VrCardPlain };
+/** Dados do cartão VR digitados no dialog. `data_expiracao` em AAMM; `documento` = CPF (só dígitos). */
+export interface VrCardPlain {
+  nome: string;
+  numero_cartao: string;
+  data_expiracao: string;
+  cvv: string;
+  documento: string;
+}
 
 export interface VrCheckoutInput {
   cartId: string;
@@ -31,17 +36,6 @@ export class VrCheckoutError extends Error {
   }
 }
 
-interface VrPublicKey {
-  key_id: string;
-  public_key: string;
-}
-
-const PUBLIC_KEY_TTL_MS = 10 * 60 * 1000;
-
-// ponytail: cache em variável de módulo (nunca storage) — dado sensível de
-// sessão de checkout, não precisa sobreviver a reload.
-let publicKeyCache: (VrPublicKey & { fetchedAt: number }) | null = null;
-
 const GENERIC_ERROR_MESSAGE = "Não foi possível processar o pagamento. Tente novamente.";
 
 /** Lê o body de erro de um FunctionsHttpError do supabase-js v2 (context: Response). */
@@ -66,53 +60,21 @@ function statusOf(error: unknown): number {
   return 0;
 }
 
-export async function getVrPublicKey(): Promise<VrPublicKey> {
-  const now = Date.now();
-  if (publicKeyCache && now - publicKeyCache.fetchedAt < PUBLIC_KEY_TTL_MS) {
-    return { key_id: publicKeyCache.key_id, public_key: publicKeyCache.public_key };
-  }
-
-  const { data, error } = await supabase.functions.invoke<VrPublicKey>("vr-public-key", { body: {} });
-  if (error) {
-    const body = await readErrorBody(error);
-    throw new VrCheckoutError({
-      status: statusOf(error),
-      code: body.code ?? "vr_error",
-      userMessage: body.userMessage ?? GENERIC_ERROR_MESSAGE,
-    });
-  }
-  if (!data) {
-    throw new VrCheckoutError({ status: 0, code: "bad_response", userMessage: GENERIC_ERROR_MESSAGE });
-  }
-
-  publicKeyCache = { ...data, fetchedAt: now };
-  return { key_id: data.key_id, public_key: data.public_key };
-}
-
-export function invalidateVrPublicKey(): void {
-  publicKeyCache = null;
-}
-
 export async function payWithVr(
   input: VrCheckoutInput,
   card: VrCardPlain,
 ): Promise<{ orderName: string; orderId: string }> {
-  const { key_id: keyId, public_key: publicKey } = await getVrPublicKey();
-  const cardEncrypted = await encryptCard(publicKey, card);
-
-  // `card.documento` já é o CPF (só dígitos) validado no dialog; a loja (Brasil) exige o CPF
-  // do comprador no pedido — vai em claro aqui (só ele) para virar localizedFields
-  // TAX_CREDENTIAL_BR no draft order (achado E2E 2026-09-25, ver shopify-draft-order.ts).
+  // A VR recomendou cartão tokenizado (15/10/2026): o servidor tokeniza, paga com o token e o
+  // apaga. O cartão viaja só por TLS até a edge e nunca é salvo nem logado (decisão do dono, 21/10).
+  // `card.documento` é o CPF validado no dialog; vira o CPF do comprador no draft order.
+  const { documento, ...cardData } = card;
   const { data, error } = await supabase.functions.invoke<{ orderName: string; orderId: string }>("vr-checkout", {
-    body: { ...input, keyId, cardEncrypted, cpf: card.documento },
+    body: { ...input, card: cardData, cpf: documento },
   });
 
   if (error) {
     const body = await readErrorBody(error);
     const code = body.code ?? "vr_error";
-    if (code === "vr_error" || code === "vr_unavailable") {
-      invalidateVrPublicKey();
-    }
     throw new VrCheckoutError({
       status: statusOf(error),
       code,
