@@ -1,5 +1,13 @@
 # Estado do projeto Jilo
 
+> **EM ANDAMENTO — checkout Getnet fora do ar (desde 20/10; conferido em 25/10):**
+> - **Situação:** cartão e Pix pelo checkout Shopify continuam sem funcionar. Desde 20/10, todos os pedidos (#1030 a #1034) foram lançados à mão (`orders.payment_method = manual`); o último é de 23/10 11:36Z. `getnet_callbacks` só tem 1 linha, de 13/10. Conferido por SQL; não foi feita compra de teste em 25/10.
+> - **Causa (log da ByCoders, 22/10):** o OAuth na Getnet volta 200. O 401 vem da Shopify, quando os apps `card-getnet`/`pix-getnet` chamam `paymentSessionResolve/Pending`: `shopify_refresh_token_expired`, com o refresh token da loja vencido em 18/09/2026. Resolve reautorizar ou reinstalar os apps na Shopify, não trocar as chaves da Getnet.
+> - **Getnet:** em 24/10 abriu o pedido de chaves novas **V2**: protocolo `26103146125`, SS `1-100219027624`, prazo **28/10**. A resposta vai para o e-mail do Luiz.
+> - **Risco das chaves novas:** a Getnet avisou que, se as chaves atuais já estão em uso num e-commerce, "a produção irá parar" quando as novas forem liberadas. Ao chegarem, cadastrar as novas nos dois apps na mesma hora, de preferência junto com a reautorização.
+> - **Pendência ByCoders:** nenhuma resposta ao e-mail de 24/10 00:07Z (thread `1a16884e35a88bb0`), que pergunta: (1) se basta abrir os apps para reautorizar ou se é preciso reinstalar; (2) se a reinstalação apaga configuração e chaves e tira o provedor do checkout; (3) se há como avisar antes de o token vencer de novo (pedido do Luiz).
+> - **Próximo passo:** cobrar a ByCoders; com o procedimento em mãos, reautorizar com o Luiz e testar uma compra de cartão e uma de Pix.
+
 > **EM ANDAMENTO — Alelo/Cielo (22/10):** causa de nenhuma compra Alelo passar: o script do SOP lê o CVV de `.bp-sop-cardcvv` e o site usava `bp-sop-cardcvvc` (erro da tabela da doc Cielo) → `onInvalid` em toda tentativa. **PR #22 mesclado (`2635c82`) e publicado no Lovable** (bundle `index-CnFf5yv4.js` com a classe certa, conferido). **PR #23 mesclado (`ef1de6f`) e publicado** (bundle `index-DQgzVAXL.js`: Storefront `2026-01` + `[String!]!`, conferido). **Edges Cielo republicadas em 22/10 ~04h UTC a partir de `ef1de6f`** com o `SUPABASE_ACCESS_TOKEN` do `.mcp.json` (o deploy do dono pela CLI não tinha atingido o projeto: `cielo-checkout` seguia v19 de 14/10 com `2025-07`): `cielo-checkout` v20, `cielo-sop-token` v21, `cielo-reconcile` v19; corpo publicado conferido (`2026-01`, `[String!]!`); smoke OPTIONS 204 e POST sem login 401. `ALELO_QA_EMAILS` existe (se preenchida, só a lista paga — conferir antes de abrir ao público); PIX5 com `[String!]!` na Storefront 2026-01 aplica num cart descartável (19,98 → 18,99) e o formato antigo dá "Nullability mismatch". **Liberado para o teste da Gisele** — primeira vez que a cobrança vai chegar à Cielo (`/v2/sales` DebitCard + PaymentToken + Elo nunca exercitado; habilitação Alelo no EC ainda sem confirmação escrita). Externos: e-mail à Alelo (canaiscriticos.ec@alelo.com.br, 22/10) e ticket Cielo "Gateway de Pagamento" (22/10) aguardando resposta; sandbox Cielo é cadastro do dono. Worktree `../jilo-alelo-sop` (junction de `node_modules`) pode ser removido.
 
 > **Alelo/Cielo, conferido em 22/10 (manhã):** `cielo_transactions` continua vazia (nenhuma cobrança). O e-mail de 22/10 02h59Z para `canaiscriticos.ec@alelo.com.br` **voltou**: a Alelo repassa esse endereço para `aleloatende.neoassist.com`, domínio que não existe (550 5.4.310). A confirmação escrita da Alelo NÃO foi pedida de fato, falta outro canal (RA HugMe ou telefone). O ticket Cielo virou o protocolo **2629500009564** (só recebimento, sem resposta).
@@ -13,8 +21,20 @@
 >   - Site publicado com o fix: bundle `index-DQgzVAXL.js` com `[String!]!` e `2026-01`.
 >   - #24 mesclado (`14ba2a2`).
 >   - `vr-checkout` v36 publicada (OPTIONS 204, sem JWT 401).
->   - O front do #24 só precisa de Publish quando a VR for ligada (`VITE_VR_ENABLED`).
-> - Rascunho de e-mail para Felipe e Rose no Gmail (thread `1a0d9f38dc8e7f2a`), sem envio.
+> - **VR no ar em 23/10 (conferido):**
+>   - Site publicado com a VR ligada: bundle `index-D7AY1qcf.js` com o flag `!0`.
+>   - `vr-checkout` v40, igual à `main`.
+>   - Secrets `VR_*` presentes. O dono afirma `VR_ENV=prod` e `VR_ID_FILIACAO` de produção; não verificamos o valor.
+>   - Ainda nenhuma compra pelo fluxo tokenizado deu certo; a última tentativa, de 22/10, deu `vr_tokenize_failed:vr_http_503`.
+>   - Pedido de compra real de teste mandado ao Luiz no grupo do WhatsApp em 23/10. Conferir em `vr_transactions`, na tag `vr` do pedido e em `orders.payment_method`.
+> - **Pendências com a VR (thread `1a0d9f38dc8e7f2a`):**
+>   - E-mail de 23/10 pede que o time de DX espelhe na App de produção (`c0fa77de…`) os Extra fields da HML (`allowed-environments` e `marketplace-id`), que só a VR/Sensedia edita. Na HML o `marketplace-id` é o ID Filiação, 148822.
+>   - A Rose pediu em 22/10 os cenários de transação negada na HML (saldo insuficiente, CVV inválido, validade diferente) para fechar a homologação; ainda não rodados.
+>   - Se a compra de teste der 403 "Este APP não pode ser usado para esse ambiente" ou `codigo -5`, faltam os Extra fields.
+> - **25/10 — teste real falhou; causa confirmada: falta o `marketplace-id` na App de produção.**
+>   - Às 18:43, 18:45 e 18:47Z, três tentativas de R$ 249,50 (`vr_transactions`): todas `vr_tokenize_failed:vr_http_400:400`, com `POST /cartoes -> 400` e `env=prod`. Nada foi cobrado e nenhum pedido foi criado. Ninguém avisou no WhatsApp; a última mensagem do grupo é de 24/10, "Pedi pra Patrícia".
+>   - Checagem só de leitura às 22:45Z (POST na `vr-public-key` com a sessão do Antônio, sem cartão): `GET /chaves/chave-publica -> 400 codigo=-5`, o mesmo erro "marketplace-id nulo ou vazio" da HML em 13/10. O OAuth de produção funciona.
+>   - Próximo passo: responder na thread `1a0d9f38dc8e7f2a` com essa evidência e pedir à VR/Sensedia que preencha o `marketplace-id` (ID Filiação de produção) nos Extra fields da App `c0fa77de…`. Depois, repetir a checagem da chave pública (precisa voltar 200) antes de pedir nova compra ao Luiz.
 > - HML da VR deu 503 em 22/10 00h15. Rodar `_hml/vr-checkout-hml-live.ts` (cria um pedido pago real com tag `vr-test`) só depois de confirmar que o Bling não emite nota de pedido `vr-test`.
 > - Os worktrees têm junction de `node_modules`: remover com `cmd /c rmdir node_modules` antes de apagá-los.
 

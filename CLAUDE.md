@@ -61,10 +61,42 @@ Como aplicar:
 - `.claude/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
 - `.claude/fluxo-analytics.md` — PostHog (produto): gate prod-only, eventos do funil, masking de PII
 - `.claude/fluxo-bling.md` — Bling (ERP/nota fiscal) ↔ Shopify: integração nativa, mapeamento de pedidos, bloqueios fiscais
+- `.claude/fluxo-autenticacao.md` — Login (e-mail/Google), templates de e-mail do Auth
+- `.claude/fluxo-shopify-sync.md` — Sincronização de clientes e pedidos com a Shopify
+- `.claude/fluxo-uber-direct.md` — Cotação e despacho Uber Direct
+- `.claude/fluxo-seo-geo.md` — SEO, sitemap e llms.txt
+- `.claude/requirements.md` — Regras de negócio numeradas (R1…)
+- `.claude/state.md` — Andamento do projeto e próximos passos
 - `.claude/adr/` — decisões de arquitetura (0001: Cielo conector + Alelo via API)
 
-## Regra de atualização
-Sempre que uma sessão do Claude Code modificar um fluxo documentado, ela DEVE atualizar o arquivo `.claude/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.claude/fluxo-[nome].md` e registrar aqui.
+## Documentação e engenharia de contexto (REGRA PERMANENTE — sempre aplicar)
+A documentação em `.claude/` é o contexto que a próxima sessão lê. Toda sessão que muda código, banco, integração ou regra de negócio DEVE atualizá-la **antes de dar a tarefa como concluída** (antes do commit/PR, no mesmo commit da mudança).
+
+Onde cada coisa vai (uma informação mora em um lugar só; os outros apontam para ele):
+| Arquivo | O que guarda | Como atualizar |
+|---|---|---|
+| `.claude/fluxo-[nome].md` | Como um fluxo funciona hoje: arquivos, edges, tabelas, secrets (só nomes), gotchas | Reescrever a parte que mudou para refletir o estado atual; não empilhar histórico. Fluxo novo → criar o arquivo e registrar em "Documentação de fluxos" |
+| `.claude/requirements.md` | Regras de negócio numeradas (R1, R2…) | Regra nova = próximo número livre. Regra alterada: riscar a antiga (`~~…~~ Atualizado em AAAA-MM-DD: … Vide Rnn.`), nunca renumerar nem apagar |
+| `.claude/state.md` | Andamento: o que está no ar, em andamento, bloqueado e o próximo passo | Bloco `> **EM ANDAMENTO — <assunto> (DD/MM):**` no topo para trabalho aberto; ao fechar, remover o bloco e deixar 1 linha na seção da sessão. Sessão nova = `## Sessão AAAA-MM-DD — <assunto>` logo abaixo dos blocos do topo |
+| `.claude/adr/NNNN-<titulo>.md` | Decisão de arquitetura com alternativas descartadas e o porquê | Criar quando escolher entre caminhos que alguém pode querer reverter; nunca editar o mérito de um ADR aceito — criar outro que o substitua |
+| `.claude/docs/` | EAPs, pesquisas, rascunhos para terceiros | Histórico datado (`### Atualização AAAA-MM-DD`) é permitido aqui |
+| `.claude/.work/<feature>/` | Rascunhos de execução (planos, mapas, evidências) | Descartável; o que importar sobe para fluxo/requirements/state |
+| `CLAUDE.md` → "Gotchas globais" | Armadilha que já causou incidente e vale para o projeto todo | 1 a 3 linhas com data e link para o fluxo; o detalhe fica no fluxo |
+
+Regras de escrita:
+1. **Datas absolutas** (`2026-10-23` ou `23/10`), nunca "ontem" ou "semana passada".
+2. **Estado verificado, não intenção.** Escrever o que foi conferido e como (versão da edge, bundle publicado, query). O que não foi conferido fica marcado como não verificado.
+3. **Nunca segredos** — nem token, chave, senha, PAN/CVV. Secrets só pelo nome (`VR_ENV`), IDs de integração só quando forem referência pública.
+4. **Fonte única.** `.claude/` é a única árvore de documentação; `AGENTS.md` (Codex) aponta para os mesmos arquivos. Não criar cópias em `.Codex/` nem em outro lugar.
+5. **Concisão.** Fluxo descreve o presente; histórico longo vai para `docs/` ou é apagado. Se `state.md` passar de ~300 linhas, resumir as sessões antigas fechadas.
+
+Checklist de fechamento (rodar antes de commit/PR):
+- [ ] Os fluxos tocados refletem o código e o deploy atuais?
+- [ ] Regra de negócio nova ou alterada está em `requirements.md` com número?
+- [ ] `state.md` diz o que está no ar, o que falta e o próximo passo?
+- [ ] Decisão de arquitetura relevante virou ADR?
+- [ ] Fluxo novo registrado na lista abaixo (aqui e no `AGENTS.md`)?
+- [ ] Nenhum segredo nos arquivos?
 
 ## Segurança de RLS (REGRA PERMANENTE — sempre aplicar)
 Toda tabela no schema `public` do Supabase contém ou pode conter dados de usuário (PII) e DEVE estar protegida por RLS. Ao criar ou alterar qualquer tabela/policy:
