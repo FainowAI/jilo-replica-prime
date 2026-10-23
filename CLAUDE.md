@@ -32,6 +32,7 @@ Como aplicar:
 - `npm run test` — testes unitários
 - `npm run seed` — seed de produtos no Shopify (requer SHOPIFY_ADMIN_TOKEN)
 - `npm run seed:collections` — criação de collections no Shopify
+- `npm run auth:emails` — publica `supabase/templates/*.html` como e-mails do Supabase Auth (requer SUPABASE_ACCESS_TOKEN)
 
 ## Rotas
 | Rota | Página | Descrição |

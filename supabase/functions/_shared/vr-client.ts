@@ -107,12 +107,13 @@ function basicAuth(clientId: string, clientSecret: string): string {
   return btoa(`${clientId}:${clientSecret}`);
 }
 
-async function requestGrantCode(clientId: string): Promise<string> {
+async function requestGrantCode(clientId: string, signal: AbortSignal): Promise<string> {
   const res = await fetch(`${VR_OAUTH_BASE}/oauth/grant-code`, {
     method: "POST",
     // O gateway Sensedia exige client_id também como header, além do body.
     headers: { "Content-Type": "application/json", client_id: clientId },
     body: JSON.stringify({ client_id: clientId, redirect_uri: "http://localhost/" }),
+    signal,
   });
   const text = await res.text();
   if (!res.ok) {
@@ -134,6 +135,7 @@ async function requestAccessToken(
   clientId: string,
   clientSecret: string,
   grant: { grant_type: "authorization_code"; code: string } | { grant_type: "refresh_token"; refresh_token: string },
+  signal: AbortSignal,
 ): Promise<VrTokenCache> {
   const res = await fetch(`${VR_OAUTH_BASE}/oauth/access-token`, {
     method: "POST",
@@ -146,6 +148,7 @@ async function requestAccessToken(
       Authorization: `Basic ${basicAuth(clientId, clientSecret)}`,
     },
     body: JSON.stringify(grant),
+    signal,
   });
   const text = await res.text();
   if (!res.ok) {
@@ -168,20 +171,20 @@ async function requestAccessToken(
   };
 }
 
-async function grantAndFetchToken(): Promise<string> {
+async function grantAndFetchToken(signal: AbortSignal): Promise<string> {
   const clientId = requireEnv("VR_CLIENT_ID");
   const clientSecret = requireEnv("VR_CLIENT_SECRET");
-  const code = await requestGrantCode(clientId);
-  const token = await requestAccessToken(clientId, clientSecret, { grant_type: "authorization_code", code });
+  const code = await requestGrantCode(clientId, signal);
+  const token = await requestAccessToken(clientId, clientSecret, { grant_type: "authorization_code", code }, signal);
   tokenCache = token;
   return token.access_token;
 }
 
-async function refreshWithToken(refreshToken: string): Promise<string> {
+async function refreshWithToken(refreshToken: string, signal: AbortSignal): Promise<string> {
   const clientId = requireEnv("VR_CLIENT_ID");
   const clientSecret = requireEnv("VR_CLIENT_SECRET");
   try {
-    const token = await requestAccessToken(clientId, clientSecret, { grant_type: "refresh_token", refresh_token: refreshToken });
+    const token = await requestAccessToken(clientId, clientSecret, { grant_type: "refresh_token", refresh_token: refreshToken }, signal);
     tokenCache = token;
     return token.access_token;
   } catch (err) {
@@ -191,30 +194,30 @@ async function refreshWithToken(refreshToken: string): Promise<string> {
     if (err instanceof VrApiError && (err.code === "vr_unauthorized" || err.status === 400)) {
       console.warn("[vr] refresh recusado, refazendo grant-code");
       tokenCache = null;
-      return await grantAndFetchToken();
+      return await grantAndFetchToken(signal);
     }
     throw err;
   }
 }
 
 /** Obtém um access_token válido, reutilizando o cache de módulo quando possível. */
-export async function getVrAccessToken(): Promise<string> {
+export async function getVrAccessToken(signal: AbortSignal = AbortSignal.timeout(VR_TIMEOUT_MS)): Promise<string> {
   const now = Date.now();
   if (tokenCache && tokenCache.expires_at - TOKEN_EXPIRY_MARGIN_MS > now) {
     return tokenCache.access_token;
   }
   if (tokenCache?.refresh_token) {
-    return await refreshWithToken(tokenCache.refresh_token);
+    return await refreshWithToken(tokenCache.refresh_token, signal);
   }
-  return await grantAndFetchToken();
+  return await grantAndFetchToken(signal);
 }
 
 /** Força renovação do token, ignorando validade do cache. Usado no retry de GET após 401. */
-export async function forceRefreshVrAccessToken(): Promise<string> {
+export async function forceRefreshVrAccessToken(signal: AbortSignal = AbortSignal.timeout(VR_TIMEOUT_MS)): Promise<string> {
   if (tokenCache?.refresh_token) {
-    return await refreshWithToken(tokenCache.refresh_token);
+    return await refreshWithToken(tokenCache.refresh_token, signal);
   }
-  return await grantAndFetchToken();
+  return await grantAndFetchToken(signal);
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +250,6 @@ function safeLogPath(path: string): string {
 /** Faz uma chamada à API Captura injetando auth, timeout e retry único de GET após 401. */
 export async function vrFetch<T = unknown>(path: string, init: RequestInit = {}, isRetry = false): Promise<T> {
   const clientId = requireEnv("VR_CLIENT_ID");
-  const token = await getVrAccessToken();
   const method = init.method ?? "GET";
   const logPath = safeLogPath(path);
 
@@ -255,7 +257,9 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
   const timeoutId = setTimeout(() => controller.abort(), VR_TIMEOUT_MS);
 
   let res: Response;
+  let text: string;
   try {
+    const token = await getVrAccessToken(controller.signal);
     res = await fetch(`${getVrCaptureBase()}${path}`, {
       ...init,
       headers: {
@@ -266,11 +270,13 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
       },
       signal: controller.signal,
     });
+    text = await res.text();
   } catch (err) {
-    if ((err as { name?: string })?.name === "AbortError") {
+    if (controller.signal.aborted || (err as { name?: string })?.name === "AbortError" || (err as { name?: string })?.name === "TimeoutError") {
       console.error(`[vr] ${method} ${logPath} -> timeout`);
       throw new VrApiError({ code: "vr_timeout" });
     }
+    if (err instanceof VrApiError) throw err;
     // ponytail: vocabulário fechado no ticket 01 (timeout/401/http/bad_response);
     // falha de rede pura (DNS, conexão recusada) é rara aqui e cai em
     // vr_bad_response — promover pra um vr_network dedicado se aparecer em prod.
@@ -288,7 +294,6 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
     return vrFetch<T>(path, init, true);
   }
 
-  const text = await res.text();
   let body: unknown = undefined;
   if (text) {
     try {
@@ -300,7 +305,8 @@ export async function vrFetch<T = unknown>(path: string, init: RequestInit = {},
 
   if (!res.ok) {
     const b = (body ?? {}) as { codigo?: string; mensagem?: string };
-    console.error(`[vr] ${method} ${logPath} -> ${res.status}${b.codigo ? ` codigo=${b.codigo}` : ""}`);
+    // O gateway pode devolver texto arbitrário em `codigo`; logs ficam no vocabulário fechado.
+    console.error(`[vr] ${method} ${logPath} -> ${res.status}`);
     throw new VrApiError({
       status: res.status,
       codigo: b.codigo,
@@ -334,6 +340,9 @@ export async function getPublicKey(): Promise<{ key_id: string; public_key: stri
     return { key_id: publicKeyCache.key_id, public_key: publicKeyCache.public_key };
   }
   const data = await vrFetch<{ key_id: string; public_key: string }>("/chaves/chave-publica");
+  if (typeof data.key_id !== "string" || !data.key_id || typeof data.public_key !== "string" || !data.public_key) {
+    throw new VrApiError({ code: "vr_bad_response" });
+  }
   publicKeyCache = { env, key_id: data.key_id, public_key: data.public_key, fetched_at: now };
   return { key_id: data.key_id, public_key: data.public_key };
 }
@@ -409,9 +418,9 @@ export async function getTransaction(idTransacaoOuVan: string): Promise<Consulta
 
 /**
  * Idempotente: consulta antes de estornar; no-op se já CANCELADA/CANCELAMENTO_PENDENTE.
- * `valorCents` menor que o valor total da transação = reembolso PARCIAL — a VR aceita e a
- * transação continua CONFIRMADA, então a guarda de idempotência acima não bloqueia um
- * segundo parcial (só bloqueia repetir um estorno TOTAL já efetivado).
+ * `valorCents` menor que o valor consultado solicita um estorno parcial. Em HML (16/10),
+ * após estornar 40% a consulta devolveu CANCELADA com valor igual ao estorno, não o
+ * saldo original. Não inferir saldo remanescente nem repetir estorno sem reconciliação.
  */
 export async function refund(
   params: { idTransacao: string; valorCents: number },
@@ -444,7 +453,8 @@ export interface TransacaoReserva {
   id_filiacao?: string;
   valor: number;
   data?: string;
-  status: VrTransactionStatus;
+  /** HML devolveu CONFIRMED antes e CANCELED após PATCH cancelar em 16/10. */
+  status: VrTransactionStatus | "CONFIRMED" | "CANCELED";
   codigo_retorno: string;
   codigo_autorizacao?: string;
   mensagem?: string;
@@ -520,7 +530,11 @@ export interface ConsultaCartaoRetorno {
 }
 
 export async function tokenizeCard(card: VrTokenizeCardInput): Promise<CriacaoCartaoRetorno> {
-  return await vrFetch<CriacaoCartaoRetorno>("/cartoes", { method: "POST", body: JSON.stringify(card) });
+  const result = await vrFetch<CriacaoCartaoRetorno>("/cartoes", { method: "POST", body: JSON.stringify(card) });
+  if (typeof result?.cartao_token_id !== "string" || !result.cartao_token_id.trim()) {
+    throw new VrApiError({ code: "vr_bad_response", mensagem: "Resposta de tokenização sem cartao_token_id." });
+  }
+  return result;
 }
 
 export async function getTokenizedCard(cartaoId: string): Promise<ConsultaCartaoRetorno> {

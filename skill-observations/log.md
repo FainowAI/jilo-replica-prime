@@ -270,3 +270,78 @@ DECLINED = user decided not to pursue
 **Suggested improvement:** Em feature-builder, quando a execução inclui mudanças em sistemas externos (ERP, painel de gateway, Admin de loja), listar cada alteração com valor antes→depois no gate da Fase 4 e obter aprovação item a item; brief do subagente cita a aprovação literal e restringe a lista PERMITIDO.
 
 **Principle:** Autorização ampla ("configure tudo") não basta para escrita em sistema compartilhado; a aprovação precisa nomear a alteração. Pedir isso antes poupa um despacho barrado.
+
+### Observation 19: Config remota com segredos — filtrar chaves na leitura, subagentes só escrevem arquivo, orquestrador publica uma vez
+**Status:** OPEN
+
+**Date:** 2026-10-13
+**Session context:** Verificar se os e-mails do Supabase Auth tinham a identidade da marca e, se não, codar cada template com feature-coders e publicar.
+**Skill:** feature-builder
+**Type:** open-source
+**Phase/Area:** Leitura do estado real (Fase de mapeamento) e publicação em sistema externo
+
+**Issue:** O GET em /config/auth foi salvo inteiro num arquivo do scratchpad. Ele traz segredos de OAuth, e o classificador barrou as leituras seguintes desse arquivo ("Credential Materialization"). Isso só se resolveu apagando o dump e relendo da API apenas as chaves necessárias (mailer_*, site_url, uri_allow_list). Na execução, 5 feature-coders em paralelo (um por template, cada um escrevendo só o próprio arquivo, sem token e sem publicar) mais uma única PATCH do orquestrador com releitura de verificação funcionaram sem conflito.
+
+**Suggested improvement:** Na fase de mapeamento da feature-builder, ao ler config de serviço externo, filtrar as chaves no momento da leitura e nunca persistir o objeto inteiro. Na execução, quando o destino é uma config remota única, subagentes produzem artefatos versionados no repo e o orquestrador publica uma vez, com backup só das chaves alteradas e releitura para conferir.
+
+**Principle:** Endpoints de configuração misturam o que se quer mudar com segredos. Ler só o necessário evita bloqueio e vazamento, e concentrar a escrita num único publicador evita corrida entre agentes paralelos sobre o mesmo recurso.
+
+### Observation 20: "Não temos o botão" pode ser ponto de entrada errado — mapear entradas e checar o bundle publicado antes de construir
+**Status:** OPEN
+
+**Date:** 2026-10-13
+**Session context:** O dono disse que o site não tinha "Esqueci a senha" e pediu para colocar. O fluxo completo já estava em produção (páginas, rotas e link em /login, conferido no bundle publicado), mas o modal de login, que é a entrada usada pelo cabeçalho, carrinho e seletor de endereço, não tinha o link.
+**Skill:** feature-builder
+**Type:** open-source
+**Phase/Area:** Leitura/mapeamento antes do plano
+
+**Issue:** Construir o fluxo do zero teria duplicado páginas que já existiam. O que resolveu foi: grep do fluxo, listar todos os componentes que abrem o login e baixar o JS publicado procurando as strings do fluxo. O conserto ficou em 1 link num componente mais o preenchimento do e-mail.
+
+**Suggested improvement:** Na fase de leitura da feature-builder, quando o pedido for "falta X no site", checar (1) se X já existe no código, (2) por quais pontos de entrada o usuário chega e quais mostram X, e (3) se o bundle publicado contém X. Só então decidir entre construir, ligar ou publicar.
+
+**Principle:** Uma feature "ausente" para o usuário muitas vezes existe, mas não está no caminho que ele usa. Mapear pontos de entrada e o que está de fato publicado evita retrabalho e acha o menor diff.
+
+### Observation 21: Preencher formulário de terceiros a partir do CV — separar "dado do CV" de "decisão do dono"
+**Status:** OPEN
+
+**Date:** 2026-10-14
+**Session context:** Cadastro de speaker num formulário externo (diretório de professores de IA) preenchido via Claude in Chrome a partir do CV mais recente (pasta `Desktop/Curriculo Antonio Marberger`).
+**Skill:** New skill candidate: preencher-formulario-com-cv (ou extensão de claude-in-chrome/resume-ats-optimizer)
+**Type:** internal
+**Phase/Area:** Mapeamento de campos e gate de decisão antes de enviar
+
+**Issue:** O pedido foi "pegue meu último CV e preencha todas as infos". Metade do formulário (valor/hora, modelo presencial/online, NF, viagem, aval do empregador, direito de imagem) não sai do CV; havia um campo honeypot ("Não preencha este campo") e um consentimento legal obrigatório. O fluxo que funcionou: localizar o CV pela página do wiki da pessoa, mapear campos por JS (ids, selects, chips `span.topic`, botões `tri-btns`), preencher só o que o CV sustenta, clicar chips pelo handler da página, deixar consentimento/envio para o dono e devolver UMA lista de perguntas.
+
+**Suggested improvement:** Skill/recipe com: (1) achar o CV mais recente pela pasta canônica + wiki da pessoa; (2) mapear campos por JS e marcar honeypots; (3) texto público (bio) só com métricas já liberadas e sem nomes de clientes; (4) não promover "expositor" a "palestrante"; (5) checklist único de perguntas para o que não está no CV; (6) nunca enviar nem dar consentimento sem OK.
+
+**Principle:** Em preenchimento de formulário em nome do usuário, o CV cobre fatos, não decisões comerciais/legais — separar as duas classes cedo evita inventar resposta e permite uma única rodada de perguntas.
+
+### Observation 22: Pós-call comercial → CRM → entrega → formulário de pré-onboarding é um fluxo repetido sem skill e sem ferramenta MCP completa
+**Status:** OPEN
+
+**Date:** 2026-10-14
+**Session context:** O usuário pediu para analisar a transcrição de uma call de vendas (Gemini/Meet no Drive), cadastrar lead + contato, marcar o negócio como "Assinado" e devolver o link do formulário de 25 perguntas.
+**Skill:** New skill candidate: crm-pos-call-fainow
+**Type:** internal
+**Phase/Area:** Comercial / CRM fainow-admin
+
+**Issue:** O mesmo fluxo já se repetiu com vários leads (Leonardo, Caio, Pedro e agora SSOil):
+1. Achar a transcrição no Drive ("Anotações do Gemini" mais recente).
+2. Extrair empresa, pessoas, dores e próximos passos.
+3. Criar empresa, contatos e negócio no CRM.
+4. Mover para ganho.
+5. Iniciar a entrega.
+6. Aplicar o formulário de pré-onboarding.
+
+O conector claude.ai fainow-admin não tem ferramenta para criar lead, iniciar entrega nem aplicar formulário: são só server actions da UI (criarLeadAction, criarEntregaDeNegocioAction, aplicarFormularioEntregaAction). O agente precisou descobrir isso lendo o código em web-site2.0/apps/admin e cair no navegador, que exige login manual do usuário. O transcript não traz telefone (foi passado no chat do Meet) nem o nome jurídico da empresa: o título dizia "CSA", e o domínio do e-mail revelou SSOil Energy.
+
+**Suggested improvement:** Criar uma skill interna que fixe o roteiro:
+- Busca no Drive por modifiedTime de hoje e título "Anotações do Gemini".
+- Dedupe com buscar no CRM.
+- Ordem empresa → contatos → negócio (responsável = quem fez a call) → etapa → atividade de reunião.
+- Valor null e motivo "provisório" quando o ganho é só para liberar o formulário.
+- Avisar que telefone e e-mail do chat do Meet não vêm no transcript.
+
+E pedir ao dono do admin três ferramentas MCP (criar_lead, iniciar_entrega, aplicar_formulario_entrega) para o fluxo não depender de navegador logado.
+
+**Principle:** Quando um fluxo operacional se repete por vários clientes e esbarra sempre na mesma lacuna de ferramenta, a lacuna é o gargalo real. Registrar o roteiro e a lacuna juntos evita redescobrir o código a cada vez.

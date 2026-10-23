@@ -1,5 +1,40 @@
 # Estado do projeto Jilo
 
+> **EM ANDAMENTO — Alelo/Cielo (22/10):** causa de nenhuma compra Alelo passar: o script do SOP lê o CVV de `.bp-sop-cardcvv` e o site usava `bp-sop-cardcvvc` (erro da tabela da doc Cielo) → `onInvalid` em toda tentativa. **PR #22 mesclado (`2635c82`) e publicado no Lovable** (bundle `index-CnFf5yv4.js` com a classe certa, conferido). **PR #23 mesclado (`ef1de6f`) e publicado** (bundle `index-DQgzVAXL.js`: Storefront `2026-01` + `[String!]!`, conferido). **Edges Cielo republicadas em 22/10 ~04h UTC a partir de `ef1de6f`** com o `SUPABASE_ACCESS_TOKEN` do `.mcp.json` (o deploy do dono pela CLI não tinha atingido o projeto: `cielo-checkout` seguia v19 de 14/10 com `2025-07`): `cielo-checkout` v20, `cielo-sop-token` v21, `cielo-reconcile` v19; corpo publicado conferido (`2026-01`, `[String!]!`); smoke OPTIONS 204 e POST sem login 401. `ALELO_QA_EMAILS` existe (se preenchida, só a lista paga — conferir antes de abrir ao público); PIX5 com `[String!]!` na Storefront 2026-01 aplica num cart descartável (19,98 → 18,99) e o formato antigo dá "Nullability mismatch". **Liberado para o teste da Gisele** — primeira vez que a cobrança vai chegar à Cielo (`/v2/sales` DebitCard + PaymentToken + Elo nunca exercitado; habilitação Alelo no EC ainda sem confirmação escrita). Externos: e-mail à Alelo (canaiscriticos.ec@alelo.com.br, 22/10) e ticket Cielo "Gateway de Pagamento" (22/10) aguardando resposta; sandbox Cielo é cadastro do dono. Worktree `../jilo-alelo-sop` (junction de `node_modules`) pode ser removido.
+
+> **Alelo/Cielo, conferido em 22/10 (manhã):** `cielo_transactions` continua vazia (nenhuma cobrança). O e-mail de 22/10 02h59Z para `canaiscriticos.ec@alelo.com.br` **voltou**: a Alelo repassa esse endereço para `aleloatende.neoassist.com`, domínio que não existe (550 5.4.310). A confirmação escrita da Alelo NÃO foi pedida de fato, falta outro canal (RA HugMe ou telefone). O ticket Cielo virou o protocolo **2629500009564** (só recebimento, sem resposta).
+
+> **EM ANDAMENTO — VR token + cupom quebrado (21–22/10):**
+> - **PR #23** (`hotfix/storefront-discount-codes`, worktree `../jilo-hotfix-cupom`): a Shopify serve a Storefront 2026-01 no lugar da 2025-07, e o `discountCodes` virou `[String!]!`. Os cupons (PIX5/BEMVINDO10) não aplicavam no site (confirmado no console de produção em 22/10) e o PIX5 do servidor quebrava o Alelo.
+> - **PR #24** (`feature/vr-token-checkout`, worktree `../jilo-vr-token`): cartão VR tokenizado no servidor, com a auditoria aplicada.
+> - **No ar em 22/10:**
+>   - #23 mesclado (`ef1de6f`).
+>   - `cielo-checkout` v21 publicada a partir da main.
+>   - Site publicado com o fix: bundle `index-DQgzVAXL.js` com `[String!]!` e `2026-01`.
+>   - #24 mesclado (`14ba2a2`).
+>   - `vr-checkout` v36 publicada (OPTIONS 204, sem JWT 401).
+>   - O front do #24 só precisa de Publish quando a VR for ligada (`VITE_VR_ENABLED`).
+> - Rascunho de e-mail para Felipe e Rose no Gmail (thread `1a0d9f38dc8e7f2a`), sem envio.
+> - HML da VR deu 503 em 22/10 00h15. Rodar `_hml/vr-checkout-hml-live.ts` (cria um pedido pago real com tag `vr-test`) só depois de confirmar que o Bling não emite nota de pedido `vr-test`.
+> - Os worktrees têm junction de `node_modules`: remover com `cmd /c rmdir node_modules` antes de apagá-los.
+
+> **EM ANDAMENTO — login-google-shopify (13/10):** PRs **#15** (C1 + Alelo Mês/Ano) e **#16** (F1 login) MESCLADOS na main em 13/10 (`401558e`; main com Vitest 82/82 e tsc limpo) — falta o Publish no Lovable (re-auditoria: 0 crít./0 alto; M1 aplicado). Já em produção: migration C1 `20261013215411`, `customer-orders` v29, `auth-login-hint` stub v8, RPC removida (`20261013221839`). Falta: (1) publicar `cielo-checkout`/`vr-checkout` com o guarda de GID (`_shared/shopify-draft-order.ts`, defesa em profundidade); (2) F0 do dono: ocultar login da Shopify no checkout, conferir plano Resend, orientar 4 contas não confirmadas; (3) F2 código por e-mail (precisa Turnstile + templates `{{ .Token }}` + `otp_length` 6 + expiração 10–15 min, ver `security.md` A1/M2); (4) apagar a edge `auth-login-hint` no painel depois do Publish. ATENÇÃO: a branch `feature/getnet-callback` tem o `customer-orders` antigo — não publicar essa função a partir dela. Worktrees: `../jilo-alelo-prod` (fix/c1-e-validade-alelo) e `../jilo-login-f1` (fix/login-f1). Relatórios em `.claude/.work/login-google-shopify/`.
+
+> **EM ANDAMENTO — getnet-callback (13/10):** `/feature-builder` planejando edge `getnet-callback` (cartão: `orderMarkAsPaid` pelo `paymentId`; Pix: criar pedido na Shopify). Pasta `.claude/.work/getnet-callback/`: `code-map-pedidos.md`, `code-map-checkout.md` (explorers concluídos) e `plan.md` (rascunho do desenho + fatos confirmados). Gate respondido (ver `plan.md`). Getnet abriu chamado N2 08253467 (3 dias úteis); dono mandou seguir sem esperar. **Camada de tickets ativa:** `tickets/_map.md` + 01..05; `security.md` (rodada 1: 4 ALTO, mitigações consolidadas no mapa). Dono aprovou (teto R$ 600, recência 30 min, freio 10/h). **Ticket 01 in-progress** com feature-coder no worktree `../jilo-getnet-callback` (branch `feature/getnet-callback`, de origin/main e8ecca9). Migration/deploy só com OK do dono.
+
+## Sessão 2026-10-14 — VR HML: marketplace-id resolvido, preflight verde
+
+- **marketplace-id `148822` cadastrado no Extra field da App HML** (informado pelo Antônio, 14/10).
+- **Preflight 14/10 13:16 UTC (`_hml/vr-homologacao.ts --preflight`, só leitura):** OAuth ok + `GET api-hmp…/captura/v2/chaves/chave-publica` → **200**, `key_id=0ad331c7-a139-1394-81a1-3a8e9a900000`. O 400 `codigo=-5` sumiu.
+- **Cenários com transação NÃO rodados:** (1) padding/plaintext RSA de `cartao_dados_criptografados` ainda sem resposta oficial (Felipe, 09/10: "em breve retornaremos sobre o Padding RSA"; nada depois no Gmail); a CLI segue bloqueada de propósito. (2) `VR_TEST_CARD_VALIDADE` no `.env.vr-hml` está no formato `NN/NN` (5 chars), mas o código espera `AAMM` — normalizar antes de rodar. Próximo passo: OK do Antônio + padding definido → rodar só o cenário de confirmação (R$ 10), uma vez.
+- **Atualização 14/10 tarde.**
+  - **Call das 10h com o Leone** (ata e transcrição do Gemini no Drive): ele cadastrou o marketplace-id no Extra field e a chave pública deu 200 ao vivo. O Gemini transcreveu "14882"; o valor certo é **148822**. O Leone não sabe responder sobre cifra nem cartão de teste, porque isso é com o time de Captura.
+  - **E-mail do Leone, 14/10 11:49:** mandou a massa de teste do Felipe. O `.env.vr-hml` já tem exatamente esse cartão; conferido mascarado (final 2624, validade `08/30` = MM/AA, que `normalizeTestCardExpiry` converte em `3008`). Questão da validade resolvida.
+  - **Cifra:** "encaminhada ao time da Bandeira"; a resposta virá na mesma thread. Até lá os 5 cenários que cifram seguem bloqueados.
+  - **Caminho sem cifra** (tokenização: `POST /cartoes` em claro → pagamento com `cartao_token_id` → `DELETE`): tentei liberar só ele na CLI com uma flag `--only tokenizacao`. O classificador de permissões negou a edição da trava como "Security Weaken". Reverti tudo; o arquivo está como antes e os 9 testes passam. Nenhuma transação rodou.
+  - **Resposta ao Leone enviada em 14/10 com OK do Antônio** (reply-all na thread `1a0d9f38dc8e7f2a`, msg `1a13b1460665d3b2`). Perguntas: (1) evidência via `cartao_token_id` vale para as 5 funcionalidades? (2) cifra: OAEP-SHA256 ou PKCS#1 v1.5, formato do plaintext, saída em Base64.
+  - **Depende do Antônio:** liberar a edição da trava só para a tokenização (ou esperar a resposta da VR).
+
 ## Sessão 2026-10-13 — VR HML: 403 resolvido, agora 400 marketplace-id
 
 - **E-mail Leone (Sensedia), 13/10 09:04:** causa do 403 era o interceptor "Restringir Acesso aos Ambientes"; ele configurou `allowed-environments` nos Extra fields, validou escopos e **voltou o plano para a versão anterior** (exigência do interceptor + do path `/chaves/chave-publica`).

@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SHIPPING_FREE_THRESHOLD } from "../_shared/shipping-constants.ts";
 import { getShopifyAdminToken, forceRefreshShopifyAdminToken } from "../_shared/shopify-admin-auth.ts";
 import { mapFinancialStatus } from "../_shared/order-status-map.ts";
+import { resolveOrderPaymentMethod } from "../_shared/order-payment-method.ts";
 import { readRawBody, verifyShopifyHmac } from "../_shared/shopify-webhook-body.ts";
 
 const SHOPIFY_SHIPPING_VARIANT_GID = Deno.env.get("SHOPIFY_SHIPPING_VARIANT_ID") ?? "";
@@ -43,16 +44,9 @@ function extractOrderData(payload: any) {
   // Pedido pago fora da Shopify pelo vr-checkout (EAP pagamento-vr) chega como draft order
   // completado, sem gateway real. A marca confiável é a TAG "vr": tags só entram pela Admin
   // API (o cliente não forja via Storefront), diferente de note_attributes (auditoria B1).
-  // Mesma regra para o cielo-checkout (tag "alelo"). Precedência: vr > alelo > gateway —
-  // os dois fluxos nunca marcam o mesmo pedido; só staff edita tags (security.md B1).
-  const orderTags = String(payload.tags ?? "")
-    .split(",")
-    .map((t: string) => t.trim().toLowerCase());
-  const paymentMethod = orderTags.includes("vr")
-    ? "vr"
-    : orderTags.includes("alelo")
-    ? "alelo"
-    : payload.payment_gateway_names?.[0] || null;
+  // Mesma regra para Cielo e Getnet Pix. Precedência: vr > alelo > getnet-pix > gateway —
+  // esses fluxos nunca marcam o mesmo pedido; só staff edita tags (security.md B1).
+  const paymentMethod = resolveOrderPaymentMethod(payload.tags, payload.payment_gateway_names);
 
   const { status, payment_status } = mapFinancialStatus(payload.financial_status, payload.cancelled_at);
 

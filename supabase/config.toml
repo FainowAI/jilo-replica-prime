@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.auth-login-hint]
 verify_jwt = false
+
+[functions.getnet-callback]
+verify_jwt = false
