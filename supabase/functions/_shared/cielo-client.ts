@@ -273,10 +273,12 @@ export async function createVoucherSale(i: {
       DebitCard: { PaymentToken: i.paymentToken, Brand: "Elo" },
     },
   };
+  // /1/sales/, não /v2/sales/: a doc do SOP cita /v2/sales/, mas nos hosts cieloecommerce essa rota dá 404
+  // (conferido em 26/10/2026 em prod e sandbox; /v2/sales só existe na Braspag, que usa outra credencial).
   const data = await cieloFetch(
     "POST",
-    "/v2/sales/",
-    `${hosts.api}/v2/sales/`,
+    "/1/sales/",
+    `${hosts.api}/1/sales/`,
     merchantHeaders(),
     JSON.stringify(body),
     i.merchantOrderId,

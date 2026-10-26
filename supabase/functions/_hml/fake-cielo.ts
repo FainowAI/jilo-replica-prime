@@ -79,7 +79,7 @@ export function startFakeCielo(opts: { hangMs?: number } = {}): FakeCielo {
     // Demais rotas: credenciais do merchant.
     if (!req.headers.get("MerchantId") || !req.headers.get("MerchantKey")) return json([{ Code: 132 }], 401);
 
-    if (req.method === "POST" && path === "/v2/sales/") {
+    if (req.method === "POST" && path === "/1/sales/") {
       const b = await req.json().catch(() => null);
       const pay = b?.Payment;
       const token = String(pay?.DebitCard?.PaymentToken ?? "");
