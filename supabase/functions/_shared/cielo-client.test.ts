@@ -107,7 +107,7 @@ Deno.test("hosts fixos por env (sandbox e prod)", async () => {
     await withStubs(() => jsonRes(saleJson()), async (calls) => {
       await createVoucherSale({ merchantOrderId: "JAORDER1", amountCents: 5990, paymentToken: PAYMENT_TOKEN, holderName: HOLDER });
       await getSale("pay-1");
-      assertEquals(calls[0].url, `${api}/v2/sales/`);
+      assertEquals(calls[0].url, `${api}/1/sales/`);
       assertEquals(calls[1].url, `${query}/1/sales/pay-1`);
     });
   }
@@ -321,7 +321,7 @@ Deno.test("logs nunca contêm MerchantKey, tokens ou holder", async () => {
       await getSale("pay-1");
       await voidSale("pay-1", 5990);
       const all = logs.join("\n");
-      assert(all.includes("[cielo] POST /v2/sales/ -> 201 JAORDER1"));
+      assert(all.includes("[cielo] POST /1/sales/ -> 201 JAORDER1"));
       for (const s of [KEY, SECRET, PAYMENT_TOKEN, HOLDER, "SENTINEL-BEARER", "SENTINEL-SOP", "pay-1", "508054"]) {
         assert(!all.includes(s), `log vazou ${s}`);
       }
