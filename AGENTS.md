@@ -36,16 +36,16 @@ E-commerce da marca Jilo (DaJu Alimentação) — marmitas artesanais congeladas
 - **NÃO há tabelas de produtos/pedidos no Supabase** — tudo via Shopify
 
 ## Documentação de fluxos
-- `.Codex/fluxo-infraestrutura.md` — Stack, padrões, banco de dados
-- `.Codex/fluxo-catalogo-produtos.md` — Listagem, filtro, busca de produtos
-- `.Codex/fluxo-carrinho-checkout.md` — Carrinho, cupom, frete e checkout via Shopify
-- `.Codex/fluxo-perfil-usuario.md` — Perfil de usuário no Supabase
-- `.Codex/fluxo-kits.md` — Kits temáticos e Kit Livre, descontos progressivos
-- `.Codex/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
-- `.Codex/fluxo-pagamento-vr.md` - Checkout VR, homologação e bloqueios de produção
+- `.claude/fluxo-infraestrutura.md` — Stack, padrões, banco de dados
+- `.claude/fluxo-catalogo-produtos.md` — Listagem, filtro, busca de produtos
+- `.claude/fluxo-carrinho-checkout.md` — Carrinho, cupom, frete e checkout via Shopify
+- `.claude/fluxo-perfil-usuario.md` — Perfil de usuário no Supabase
+- `.claude/fluxo-kits.md` — Kits temáticos e Kit Livre, descontos progressivos
+- `.claude/fluxo-validacao-cep.md` — Validação de CEP via ViaCEP, whitelist de áreas atendidas
+- `.claude/fluxo-pagamento-vr.md` — (ainda em `.Codex/`, migrar para `.claude/`) Checkout VR, homologação e bloqueios de produção
 
 ## Regra de atualização
-Sempre que uma sessão do Codex modificar um fluxo documentado, ela DEVE atualizar o arquivo `.Codex/` correspondente com as mudanças feitas. Se um novo fluxo for criado, criar o arquivo `.Codex/fluxo-[nome].md` e registrar aqui.
+A documentação do projeto vive só em `.claude/` (fluxos, `requirements.md`, `state.md`, `adr/`). Toda sessão do Codex que mudar código, banco, integração ou regra de negócio DEVE atualizar esses arquivos antes de concluir, seguindo a seção "Documentação e engenharia de contexto" do `CLAUDE.md` (onde cada coisa vai, regras de escrita e checklist de fechamento). Não criar arquivos novos em `.Codex/`.
 
 ## Gotchas globais
 - O catálogo NÃO está no Supabase — está no Shopify. Qualquer mudança em produtos é feita via Shopify Admin ou scripts de seed.
