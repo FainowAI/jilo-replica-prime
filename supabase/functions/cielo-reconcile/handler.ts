@@ -11,7 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { findSalesByMerchantOrderId, getSale, voidSale, type CieloSale } from "../_shared/cielo-client.ts";
 import { deleteDraftOrder } from "../_shared/shopify-draft-order.ts";
-import { classifySale, defaultSendAlert, findIdsOrEmpty, getDraftOrderStatus, isSameBrtDay, SAFE_RELEASE_MIN, type DraftStatus, type SendAlert } from "../_shared/cielo-support.ts";
+import { classifySale, defaultSendAlert, findIdsOrEmpty, getDraftOrderStatus, isSameBrtDay, SAFE_RELEASE_MIN, safeReturnCode, type DraftStatus, type SendAlert } from "../_shared/cielo-support.ts";
 
 export interface PendingRow {
   id: string;
@@ -135,6 +135,22 @@ export async function handleCieloReconcile(req: Request, deps: ReconcileDeps): P
       if (kind === "declined") {
         await deps.db.update(row.id, { status: "declined" });
         if (row.shopify_draft_order_id) await deps.draft.delete(row.shopify_draft_order_id);
+        continue;
+      }
+      // 3b. Falha sem cobrança (R-2): a Cielo cancelou sozinha ou Status 0 com ReturnCode de erro.
+      // Não há o que anular (a venda não chegou ao emissor) => libera o cart como error.
+      // 3c. Status 0 ainda pendente após D0: a Cielo não finalizou em um dia civil => mesma liberação.
+      const failed = kind === "failed";
+      if (failed || (kind === "pending" && sale.status === 0 && !sameDay)) {
+        const code = sale.returnCode ? safeReturnCode(sale.returnCode) : "none";
+        const error = failed
+          ? sale.tryAutomaticCancellation ? "cielo_auto_cancelled:0" : `cielo_status${sale.status}_${code}:0`
+          : `cielo_status0_${code}_past_d0:0`;
+        await deps.db.update(row.id, { status: "error", error });
+        if (row.shopify_draft_order_id) await deps.draft.delete(row.shopify_draft_order_id);
+        console.log(`[cielo-reconcile] released ${failed ? "failed" : "past_d0"} ${row.merchant_order_id}`);
+        // past_d0_status0: conferir a venda no portal Cielo; se tiver sido capturada depois, o estorno é via Alelo.
+        await (failed ? alert("failed_released", sale.returnCode ? code : "auto_cancel") : alert("past_d0_status0", code));
         continue;
       }
       // 4. Não terminal (0/1/12/desconhecido): mantém e alerta. M4: Authorized (1) retém saldo —

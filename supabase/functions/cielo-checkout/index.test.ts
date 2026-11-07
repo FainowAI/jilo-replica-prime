@@ -352,3 +352,71 @@ Deno.test("rate limit: 5 recusas => 429; breaker => 503", async () => {
   b.deps.db.countRecentEnvDeclines = async () => 30;
   assertEquals((await handleCieloCheckout(req(), b.deps)).status, 503);
 });
+
+const MERCHANT_CFG = { classifyReturnCode: () => ({ kind: "merchant_config" as const, userMessage: "Pagamento indisponível." }) };
+
+Deno.test("Status 0 + ReturnCode 002 => 502 alelo_error, row error, draft apagado, alerta, carrinho liberado", async () => {
+  let sales = 0;
+  const s = build({}, { ...MERCHANT_CFG, createVoucherSale: async () => { sales++; return { ...OK_SALE, status: 0, returnCode: "002" }; } });
+  const r = await handleCieloCheckout(req(), s.deps);
+  assertEquals(r.status, 502);
+  assertEquals((await r.json()).code, "alelo_error");
+  assertEquals(s.rows[0].status, "error");
+  assertEquals(s.rows[0].error, "cielo_status0_002:0");
+  assert(s.calls.includes("draft_delete"));
+  assertEquals(s.alerts, ["merchant_config"]);
+  // carrinho liberado: novo POST não dá 409, insere nova linha e chega a `sale`
+  const r2 = await handleCieloCheckout(req(), s.deps);
+  assertEquals(r2.status, 502);
+  assertEquals(s.rows.length, 2);
+  assertEquals(sales, 2);
+});
+
+Deno.test("Status 0 + ReturnCode 98 (tente mais tarde) => 202 pendente, row authorizing", async () => {
+  const s = build({}, { createVoucherSale: async () => ({ ...OK_SALE, status: 0, returnCode: "98" }) });
+  assertEquals((await handleCieloCheckout(req(), s.deps)).status, 202);
+  assertEquals(s.rows[0].status, "authorizing");
+  assertEquals(s.calls.includes("draft_delete"), false);
+});
+
+Deno.test("TryAutomaticCancellation => 502, row error cielo_auto_cancelled:0, 'Tente novamente', sem alerta", async () => {
+  const s = build({}, { createVoucherSale: async () => ({ ...OK_SALE, status: 0, returnCode: "", tryAutomaticCancellation: true }) });
+  const r = await handleCieloCheckout(req(), s.deps);
+  assertEquals(r.status, 502);
+  assert((await r.text()).includes("Tente novamente"));
+  assertEquals(s.rows[0].status, "error");
+  assertEquals(s.rows[0].error, "cielo_auto_cancelled:0");
+  assertEquals(s.alerts, []);
+});
+
+Deno.test("cielo_config_missing NÃO é ambíguo => 502, row error, draft apagado", async () => {
+  const s = build({}, { createVoucherSale: async () => { throw new CieloApiError({ code: "cielo_config_missing" }); } });
+  assertEquals((await handleCieloCheckout(req(), s.deps)).status, 502);
+  assertEquals(s.rows[0].status, "error");
+  assertEquals(s.rows[0].error, "cielo_config_missing:0");
+  assert(s.calls.includes("draft_delete"));
+});
+
+Deno.test("cielo_http_400 com cieloCode 173 => error com código e alerta; 180 => sem alerta", async () => {
+  const a = build({}, { createVoucherSale: async () => { throw new CieloApiError({ code: "cielo_http_400", status: 400, cieloCode: "173" }); } });
+  assertEquals((await handleCieloCheckout(req(), a.deps)).status, 502);
+  assertEquals(a.rows[0].error, "cielo_cfg_173:400"); // fora de `cielo_http_4*`: não conta no rate limit (M3)
+  assertEquals(a.alerts, ["merchant_config"]);
+  const b = build({}, { createVoucherSale: async () => { throw new CieloApiError({ code: "cielo_http_400", status: 400, cieloCode: "180" }); } });
+  assertEquals((await handleCieloCheckout(req(), b.deps)).status, 502);
+  assertEquals(b.rows[0].error, "cielo_http_400:400:180");
+  assertEquals(b.alerts, []);
+});
+
+Deno.test("422 pré-Cielo escreve log '[cielo-checkout] rejected invalid_cpf' (sem PII)", async () => {
+  const logs: string[] = [];
+  const orig = console.error;
+  console.error = (...a: unknown[]) => { logs.push(a.join(" ")); };
+  try {
+    const s = build();
+    assertEquals((await handleCieloCheckout(req({ cpf: "52998224726" }), s.deps)).status, 422);
+  } finally {
+    console.error = orig;
+  }
+  assertEquals(logs, ["[cielo-checkout] rejected invalid_cpf"]);
+});

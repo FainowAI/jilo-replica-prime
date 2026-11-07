@@ -265,10 +265,51 @@ Deno.test("isApproved / isTerminal / classifyReturnCode", () => {
   for (const s of [2, 3, 10, 11, 13]) assert(isTerminal(s));
   for (const s of [0, 1, 12, 99, -1]) assert(!isTerminal(s));
   assertEquals(classifyReturnCode("51"), { kind: "declined_balance", userMessage: "Saldo insuficiente no cartão Alelo." });
-  for (const c of ["54", "57", "78", "05"]) assertEquals(classifyReturnCode(c).kind, "declined_card");
+  for (const c of ["70", "BL", "DM"]) assertEquals(classifyReturnCode(c).kind, "declined_balance");
+  for (const c of ["54", "57", "78", "63", "82", "BN", "FM"]) assertEquals(classifyReturnCode(c).kind, "declined_card");
+  for (const c of ["55", "75", "83"]) assertEquals(classifyReturnCode(c).kind, "declined_password");
+  for (const c of ["AB", "ac", "AH", "C1"]) assertEquals(classifyReturnCode(c).kind, "declined_function");
+  for (const c of ["91", "96", "98", "999", "AA", "BP900"]) assertEquals(classifyReturnCode(c).kind, "retry_later");
+  for (const c of ["002", "003", "GF", "116"]) assertEquals(classifyReturnCode(c).kind, "merchant_config");
+  assert(classifyReturnCode("002").userMessage.includes("outra forma de pagamento"));
   assertEquals(classifyReturnCode("00").kind, "approved");
+  assertEquals(classifyReturnCode("05").kind, "declined_other"); // genérico ABECS: não é cartão inválido
   assertEquals(classifyReturnCode("ZZ").kind, "declined_other");
   assertEquals(classifyReturnCode("").kind, "error");
+  // nenhuma mensagem ao cliente carrega o código bruto
+  for (const c of ["002", "51", "AB", "BP900", "ZZ"]) assert(!classifyReturnCode(c).userMessage.includes(c));
+});
+
+Deno.test("HTTP 400 da Cielo: cieloCode vem do corpo [{Code, Message}], só o Code vai ao log", async () => {
+  setEnv();
+  const body = [{ Code: 173, Message: "Payment method is not enabled SENTINEL-MSG" }];
+  await withStubs(() => jsonRes(body, 400), async (_c, logs) => {
+    const e = await assertRejects(
+      () => createVoucherSale({ merchantOrderId: "JAORDER1", amountCents: 5990, paymentToken: PAYMENT_TOKEN, holderName: HOLDER }),
+      CieloApiError,
+    );
+    assertEquals(e.code, "cielo_http_400");
+    assertEquals(e.status, 400);
+    assertEquals(e.cieloCode, "173");
+    const all = logs.join("\n");
+    assert(all.includes("-> 400 code=173 JAORDER1"));
+    assert(!all.includes("SENTINEL-MSG"));
+  });
+  // corpo ilegível ou 5xx: sem cieloCode, sem quebrar
+  await withStubs(() => new Response("<html>", { status: 502 }), async () => {
+    const e = await assertRejects(() => getSale("pay-1"), CieloApiError);
+    assertEquals(e.cieloCode, undefined);
+  });
+});
+
+Deno.test("TryAutomaticCancellation: só entra em CieloSale quando é true", async () => {
+  setEnv();
+  await withStubs(() => jsonRes(saleJson({ Status: 0, ReturnCode: "", TryAutomaticCancellation: true })), async () => {
+    assertEquals((await getSale("pay-1")).tryAutomaticCancellation, true);
+  });
+  await withStubs(() => jsonRes(saleJson({ TryAutomaticCancellation: false })), async () => {
+    assertEquals("tryAutomaticCancellation" in (await getSale("pay-1")), false);
+  });
 });
 
 Deno.test("newMerchantOrderId: JA + 18 alfanuméricos, único", () => {

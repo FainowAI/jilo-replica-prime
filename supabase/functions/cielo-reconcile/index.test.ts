@@ -108,6 +108,43 @@ Deno.test("M4: status 1 (Authorized) em D0 => void + alerta; após D0 só alerta
   assertEquals(old.alerts, ["non_terminal"]);
 });
 
+Deno.test("Status 0 + ReturnCode 002 => error, draft apagado, failed_released, sem void", async () => {
+  const { deps, updates, calls, alerts } = build([row()], { cielo: { getSale: async () => ({ ...SALE, status: 0, returnCode: "002" }) } });
+  await call(deps);
+  assertEquals(updates.at(-1), { status: "error", error: "cielo_status0_002:0" });
+  assertEquals(calls, ["draft_delete"]);
+  assertEquals(alerts, ["failed_released"]);
+});
+
+Deno.test("TryAutomaticCancellation => error cielo_auto_cancelled:0, sem void", async () => {
+  const { deps, updates, calls, alerts } = build([row()], { cielo: { getSale: async () => ({ ...SALE, status: 0, returnCode: "", tryAutomaticCancellation: true }) } });
+  await call(deps);
+  assertEquals(updates.at(-1), { status: "error", error: "cielo_auto_cancelled:0" });
+  assertEquals(calls.includes("void"), false);
+  assertEquals(alerts, ["failed_released"]);
+});
+
+Deno.test("Status 0 sem ReturnCode: D0 mantém + non_terminal; D+1 libera past_d0", async () => {
+  const getSale = async () => ({ ...SALE, status: 0, returnCode: "" });
+  const d0 = build([row()], { cielo: { getSale } });
+  await call(d0.deps);
+  assertEquals(d0.alerts, ["non_terminal"]);
+  assertEquals(d0.updates.some((u) => u.status !== undefined), false);
+
+  const old = build([row({ created_at: "2026-10-11T14:00:00Z" })], { cielo: { getSale } });
+  await call(old.deps);
+  assertEquals(old.updates.at(-1), { status: "error", error: "cielo_status0_none_past_d0:0" });
+  assertEquals(old.calls, ["draft_delete"]);
+  assertEquals(old.alerts, ["past_d0_status0"]);
+});
+
+Deno.test("Status 0 + ReturnCode 98 em D0 => pending (non_terminal)", async () => {
+  const { deps, updates, alerts } = build([row()], { cielo: { getSale: async () => ({ ...SALE, status: 0, returnCode: "98" }) } });
+  await call(deps);
+  assertEquals(alerts, ["non_terminal"]);
+  assertEquals(updates.some((u) => u.status !== undefined), false);
+});
+
 Deno.test("void falha => void_failed + alerta", async () => {
   const { deps, updates, alerts } = build([row()], { cielo: { voidSale: async () => { throw new Error("v"); } } });
   await call(deps);

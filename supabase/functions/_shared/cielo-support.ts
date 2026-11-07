@@ -3,7 +3,7 @@
  * (CORS, resposta JSON, allowlist QA, D0, status do draft, alerta).
  */
 import { callShopifyAdmin } from "./shopify-admin-client.ts";
-import { CieloApiError, isApproved, isTerminal, type CieloSale } from "./cielo-client.ts";
+import { CieloApiError, classifyReturnCode, isApproved, isTerminal, type CieloReturnKind, type CieloSale } from "./cielo-client.ts";
 
 /** H1: só libera um cart `authorizing` após esta idade E consulta por merchantOrderId vazia. */
 export const SAFE_RELEASE_MIN = 10;
@@ -105,9 +105,31 @@ export async function findIdsOrEmpty(find: (id: string) => Promise<string[]>, me
   }
 }
 
-/** Classificação única da venda (checkout + reconcile). 10/11 = anulada; 2 não aprovada/3/13 = recusada; não terminal = pending. */
-export function classifySale(sale: CieloSale): "approved" | "declined" | "voided" | "pending" {
+export type SaleKind = "approved" | "declined" | "voided" | "failed" | "pending";
+
+/** Grupos de ReturnCode que, em Status 0, provam que a venda não vai finalizar (lista POSITIVA — código desconhecido fica pendente). */
+const FAILED_KINDS: ReadonlySet<CieloReturnKind> = new Set(["merchant_config", "declined_balance", "declined_card", "declined_password", "declined_function"]);
+
+/**
+ * Classificação única da venda (checkout + reconcile).
+ * 10/11 = anulada; 2 não aprovada/3/13 = recusada (cartão) — exceto código de cadastro nosso, que é `failed`
+ * (não é recusa do cliente: não conta no rate limit, dispara alerta). `failed` = não houve cobrança e não vai haver:
+ * em Status 0, a Cielo cancelou sozinha (`TryAutomaticCancellation`) ou devolveu um ReturnCode de um grupo
+ * conhecido de recusa/cadastro (o `002` de 04/11/2026: "Credenciais inválidas" = bloqueio do terminal).
+ * Status 0 sem ReturnCode, com código "tente mais tarde" (91/96/98/999/AA/BP900…) ou desconhecido, Status 1 e 12
+ * = pending (a Cielo ainda pode finalizar; o reconcile resolve — Status 1 em D0 é anulado, M4).
+ */
+export function classifySale(sale: CieloSale): SaleKind {
   if (isApproved(sale)) return "approved";
   if (sale.status === 10 || sale.status === 11) return "voided";
-  return isTerminal(sale.status) ? "declined" : "pending";
+  const { kind } = classifyReturnCode(sale.returnCode);
+  if (isTerminal(sale.status)) return kind === "merchant_config" ? "failed" : "declined";
+  if (sale.status !== 0) return "pending";
+  if (sale.tryAutomaticCancellation) return "failed";
+  return FAILED_KINDS.has(kind) ? "failed" : "pending";
+}
+
+/** Só código alfanumérico curto entra em `error`/alerta/log; qualquer outra coisa vira `unknown`. */
+export function safeReturnCode(code: string | undefined): string {
+  return code && /^[A-Za-z0-9]{1,8}$/.test(code) ? code : "unknown";
 }

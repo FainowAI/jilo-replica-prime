@@ -60,12 +60,27 @@ export type CieloErrorCode =
 export class CieloApiError extends Error {
   code: string;
   status?: number;
+  /** `Code` do corpo `[{Code, Message}]` que a Cielo devolve em HTTP 400 (ex.: "173" = meio de pagamento não habilitado). Só o código, nunca a Message. */
+  cieloCode?: string;
 
-  constructor(params: { code: CieloErrorCode; status?: number }) {
+  constructor(params: { code: CieloErrorCode; status?: number; cieloCode?: string }) {
     super(params.code);
     this.name = "CieloApiError";
     this.code = params.code;
     this.status = params.status;
+    this.cieloCode = params.cieloCode;
+  }
+}
+
+/** Extrai o primeiro `Code` de um corpo de erro `[{Code, Message}]` (ou `{Code}`); undefined se não houver. */
+function parseCieloErrorCode(text: string): string | undefined {
+  try {
+    const data = JSON.parse(text) as unknown;
+    const first = Array.isArray(data) ? data[0] : data;
+    const code = (first as { Code?: unknown } | null)?.Code;
+    return typeof code === "number" || (typeof code === "string" && /^[A-Za-z0-9]{1,8}$/.test(code)) ? String(code) : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -132,8 +147,11 @@ async function cieloFetch(
   }
   const suffix = merchantOrderId ? ` ${merchantOrderId}` : "";
   if (!res.ok) {
-    console.error(`${tag} -> ${res.status}${suffix}`);
-    throw new CieloApiError({ code: `cielo_http_${res.status}`, status: res.status });
+    // 4xx da Cielo traz `[{Code, Message}]`: o Code (só ele) vai para o log e para o erro — é o que diferencia
+    // "meio de pagamento não habilitado" (173) de "token não encontrado" (180). A Message nunca é logada.
+    const cieloCode = res.status >= 400 && res.status < 500 ? parseCieloErrorCode(text) : undefined;
+    console.error(`${tag} -> ${res.status}${cieloCode ? ` code=${cieloCode}` : ""}${suffix}`);
+    throw new CieloApiError({ code: `cielo_http_${res.status}`, status: res.status, cieloCode });
   }
   console.log(`${tag} -> ${res.status}${suffix}`);
   if (!text) return undefined;
@@ -218,6 +236,8 @@ export interface CieloSale {
   tid?: string;
   proofOfSale?: string;
   authorizationCode?: string;
+  /** Garantia de cancelamento: a Cielo TENTOU anular uma venda Status 0 (a doc diz que indica cancelada; só vale com Status 0). */
+  tryAutomaticCancellation?: boolean;
 }
 
 const str = (v: unknown): string | undefined => (typeof v === "string" && v ? v : v == null ? undefined : String(v));
@@ -243,6 +263,7 @@ function toSale(data: unknown, fallbackMerchantOrderId?: string): CieloSale {
     tid: str(p.Tid),
     proofOfSale: str(p.ProofOfSale),
     authorizationCode: str(p.AuthorizationCode),
+    ...(p.TryAutomaticCancellation === true ? { tryAutomaticCancellation: true } : {}),
   };
 }
 
@@ -352,15 +373,45 @@ export function isTerminal(status: number): boolean {
   return status === 2 || status === 3 || status === 10 || status === 11 || status === 13;
 }
 
-export type CieloReturnKind = "approved" | "declined_balance" | "declined_card" | "declined_other" | "error";
+export type CieloReturnKind =
+  | "approved"
+  | "declined_balance"
+  | "declined_card"
+  | "declined_password"
+  | "declined_function"
+  | "retry_later"
+  | "merchant_config"
+  | "declined_other"
+  | "error";
+
+/**
+ * Grupos de ReturnCode (docs.cielo.com.br/ecommerce-cielo/page/abecs, tabela Elo + "Outros códigos", lida em 06/11/2026).
+ * `merchant_config` = bloqueio do nosso cadastro/terminal na Cielo (o 002 de 04/11): alerta interno, não é culpa do cliente.
+ * `retry_later` = emissor/Cielo fora ou timeout: a venda ainda pode finalizar, por isso Status 0 com esses códigos segue pendente.
+ */
+const RETURN_CODE_GROUPS: ReadonlyArray<[CieloReturnKind, ReadonlySet<string>, string]> = [
+  ["declined_balance", new Set(["51", "70", "BL", "DM"]), "Saldo insuficiente no cartão Alelo."],
+  [
+    "declined_card",
+    new Set(["54", "57", "63", "82", "BM", "BN", "78", "12", "13", "14", "15", "19", "41", "43", "46", "56", "58", "FM"]),
+    "Cartão inválido, bloqueado ou não autorizado. Confira os dados ou use outro cartão.",
+  ],
+  ["declined_password", new Set(["55", "75", "83"]), "Dados do cartão incorretos."],
+  ["declined_function", new Set(["AB", "AC", "AH", "C1"]), "Esse cartão não aceita pagamento online. Use outro cartão Alelo."],
+  // 90 fechamento em andamento, 92 sem rota, 94 duplicidade (pode já existir no emissor), 99 falha de comunicação.
+  ["retry_later", new Set(["91", "96", "98", "999", "AA", "89", "BP900", "BP901", "90", "92", "94", "99"]), "Não foi possível processar agora. Tente em alguns minutos."],
+  [
+    "merchant_config",
+    new Set(["002", "003", "GA", "GD", "GF", "GT", "GK", "116"]),
+    "Pagamento com Alelo indisponível no momento. Use outra forma de pagamento.",
+  ],
+];
 
 export function classifyReturnCode(code: string): { kind: CieloReturnKind; userMessage: string } {
   if (APPROVED_CODES.has(code)) return { kind: "approved", userMessage: "Pagamento aprovado." };
-  if (code === "51") return { kind: "declined_balance", userMessage: "Saldo insuficiente no cartão Alelo." };
-  if (["54", "57", "78", "05"].includes(code)) {
-    return { kind: "declined_card", userMessage: "Cartão inválido, bloqueado ou não autorizado. Confira os dados ou use outro cartão." };
-  }
   if (!code) return { kind: "error", userMessage: "Não foi possível processar o pagamento agora. Tente novamente em instantes." };
+  const hit = RETURN_CODE_GROUPS.find(([, codes]) => codes.has(code.toUpperCase()));
+  if (hit) return { kind: hit[0], userMessage: hit[2] };
   return { kind: "declined_other", userMessage: "Pagamento não autorizado. Tente novamente ou use outra forma de pagamento." };
 }
 

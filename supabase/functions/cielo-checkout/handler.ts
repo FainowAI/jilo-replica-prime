@@ -43,6 +43,7 @@ import {
   passesQaGate,
   jsonResponse,
   SAFE_RELEASE_MIN,
+  safeReturnCode,
   type DraftStatus,
   type SendAlert,
 } from "../_shared/cielo-support.ts";
@@ -52,7 +53,8 @@ const RATE_LIMIT_WINDOW_MIN = 15;
 // ponytail: threshold do breaker (a confirmar com o dono); upgrade path: Turnstile no dialog (security.md M3).
 const BREAKER_DECLINES = 30;
 const BREAKER_WINDOW_MIN = 10;
-// M3: `error` = `${code}:${status}` (ex.: cielo_http_400:400); `*` é o wildcard do like no PostgREST.
+// M3: `error` = `${code}:${status}[:${cieloCode}]` (ex.: cielo_http_400:400:173); `*` é o wildcard do like no PostgREST.
+// Falhas sem cobrança (cielo_status0_002:0, cielo_auto_cancelled:0, cielo_config_missing:0) NÃO casam: não contam como recusa de cartão.
 const CARD_FAILURE_FILTER = "status.eq.declined,and(status.eq.error,error.like.cielo_http_4*)";
 
 const CheckoutBodySchema = z
@@ -191,7 +193,9 @@ function buildShippingAddress(address: OwnAddress): DraftOrderInput["shippingAdd
 /** Erro do POST que NÃO prova que a cobrança não existe (timeout/rede/5xx/resposta ilegível) — H1. */
 function isAmbiguous(err: unknown): boolean {
   if (!(err instanceof CieloApiError)) return true;
-  return err.code === "cielo_timeout" || err.code === "cielo_bad_response" || /^cielo_http_5/.test(err.code) || err.status === undefined || err.status >= 500;
+  // cielo_config_missing / cielo_env_invalid / cielo_http_4xx: nenhum request saiu ou a Cielo recusou de vez => definitivo.
+  // 408 (timeout no intermediário) é a exceção: a venda pode ter sido criada.
+  return err.code === "cielo_timeout" || err.code === "cielo_bad_response" || /^cielo_http_5/.test(err.code) || err.status === 408;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,31 +241,35 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     return errorResponse("alelo_unavailable", "Pagamento com Alelo temporariamente indisponível. Tente novamente em instantes.", 503, cors);
   }
 
-  // 6. Body
+  // 6. Body — recusas pré-Cielo deixam rastro só com o código (nunca CPF/endereço/e-mail/body)
+  const reject = (code: string, message: string, status: number) => {
+    console.error(`[cielo-checkout] rejected ${code}`);
+    return errorResponse(code, message, status, cors);
+  };
   let rawBody: unknown;
   try {
     rawBody = await req.json();
   } catch {
-    return errorResponse("invalid_body", "Requisição inválida.", 400, cors);
+    return reject("invalid_body", "Requisição inválida.", 400);
   }
   const parsed = CheckoutBodySchema.safeParse(rawBody);
-  if (!parsed.success) return errorResponse("invalid_body", "Requisição inválida.", 400, cors);
+  if (!parsed.success) return reject("invalid_body", "Requisição inválida.", 400);
   const body = parsed.data;
-  if (!isValidCpf(body.cpf)) return errorResponse("invalid_cpf", "CPF inválido.", 422, cors);
+  if (!isValidCpf(body.cpf)) return reject("invalid_cpf", "CPF inválido.", 422);
 
   // 7. Endereço do usuário em área atendida
   const address = await deps.db.getOwnAddress(body.addressId, user.id);
-  if (!address) return errorResponse("address_forbidden", "Endereço inválido.", 403, cors);
+  if (!address) return reject("address_forbidden", "Endereço inválido.", 403);
   if (!deps.isAreaDeliverable(address.state, address.city)) {
-    return errorResponse("address_not_deliverable", "Endereço fora da área atendida.", 422, cors);
+    return reject("address_not_deliverable", "Endereço fora da área atendida.", 422);
   }
 
   // 8. Cart + PIX5 (R-A2)
   let cart = await deps.getCart(body.cartId);
-  if (!cart) return errorResponse("cart_not_found", "Carrinho não encontrado.", 422, cors);
+  if (!cart) return reject("cart_not_found", "Carrinho não encontrado.", 422);
   if (!deps.hasPixCoupon(cart) && !deps.hasOtherCoupon(cart)) {
     cart = await deps.applyDiscountCodes(body.cartId, [PIX_COUPON_ACTIVE]);
-    if (!cart) return errorResponse("cart_not_found", "Carrinho não encontrado.", 422, cors);
+    if (!cart) return reject("cart_not_found", "Carrinho não encontrado.", 422);
   }
 
   // 9. Gates (valor vem SEMPRE do servidor — M2)
@@ -271,7 +279,10 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     deliveryMethod: body.deliveryMethod,
     address: { state: address.state, city: address.city },
   });
-  if (!gate.ok) return jsonResponse({ code: gate.code, message: gate.userMessage, userMessage: gate.userMessage }, gate.status, cors);
+  if (!gate.ok) {
+    console.error(`[cielo-checkout] rejected ${gate.code}`);
+    return jsonResponse({ code: gate.code, message: gate.userMessage, userMessage: gate.userMessage }, gate.status, cors);
+  }
   const { valorCents } = gate;
 
   // 10. INSERT authorizing antes de qualquer chamada externa (idempotência — R-A6)
@@ -374,8 +385,27 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     await deps.db.update(txId, { status: "declined" });
     const { kind, userMessage } = deps.cielo.classifyReturnCode(sale.returnCode);
     logErr("payment", "declined");
+    if (kind === "merchant_config") await alert("merchant_config", sale.returnCode);
     // nunca devolve returnCode/returnMessage brutos
     return jsonResponse({ code: "declined", classe: kind, message: userMessage, userMessage }, 402, cors);
+  };
+
+  /** Sem cobrança e sem chance de haver: a linha vira `error` e libera o carrinho na hora. */
+  const failed = async (sale: CieloSale): Promise<Response> => {
+    try {
+      await deps.draft.delete(draftId);
+    } catch {
+      logErr("failed_draft_delete", "failed");
+    }
+    await deps.db.update(txId, {
+      status: "error",
+      error: sale.tryAutomaticCancellation ? "cielo_auto_cancelled:0" : `cielo_status${sale.status}_${safeReturnCode(sale.returnCode)}:0`,
+    });
+    const { kind, userMessage } = deps.cielo.classifyReturnCode(sale.returnCode);
+    if (kind === "merchant_config") await alert("merchant_config", sale.returnCode);
+    logErr("payment", "failed");
+    const msg = sale.tryAutomaticCancellation ? "Não foi possível concluir o pagamento. Tente novamente." : userMessage;
+    return errorResponse("alelo_error", msg, 502, cors);
   };
 
   /** H3: tenta complete, confere o draft entre tentativas. "unknown" = não conseguiu consultar => não anula. */
@@ -447,6 +477,7 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     const kind = classifySale(sale);
     if (kind === "approved") return await approve(sale);
     if (kind === "declined") return await declined(sale);
+    if (kind === "failed") return await failed(sale);
     return pending(); // 0/1/12/10/11/desconhecido: reconcile resolve
   };
 
@@ -469,9 +500,18 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     const code = err instanceof CieloApiError ? err.code : "cielo_error";
     const status = err instanceof CieloApiError ? err.status ?? 0 : 0;
     await deps.draft.delete(draftId);
-    await deps.db.update(txId, { status: "error", error: `${code}:${status}` });
+    const cieloCode = err instanceof CieloApiError ? err.cieloCode : undefined;
+    // 129/171/173: afiliação/meio de pagamento não habilitado — cadastro nosso, não adianta o cliente tentar de novo.
+    // Grava como `cielo_cfg_*` para NÃO casar com `cielo_http_4*` (M3: falha nossa não conta como recusa do cliente).
+    const merchantConfig = cieloCode === "129" || cieloCode === "171" || cieloCode === "173";
+    const errorTag = merchantConfig ? `cielo_cfg_${cieloCode}:${status}` : `${code}:${status}${cieloCode ? ":" + cieloCode : ""}`;
+    await deps.db.update(txId, { status: "error", error: errorTag });
+    if (merchantConfig) await alert("merchant_config", cieloCode);
     logErr("payment", "error");
-    return errorResponse("alelo_error", "Não foi possível processar o pagamento agora. Tente novamente em instantes.", 502, cors);
+    const msg = merchantConfig
+      ? "Pagamento com Alelo indisponível no momento. Use outra forma de pagamento."
+      : "Não foi possível processar o pagamento agora. Tente novamente em instantes.";
+    return errorResponse("alelo_error", msg, 502, cors);
   }
   return await settle(sale);
 }
