@@ -379,6 +379,16 @@ Deno.test("Status 0 + ReturnCode 98 (tente mais tarde) => 202 pendente, row auth
   assertEquals(s.calls.includes("draft_delete"), false);
 });
 
+Deno.test("M3: Status 0 + recusa de cartão (51) => 402 declined (conta no rate limit), não error", async () => {
+  const s = build({}, { createVoucherSale: async () => ({ ...OK_SALE, status: 0, returnCode: "51" }) });
+  const r = await handleCieloCheckout(req(), s.deps);
+  assertEquals(r.status, 402);
+  assertEquals((await r.json()).code, "declined");
+  assertEquals(s.rows[0].status, "declined");
+  assert(s.calls.includes("draft_delete"));
+  assertEquals(s.alerts, []);
+});
+
 Deno.test("TryAutomaticCancellation => 502, row error cielo_auto_cancelled:0, 'Tente novamente', sem alerta", async () => {
   const s = build({}, { createVoucherSale: async () => ({ ...OK_SALE, status: 0, returnCode: "", tryAutomaticCancellation: true }) });
   const r = await handleCieloCheckout(req(), s.deps);

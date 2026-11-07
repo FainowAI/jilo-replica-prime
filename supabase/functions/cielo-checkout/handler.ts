@@ -477,7 +477,12 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     const kind = classifySale(sale);
     if (kind === "approved") return await approve(sale);
     if (kind === "declined") return await declined(sale);
-    if (kind === "failed") return await failed(sale);
+    if (kind === "failed") {
+      // M3: recusa de cartão em Status 0 (51/54/55…) é recusa do cliente => `declined` (402, conta no rate limit).
+      // `failed` (linha `error`, fora do limite) só para cadastro nosso ou cancelamento automático da Cielo.
+      const merchantSide = sale.tryAutomaticCancellation || deps.cielo.classifyReturnCode(sale.returnCode).kind === "merchant_config";
+      return merchantSide ? await failed(sale) : await declined(sale);
+    }
     return pending(); // 0/1/12/10/11/desconhecido: reconcile resolve
   };
 

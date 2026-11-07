@@ -9,7 +9,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-import { findSalesByMerchantOrderId, getSale, voidSale, type CieloSale } from "../_shared/cielo-client.ts";
+import { classifyReturnCode, findSalesByMerchantOrderId, getSale, voidSale, type CieloSale } from "../_shared/cielo-client.ts";
 import { deleteDraftOrder } from "../_shared/shopify-draft-order.ts";
 import { classifySale, defaultSendAlert, findIdsOrEmpty, getDraftOrderStatus, isSameBrtDay, SAFE_RELEASE_MIN, safeReturnCode, type DraftStatus, type SendAlert } from "../_shared/cielo-support.ts";
 
@@ -146,7 +146,9 @@ export async function handleCieloReconcile(req: Request, deps: ReconcileDeps): P
         const error = failed
           ? sale.tryAutomaticCancellation ? "cielo_auto_cancelled:0" : `cielo_status${sale.status}_${code}:0`
           : `cielo_status0_${code}_past_d0:0`;
-        await deps.db.update(row.id, { status: "error", error });
+        // M3: recusa de cartão em Status 0 é `declined` (conta no rate limit); `error` só para cadastro nosso/auto-cancel/D+1.
+        const cardDecline = failed && !sale.tryAutomaticCancellation && classifyReturnCode(sale.returnCode).kind !== "merchant_config";
+        await deps.db.update(row.id, { status: cardDecline ? "declined" : "error", error });
         if (row.shopify_draft_order_id) await deps.draft.delete(row.shopify_draft_order_id);
         console.log(`[cielo-reconcile] released ${failed ? "failed" : "past_d0"} ${row.merchant_order_id}`);
         // past_d0_status0: conferir a venda no portal Cielo; se tiver sido capturada depois, o estorno é via Alelo.

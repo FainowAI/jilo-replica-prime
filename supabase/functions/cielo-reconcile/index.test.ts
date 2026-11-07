@@ -116,6 +116,13 @@ Deno.test("Status 0 + ReturnCode 002 => error, draft apagado, failed_released, s
   assertEquals(alerts, ["failed_released"]);
 });
 
+Deno.test("M3: Status 0 + recusa de cartão (51) => declined (não error), draft apagado, sem void", async () => {
+  const { deps, updates, calls } = build([row()], { cielo: { getSale: async () => ({ ...SALE, status: 0, returnCode: "51" }) } });
+  await call(deps);
+  assertEquals(updates.at(-1), { status: "declined", error: "cielo_status0_51:0" });
+  assertEquals(calls, ["draft_delete"]);
+});
+
 Deno.test("TryAutomaticCancellation => error cielo_auto_cancelled:0, sem void", async () => {
   const { deps, updates, calls, alerts } = build([row()], { cielo: { getSale: async () => ({ ...SALE, status: 0, returnCode: "", tryAutomaticCancellation: true }) } });
   await call(deps);
