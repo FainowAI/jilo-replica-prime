@@ -37,8 +37,12 @@
 |-------|-------|
 | Razão social | DaJu Alimentação |
 | CNPJ | 39.659.013/0001-02 |
-| WhatsApp oficial | +55 12 97813-0583 (link: https://wa.me/5512978130583) |
+| Razão social do EC Cielo/Bling | Jilo Alimentação Ltda, CNPJ 05.574.020/0001-90 (EC 1012848067) |
+| Endereço da loja física | Av. Engenheiro Juarez de Siqueira Britto Wanderley, 50, Loja 05, Eldorado, São José dos Campos/SP, CEP 12238-565 |
+| WhatsApp oficial | +55 12 97813-0583 (link: https://wa.me/5512978130583). Também é o "telefone comercial" exibido no rodapé |
 | Ano de copyright corrente | 2026 |
+
+O rodapé exibe os dois CNPJs, o endereço e o telefone comercial desde 10/11/2026: a Cielo exige CNPJ, telefone comercial e endereço da loja física visíveis na URL de produção para liberar o voucher Alelo (erro `002`). CNPJ a exibir e telefone ainda aguardam confirmação do Luiz; o endereço vem do cadastro da Uber (22/06).
 
 Esses dados aparecem em `src/components/sections/Footer.tsx` (rodapé + links de atendimento), `src/components/sections/FAQ.tsx` (botão "Falar no WhatsApp") e `src/components/WhatsAppFloatingButton.tsx` (botão flutuante global). Qualquer alteração deve ser replicada nos três.
 

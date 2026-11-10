@@ -52,10 +52,21 @@ const Footer = () => {
           </div>
         </div>
       </div>
+      {/* Dados da empresa: a Cielo exige CNPJ, telefone comercial e endereço da loja física visíveis na URL de produção (10/11/2026). */}
       <div className="border-t border-primary-foreground/10">
-        <div className="container mx-auto px-4 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-primary-foreground/40 font-sans">
-          <p>© 2026 Jilo. Todos os direitos reservados.</p>
-          <p>CNPJ: 39.659.013/0001-02</p>
+        <div className="container mx-auto px-4 py-4 flex flex-col gap-2 text-xs text-primary-foreground/40 font-sans text-center sm:text-left">
+          <address className="not-italic space-y-1">
+            <p>Jilo Alimentação Ltda · CNPJ: 05.574.020/0001-90</p>
+            <p>Av. Engenheiro Juarez de Siqueira Britto Wanderley, 50, Loja 05 · Eldorado · São José dos Campos/SP · CEP 12238-565</p>
+            <p>
+              Telefone comercial:{" "}
+              <a href="tel:+5512978130583" className="hover:text-primary-foreground transition-colors">(12) 97813-0583</a>
+            </p>
+          </address>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+            <p>© 2026 Jilo. Todos os direitos reservados.</p>
+            <p>DaJu Alimentação · CNPJ: 39.659.013/0001-02</p>
+          </div>
         </div>
       </div>
     </footer>
