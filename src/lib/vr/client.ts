@@ -14,6 +14,8 @@ export interface VrCheckoutInput {
   deliveryMethod: "uber_direct" | "jilo_own" | "lalamove";
   uberQuoteId?: string;
   deliveryLabel?: string;
+  /** Qtd de marmitas (sem frete) que o cliente está vendo; o servidor responde 409 `cart_out_of_sync` se divergir do cart. */
+  expectedItems?: number;
 }
 
 /**

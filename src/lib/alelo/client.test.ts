@@ -21,6 +21,22 @@ describe("alelo client", () => {
     });
   });
 
+  it("envia expectedItems (inteiro) quando informado", async () => {
+    invoke.mockResolvedValue({ data: { orderName: "#1", orderId: "9" }, error: null });
+    await payWithAlelo({ ...input, expectedItems: 7 }, pay);
+    expect(invoke).toHaveBeenCalledWith("cielo-checkout", {
+      body: { cartId: input.cartId, addressId: "a1", deliveryMethod: "uber_direct", expectedItems: 7, ...pay },
+    });
+  });
+
+  it("409 cart_out_of_sync expõe o code (message e userMessage do servidor)", async () => {
+    invoke.mockResolvedValue({
+      data: null,
+      error: httpError(409, { code: "cart_out_of_sync", message: "x", userMessage: "Seu carrinho mudou." }),
+    });
+    await expect(payWithAlelo(input, pay)).rejects.toMatchObject({ code: "cart_out_of_sync", status: 409 });
+  });
+
   it("mapeia {code,message} do erro", async () => {
     invoke.mockResolvedValue({ data: null, error: httpError(402, { code: "declined_balance", message: "Saldo insuficiente." }) });
     await expect(payWithAlelo(input, pay)).rejects.toMatchObject({

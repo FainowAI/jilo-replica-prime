@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import CardExpiryFields from "@/components/CardExpiryFields";
 import { useCartStore } from "@/stores/cartStore";
 import { useProfile } from "@/hooks/useProfile";
@@ -91,6 +92,17 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
     onOpenChange(next);
   };
 
+  // 409 cart_out_of_sync: o cart na Shopify difere do que o cliente vê. Reconcilia, fecha o modal
+  // (o erro NÃO aparece dentro dele) e manda revisar os itens.
+  const outOfSync = () => {
+    clearCardFields();
+    setError(null);
+    setSubmitting(false);
+    void useCartStore.getState().refreshCartDetails();
+    onOpenChange(false);
+    toast.error("Seu carrinho mudou. Revise os itens antes de pagar.");
+  };
+
   const fail = (msg: string) => {
     setError(msg);
     setSubmitting(false);
@@ -134,6 +146,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
             onOpenChange(false);
             navigate("/pedido-confirmado", { state: { orderName } });
           } catch (err) {
+            if (err instanceof AleloCheckoutError && err.code === "cart_out_of_sync") return outOfSync();
             if (err instanceof AleloCheckoutError && err.pending) setPending(true);
             fail(err instanceof AleloCheckoutError ? err.userMessage : GENERIC_ERROR_MESSAGE);
           }
@@ -149,6 +162,7 @@ const AleloCardDialog = ({ open, onOpenChange, checkout }: AleloCardDialogProps)
       });
     } catch (err) {
       // Falha de script/token: sem fallback para campo de cartão próprio.
+      if (err instanceof AleloCheckoutError && err.code === "cart_out_of_sync") return outOfSync();
       fail(err instanceof AleloCheckoutError ? err.userMessage : GENERIC_ERROR_MESSAGE);
     }
   };

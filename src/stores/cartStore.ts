@@ -14,6 +14,7 @@ import {
 } from '@/lib/shopify';
 import { isShippingVariant, SHIPPING_FREE_THRESHOLD } from '@/config/shipping';
 import { PIX_COUPON_CODES } from '@/config/pixCoupons';
+import { reconcileCartItems, type CartAdjustment, type ServerCartLine } from '@/lib/cartReconcile';
 import { analytics } from '@/analytics/events';
 
 export interface CartItem {
@@ -26,8 +27,36 @@ export interface CartItem {
   selectedOptions: Array<{ name: string; value: string }>;
 }
 
+// Controle de corrida entre refreshCartDetails e mutações de linha (add/update/remove).
+// Um refresh iniciado antes de uma mutação terminar pode ver o servidor SEM a linha
+// nova e apagaria o item recém-adicionado na conciliação. Por isso o refresh só
+// concilia `items` se nenhuma mutação (de terceiros) estava em voo e nenhuma começou
+// ou terminou durante o fetch. Contadores de módulo (não persistidos).
+let cartMutationSeq = 0;
+let cartMutationsInFlight = 0;
+
+function withMutation<A extends unknown[]>(fn: (...args: A) => Promise<void>) {
+  return async (...args: A): Promise<void> => {
+    cartMutationsInFlight += 1;
+    cartMutationSeq += 1;
+    try {
+      await fn(...args);
+    } finally {
+      cartMutationsInFlight = Math.max(0, cartMutationsInFlight - 1);
+      cartMutationSeq += 1;
+    }
+  };
+}
+
+/** Só para testes: zera os contadores de mutação. */
+export function __resetCartMutationState() {
+  cartMutationSeq = 0;
+  cartMutationsInFlight = 0;
+}
+
 interface CartStore {
   items: CartItem[];
+  cartAdjustments: CartAdjustment[];
   cartId: string | null;
   checkoutUrl: string | null;
   isLoading: boolean;
@@ -53,13 +82,20 @@ interface CartStore {
   applyDiscountCode: (code: string) => Promise<{ success: boolean; applicable?: boolean }>;
   reconcileDiscountsOnLoad: () => Promise<void>;
   removeDiscountCode: () => Promise<void>;
-  refreshCartDetails: () => Promise<void>;
+  /**
+   * Re-busca o cart na Shopify e concilia `items` com as linhas reais (cartReconcile).
+   * `opts.inMutation`: chamado de dentro de uma mutação de linha (ela própria não conta como "em voo").
+   * Devolve os ajustes desta chamada (vazio se nada mudou ou se a conciliação foi pulada pela corrida).
+   */
+  refreshCartDetails: (opts?: { inMutation?: boolean }) => Promise<CartAdjustment[]>;
+  clearCartAdjustments: () => void;
 }
 
 export const useCartStore = create<CartStore>()(
   persist(
     (set, get) => ({
       items: [],
+      cartAdjustments: [],
       cartId: null,
       checkoutUrl: null,
       isLoading: false,
@@ -70,7 +106,7 @@ export const useCartStore = create<CartStore>()(
       cartDiscountAllocations: [],
       shopifyHasShippingLine: false,
 
-      addItem: async (item) => {
+      addItem: withMutation(async (item: Omit<CartItem, 'lineId'>) => {
         const { items, cartId, clearCart } = get();
         const existingItem = items.find(i => i.variantId === item.variantId);
 
@@ -145,7 +181,7 @@ export const useCartStore = create<CartStore>()(
               set({
                 items: get().items.filter(i => i.variantId !== item.variantId),
               });
-              await get().refreshCartDetails();
+              await get().refreshCartDetails({ inMutation: true });
               return;
             }
 
@@ -157,7 +193,7 @@ export const useCartStore = create<CartStore>()(
                   : i
               ),
             });
-            await get().refreshCartDetails();
+            await get().refreshCartDetails({ inMutation: true });
           } catch (error) {
             console.error('[cartStore] Shipping variant REPLACE failed:', error);
           } finally {
@@ -174,46 +210,57 @@ export const useCartStore = create<CartStore>()(
             if (result) {
               set({ cartId: result.cartId, checkoutUrl: result.checkoutUrl, items: [{ ...item, lineId: result.lineId }] });
             }
-          } else if (existingItem) {
-            const newQuantity = existingItem.quantity + item.quantity;
-            if (!existingItem.lineId) return;
-            const result = await updateShopifyCartLine(cartId, existingItem.lineId, newQuantity);
-            if (result.success) {
-              set({ items: get().items.map(i => i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i) });
-            } else if (result.cartNotFound) clearCart();
           } else {
-            const result = await addLineToShopifyCart(cartId, { variantId: item.variantId, quantity: item.quantity });
-            if (result.success) {
-              // R55: validação pós-add APENAS para variant fantasma de frete.
-              // Itens normais (marmitas) são produtos active e a Storefront é confiável.
-              // A variant fantasma também é ACTIVE + publicada no Online Store (R54) e a
-              // Storefront aceita, mas mantemos a verificação como defesa contra regressões.
-              if (isShippingVariant(item.variantId)) {
-                const verifyCart = await fetchCartFull(cartId);
-                const variantInCart = verifyCart?.lines.edges.some(
-                  (edge) => edge.node.merchandise.id === item.variantId
-                );
-
-                if (!variantInCart) {
-                  console.error(
-                    '[cartStore] CRITICAL: Storefront returned success for cartLinesAdd of shipping variant ' +
-                    '(first insertion), but the line is NOT in the cart after re-fetch.',
-                    {
-                      cartId,
-                      variantId: item.variantId,
-                      cartLineCount: verifyCart?.lines.edges.length ?? 0,
-                    }
-                  );
-                  // NÃO atualiza items[] local — variant fantasma não entrou.
-                  await get().refreshCartDetails();
-                  return;
-                }
+            // Item já no local: lineId nulo => a conciliação do refresh preenche (ou remove o
+            // item se a Shopify o zerou) e tentamos de novo uma vez.
+            let target = existingItem;
+            if (target && !target.lineId) {
+              await get().refreshCartDetails({ inMutation: true });
+              target = get().items.find(i => i.variantId === item.variantId);
+            }
+            if (target) {
+              if (target.lineId) {
+                const newQuantity = target.quantity + item.quantity;
+                const result = await updateShopifyCartLine(cartId, target.lineId, newQuantity);
+                if (result.success) {
+                  set({ items: get().items.map(i => i.variantId === item.variantId ? { ...i, quantity: newQuantity } : i) });
+                } else if (result.cartNotFound) clearCart();
               }
+            } else {
+              const result = await addLineToShopifyCart(cartId, { variantId: item.variantId, quantity: item.quantity });
+              if (result.success) {
+                // R55: validação pós-add APENAS para variant fantasma de frete.
+                // Marmitas: a Shopify pode zerar a linha em silêncio (sem estoque); quem trata isso é a
+                // conciliação do refreshCartDetails (cartReconcile), não esta validação.
+                // A variant fantasma também é ACTIVE + publicada no Online Store (R54) e a
+                // Storefront aceita, mas mantemos a verificação como defesa contra regressões.
+                if (isShippingVariant(item.variantId)) {
+                  const verifyCart = await fetchCartFull(cartId);
+                  const variantInCart = verifyCart?.lines.edges.some(
+                    (edge) => edge.node.merchandise.id === item.variantId
+                  );
 
-              set({ items: [...get().items, { ...item, lineId: result.lineId ?? null }] });
-            } else if (result.cartNotFound) clearCart();
+                  if (!variantInCart) {
+                    console.error(
+                      '[cartStore] CRITICAL: Storefront returned success for cartLinesAdd of shipping variant ' +
+                      '(first insertion), but the line is NOT in the cart after re-fetch.',
+                      {
+                        cartId,
+                        variantId: item.variantId,
+                        cartLineCount: verifyCart?.lines.edges.length ?? 0,
+                      }
+                    );
+                    // NÃO atualiza items[] local — variant fantasma não entrou.
+                    await get().refreshCartDetails({ inMutation: true });
+                    return;
+                  }
+                }
+
+                set({ items: [...get().items, { ...item, lineId: result.lineId ?? null }] });
+              } else if (result.cartNotFound) clearCart();
+            }
           }
-          await get().refreshCartDetails();
+          await get().refreshCartDetails({ inMutation: true });
           if (!isShippingVariant(item.variantId)) {
             analytics.itemAdicionado({
               handle: item.product.node.handle,
@@ -230,38 +277,55 @@ export const useCartStore = create<CartStore>()(
         } finally {
           set({ isLoading: false });
         }
-      },
+      }),
 
       updateQuantity: async (variantId, quantity) => {
         if (quantity <= 0) { await get().removeItem(variantId); return; }
-        const { items, cartId, clearCart } = get();
-        const item = items.find(i => i.variantId === variantId);
-        if (!item?.lineId || !cartId) return;
-        set({ isLoading: true });
-        try {
-          const result = await updateShopifyCartLine(cartId, item.lineId, quantity);
-          if (result.success) {
-            set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
-          } else if (result.cartNotFound) clearCart();
-          await get().refreshCartDetails();
-        } finally { set({ isLoading: false }); }
+        await withMutation(async () => {
+          const { cartId, clearCart } = get();
+          if (!cartId) return;
+          let item = get().items.find(i => i.variantId === variantId);
+          if (item && !item.lineId) {
+            // lineId nulo: a conciliação do refresh preenche (ou remove o item); tenta de novo uma vez.
+            await get().refreshCartDetails({ inMutation: true });
+            item = get().items.find(i => i.variantId === variantId);
+          }
+          if (!item?.lineId) return;
+          set({ isLoading: true });
+          try {
+            const result = await updateShopifyCartLine(cartId, item.lineId, quantity);
+            if (result.success) {
+              set({ items: get().items.map(i => i.variantId === variantId ? { ...i, quantity } : i) });
+            } else if (result.cartNotFound) clearCart();
+            await get().refreshCartDetails({ inMutation: true });
+          } finally { set({ isLoading: false }); }
+        })();
       },
 
       removeItem: async (variantId) => {
-        const { items, cartId, clearCart } = get();
-        const item = items.find(i => i.variantId === variantId);
-        if (!item?.lineId || !cartId) return;
-        set({ isLoading: true });
-        try {
-          const result = await removeLineFromShopifyCart(cartId, item.lineId);
-          if (result.success) {
-            const newItems = get().items.filter(i => i.variantId !== variantId);
-            newItems.length === 0 ? clearCart() : set({ items: newItems });
-          } else if (result.cartNotFound) clearCart();
-          await get().refreshCartDetails();
-        } finally { set({ isLoading: false }); }
+        await withMutation(async () => {
+          const { cartId, clearCart } = get();
+          if (!cartId) return;
+          let item = get().items.find(i => i.variantId === variantId);
+          if (item && !item.lineId) {
+            await get().refreshCartDetails({ inMutation: true });
+            item = get().items.find(i => i.variantId === variantId);
+          }
+          if (!item?.lineId) return;
+          set({ isLoading: true });
+          try {
+            const result = await removeLineFromShopifyCart(cartId, item.lineId);
+            if (result.success) {
+              const newItems = get().items.filter(i => i.variantId !== variantId);
+              newItems.length === 0 ? clearCart() : set({ items: newItems });
+            } else if (result.cartNotFound) clearCart();
+            // Falha que não é cartNotFound: o refresh concilia (tira o item se a linha já não existe no servidor).
+            await get().refreshCartDetails({ inMutation: true });
+          } finally { set({ isLoading: false }); }
+        })();
       },
 
+      clearCartAdjustments: () => set({ cartAdjustments: [] }),
       clearCart: () => set({ items: [], cartId: null, checkoutUrl: null, discountCodes: [], cartCost: null, cartDiscountAllocations: [] }),
       getCheckoutUrl: () => get().checkoutUrl,
 
@@ -349,12 +413,35 @@ export const useCartStore = create<CartStore>()(
         }
       },
 
-      refreshCartDetails: async () => {
+      refreshCartDetails: async (opts) => {
         const { cartId } = get();
-        if (!cartId) return;
+        if (!cartId) return [];
+        const ownMutation = opts?.inMutation ? 1 : 0;
+        const seqAtStart = cartMutationSeq;
+        const inFlightAtStart = cartMutationsInFlight - ownMutation;
         try {
           const cart = await fetchCartFull(cartId);
-          if (!cart) return;
+          if (!cart) return [];
+
+          // Conciliação items ↔ linhas da Shopify (a Shopify zera linhas sem estoque em
+          // silêncio e não as repõe). Pulada se houve/há mutação de linha de terceiros:
+          // o servidor pode ainda não refletir o item recém-adicionado.
+          let adjustments: CartAdjustment[] = [];
+          let reconciledItems: CartItem[] | null = null;
+          let zeroLineIds: string[] = [];
+          const raced =
+            inFlightAtStart > 0 ||
+            cartMutationsInFlight - ownMutation > 0 ||
+            cartMutationSeq !== seqAtStart;
+          if (!raced) {
+            const serverLines: ServerCartLine[] = (cart.lines?.edges || []).map(
+              (e: { node: ServerCartLine }) => e.node
+            );
+            const r = reconcileCartItems(get().items, serverLines);
+            adjustments = r.adjustments;
+            reconciledItems = r.items;
+            zeroLineIds = r.zeroLineIds;
+          }
 
           // Allocations de nível cart — manter SOMENTE automáticas (sem `code`).
           // Descontos por código (PIX3/PIX5 classe ORDER, cupons manuais) NÃO entram
@@ -403,7 +490,29 @@ export const useCartStore = create<CartStore>()(
           const hasShippingLine = cart.lines.edges.some((edge) =>
             isShippingVariant(edge.node.merchandise.id)
           );
+          // Linhas zeradas pela Shopify: remove-as lá também. Falha aqui não quebra o refresh.
+          if (zeroLineIds.length > 0) {
+            try {
+              await removeLineFromShopifyCart(cartId, zeroLineIds);
+            } catch (zeroError) {
+              console.error('[cartStore] Failed to remove zero-quantity lines:', zeroError);
+            }
+          }
+
+          if (reconciledItems && reconciledItems.every((i) => isShippingVariant(i.variantId))) {
+            // Nada de marmita sobrou no servidor: encerra o cart local (mesmo critério do removeItem).
+            if (get().items.length > 0 && reconciledItems.length !== get().items.length) {
+              get().clearCart();
+              set({ cartAdjustments: [...get().cartAdjustments, ...adjustments] });
+              return adjustments;
+            }
+          }
+
           set({
+            ...(reconciledItems ? { items: reconciledItems } : {}),
+            ...(adjustments.length > 0
+              ? { cartAdjustments: [...get().cartAdjustments, ...adjustments] }
+              : {}),
             // R80 (2026-09-25): a Shopify assina o checkoutUrl com o estado do cart; a URL
             // gravada na criação NÃO carrega mudanças posteriores (PIX5 aplicado aqui via
             // cartDiscountCodesUpdate chegava ao checkout sem o cupom: 132,93 em vez de
@@ -421,8 +530,10 @@ export const useCartStore = create<CartStore>()(
             ],
             shopifyHasShippingLine: hasShippingLine,
           });
+          return adjustments;
         } catch (error) {
           console.error('Failed to refresh cart details:', error);
+          return [];
         }
       },
 

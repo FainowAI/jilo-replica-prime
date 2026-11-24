@@ -2,6 +2,7 @@ import { useState, useEffect, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { useCartStore } from "@/stores/cartStore";
 import { useProfile } from "@/hooks/useProfile";
 import CardExpiryFields from "@/components/CardExpiryFields";
@@ -86,6 +87,15 @@ const VrCardDialog = ({ open, onOpenChange, checkout }: VrCardDialogProps) => {
       onOpenChange(false);
       navigate("/pedido-confirmado", { state: { orderName } });
     } catch (err) {
+      if (err instanceof VrCheckoutError && err.code === "cart_out_of_sync") {
+        // 409: o cart na Shopify difere do que o cliente vê. Reconcilia, fecha o modal e avisa.
+        void useCartStore.getState().refreshCartDetails();
+        reset();
+        setSubmitting(false);
+        onOpenChange(false);
+        toast.error("Seu carrinho mudou. Revise os itens antes de pagar.");
+        return;
+      }
       // O backend já devolve `userMessage` em PT-BR por código (declined por classe,
       // 409/429/503/502) — não há tabela de mensagens no cliente.
       setError(

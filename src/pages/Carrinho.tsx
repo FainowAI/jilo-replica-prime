@@ -230,6 +230,7 @@ const Carrinho = () => {
       cartId,
       selectedAddressId,
       deliveryMethod: resolvedDeliveryMethod,
+      expectedItems: totalNonShippingItems,
       ...(isLalamove
         ? { deliveryLabel: LALAMOVE_METHOD_LABEL }
         : activeQuoteId
@@ -282,6 +283,10 @@ const Carrinho = () => {
       setAuthDialogOpen(true);
       return;
     }
+    // Antes de pagar (qualquer método): reconcilia com a Shopify. Se algo mudou, o toast (useCartSync)
+    // já explica; o cliente revisa e clica de novo.
+    const adjustments = await refreshCartDetails();
+    if (adjustments.length > 0) return;
     if (paymentMethod === "vr") {
       analytics.checkoutIniciado({
         itens: totalNonShippingItems,
@@ -317,15 +322,17 @@ const Carrinho = () => {
   useEffect(() => {
     if (user && pendingCheckout) {
       setPendingCheckout(false);
-      if (paymentMethod === "vr") {
-        setVrDialogOpen(true);
-        return;
-      }
-      if (paymentMethod === "alelo") {
-        setAleloDialogOpen(true);
-        return;
-      }
       (async () => {
+        const adjustments = await useCartStore.getState().refreshCartDetails();
+        if (adjustments.length > 0) return;
+        if (paymentMethod === "vr") {
+          setVrDialogOpen(true);
+          return;
+        }
+        if (paymentMethod === "alelo") {
+          setAleloDialogOpen(true);
+          return;
+        }
         const checkoutUrl = await prepareCartForCheckout();
         if (checkoutUrl) {
           window.open(appendReturnToCheckoutUrl(checkoutUrl), "_blank");

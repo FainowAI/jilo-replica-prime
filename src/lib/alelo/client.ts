@@ -36,7 +36,7 @@ export class AleloCheckoutError extends Error {
 export const GENERIC_ERROR_MESSAGE = "Não foi possível processar o pagamento. Tente novamente.";
 export const PENDING_MESSAGE = "Pagamento em processamento. Não pague de novo; vamos confirmar em instantes.";
 
-type ErrBody = { code?: string; message?: string };
+type ErrBody = { code?: string; message?: string; userMessage?: string };
 
 async function readErrorBody(error: unknown): Promise<ErrBody> {
   try {
@@ -63,7 +63,7 @@ async function toError(error: unknown, fallbackCode: string): Promise<AleloCheck
   return new AleloCheckoutError({
     status: statusOf(error),
     code: body.code ?? fallbackCode,
-    userMessage: body.message ?? GENERIC_ERROR_MESSAGE,
+    userMessage: body.message ?? body.userMessage ?? GENERIC_ERROR_MESSAGE,
   });
 }
 
@@ -87,6 +87,7 @@ export async function payWithAlelo(
         cartId: input.cartId,
         addressId: input.selectedAddressId,
         deliveryMethod: input.deliveryMethod,
+        ...(typeof input.expectedItems === "number" ? { expectedItems: Math.trunc(input.expectedItems) } : {}),
         cpf: pay.cpf,
         holderName: pay.holderName,
         paymentToken: pay.paymentToken,

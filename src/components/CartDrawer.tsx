@@ -14,7 +14,7 @@ const formatBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigi
 export const CartDrawer = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
-  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, reconcileDiscountsOnLoad, cartDiscountAllocations } = useCartStore();
+  const { items, isLoading, isSyncing, updateQuantity, removeItem, getCheckoutUrl, syncCart, refreshCartDetails, reconcileDiscountsOnLoad, cartDiscountAllocations } = useCartStore();
   const totalNonShippingItems = useNonShippingTotalItems();
   const visibleItems = useVisibleCartItems();
   const totalItems = totalNonShippingItems;
@@ -37,9 +37,10 @@ export const CartDrawer = () => {
     if (isOpen) {
       analytics.carrinhoAberto({ itens: totalNonShippingItems, subtotal });
       syncCart();
+      refreshCartDetails();
       reconcileDiscountsOnLoad();
     }
-  }, [isOpen, syncCart, reconcileDiscountsOnLoad]);
+  }, [isOpen, syncCart, refreshCartDetails, reconcileDiscountsOnLoad]);
 
   const handleCheckout = () => {
     setIsOpen(false);

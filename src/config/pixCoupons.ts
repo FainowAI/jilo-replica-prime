@@ -36,7 +36,7 @@ export function getPixCouponForCart(
  * Shopify, já com PIX5 aplicado) vence quando informado — é o valor real que
  * o checkout cobra (a Shopify aloca o desconto ORDER entre produtos e frete,
  * o que a conta local não reproduz exatamente por arredondamento). Sem um
- * valor da Shopify confiável, cai no fallback local (percent sobre a base).
+ * valor da Shopify plausível (desconto implícito > percent + tolerância), cai no fallback local (percent sobre a base).
  */
 export function computePixTotals(
   baseTotalCents: number,
@@ -48,7 +48,13 @@ export function computePixTotals(
     typeof shopifyTotalCents === "number" &&
     Number.isFinite(shopifyTotalCents) &&
     shopifyTotalCents > 0 &&
-    shopifyTotalCents <= baseTotalCents
+    shopifyTotalCents <= baseTotalCents &&
+    // Plausibilidade: o desconto implícito não pode passar do esperado (percent da base) +
+    // tolerância (arredondamento da Shopify no ORDER). Cart dessincronizado (itens zerados na
+    // Shopify) gerava "desconto" absurdo (ex.: R$ 86 num pedido de R$ 150).
+    baseTotalCents - shopifyTotalCents <=
+      Math.round((baseTotalCents * percent) / 100) +
+        Math.max(Math.round(baseTotalCents * 0.02), 200)
   ) {
     return {
       pixTotalCents: shopifyTotalCents,

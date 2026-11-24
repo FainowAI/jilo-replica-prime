@@ -6,7 +6,11 @@ vi.mock("@/hooks/useProfile", () => ({ useProfile: () => ({ data: null }) }));
 vi.mock("@/lib/alelo/client", async (orig) => ({ ...(await orig<object>()), getSopToken: vi.fn(), payWithAlelo: vi.fn() }));
 
 import AleloCardDialog from "./AleloCardDialog";
-import { getSopToken } from "@/lib/alelo/client";
+import { getSopToken, payWithAlelo, AleloCheckoutError } from "@/lib/alelo/client";
+import { useCartStore } from "@/stores/cartStore";
+import { toast } from "sonner";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 
 const renderDialog = () =>
   render(
@@ -177,5 +181,39 @@ describe("AleloCardDialog — o que o script do SOP lê", () => {
     renderDialog();
     fillAndSubmit("7", "2099");
     expect(await screen.findByText("Confira o CVV (3 ou 4 números no verso do cartão).")).toBeTruthy();
+  });
+});
+
+describe("AleloCardDialog — 409 cart_out_of_sync", () => {
+  beforeEach(() => vi.mocked(getSopToken).mockReset());
+  afterEach(() => {
+    delete (window as Window & { bpSop_silentOrderPost?: unknown }).bpSop_silentOrderPost;
+  });
+
+  it("refaz o refresh, fecha o modal e avisa por toast (sem erro dentro do modal)", async () => {
+    vi.mocked(getSopToken).mockResolvedValue({ accessToken: "tok", environment: "sandbox" } as never);
+    vi.mocked(payWithAlelo).mockRejectedValue(
+      new AleloCheckoutError({ status: 409, code: "cart_out_of_sync", userMessage: "msg do servidor" }),
+    );
+    const refresh = vi.fn().mockResolvedValue([]);
+    useCartStore.setState({ refreshCartDetails: refresh });
+    (window as Window & { bpSop_silentOrderPost?: unknown }).bpSop_silentOrderPost = vi.fn(
+      (o: { onSuccess: (r: { PaymentToken: string }) => void }) => o.onSuccess({ PaymentToken: "pt" }),
+    );
+    const onOpenChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <AleloCardDialog
+          open
+          onOpenChange={onOpenChange}
+          checkout={{ cartId: "c", selectedAddressId: "a", deliveryMethod: "uber_direct", expectedItems: 7 }}
+        />
+      </MemoryRouter>,
+    );
+    fillAndSubmit("7", "2099");
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(refresh).toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith("Seu carrinho mudou. Revise os itens antes de pagar.");
+    expect(screen.queryByText("msg do servidor")).toBeNull();
   });
 });

@@ -124,7 +124,7 @@ export default function KitLivre() {
     try {
       for (const [variantId, item] of selectedItems) {
         const variant = item.product.node.variants.edges[0]?.node;
-        if (!variant) continue;
+        if (!variant || !variant.availableForSale) continue;
 
         await addItem({
           product: item.product,

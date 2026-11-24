@@ -30,4 +30,19 @@ describe("computePixTotals", () => {
       pixDiscountCents: 665,
     });
   });
+
+  it("rejeita total da Shopify com desconto implícito absurdo (cart dessincronizado) e usa o fallback", () => {
+    // caso real: base 149,81 local vs 63,52 da Shopify (3 itens) => desconto de 749 (5%)
+    expect(computePixTotals(14981, 5, 6352)).toEqual({
+      pixTotalCents: 14232,
+      pixDiscountCents: 749,
+    });
+  });
+
+  it("aceita diferença de centavos de arredondamento dentro da tolerância", () => {
+    expect(computePixTotals(13608, 5, 12900)).toEqual({
+      pixTotalCents: 12900,
+      pixDiscountCents: 708,
+    });
+  });
 });

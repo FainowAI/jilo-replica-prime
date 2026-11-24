@@ -57,3 +57,4 @@ A documentação do projeto vive só em `.claude/` (fluxos, `requirements.md`, `
 - O cupom BEMVINDO10 é hardcoded no frontend (desconto fixo R$10) — não há validação server-side.
 - O frete grátis é ativado para compras acima de R$150 — lógica no frontend, não no Shopify.
 - O checkout redireciona para Shopify — descontos de cupom e PIX do frontend NÃO são refletidos lá.
+- Estoque das marmitas é `DENY`: sem saldo, a Shopify zera a linha do cart em silêncio e não repõe. O `items` local é conciliado com o cart real no `refreshCartDetails` (R101) e as edges de pagamento recusam divergência com 409 `cart_out_of_sync` (R102). Ver `.claude/fluxo-carrinho-checkout.md`.

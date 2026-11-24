@@ -464,10 +464,10 @@ export async function updateShopifyCartLine(cartId: string, lineId: string, quan
   return { success: true };
 }
 
-export async function removeLineFromShopifyCart(cartId: string, lineId: string): Promise<{ success: boolean; cartNotFound?: boolean }> {
+export async function removeLineFromShopifyCart(cartId: string, lineId: string | string[]): Promise<{ success: boolean; cartNotFound?: boolean }> {
   const data = await storefrontApiRequest(CART_LINES_REMOVE_MUTATION, {
     cartId,
-    lineIds: [lineId],
+    lineIds: Array.isArray(lineId) ? lineId : [lineId],
   });
   const userErrors = data?.data?.cartLinesRemove?.userErrors || [];
   if (isCartNotFoundError(userErrors)) return { success: false, cartNotFound: true };
@@ -566,18 +566,25 @@ export const CART_FULL_QUERY = `
               ... on ProductVariant {
                 id
                 title
+                selectedOptions {
+                  name
+                  value
+                }
                 price {
                   amount
                   currencyCode
                 }
                 product {
+                  id
                   title
                   handle
                   productType
+                  tags
                   images(first: 1) {
                     edges {
                       node {
                         url
+                        altText
                       }
                     }
                   }

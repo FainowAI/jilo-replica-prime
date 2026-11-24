@@ -190,7 +190,15 @@ Nenhuma. O carrinho é Zustand + Shopify Cart API.
 1. `useCartSync` roda no mount de `AppContent`
 2. Se cartId existe → `fetchShopifyCart` → valida
 3. Se cart inválido ou vazio → `clearCart()`
-4. Também re-valida no `visibilitychange` (tab focus)
+4. Também re-valida no `visibilitychange` (tab focus) — só existência; a conciliação de itens é no `refreshCartDetails`
+5. `useCartSync` é o **único** consumidor de `cartAdjustments`: mostra um `toast.warning` por ajuste e chama `clearCartAdjustments()` (evita toast duplicado com `/carrinho` e drawer montados)
+
+### Conciliação local ↔ Shopify (R101, 2026-11-24)
+- `refreshCartDetails` (chamado no mount do `/carrinho`, ao abrir o `CartDrawer`, depois de toda mutação de linha e antes de pagar) busca o cart (`fetchCartFull`) e aplica `reconcileCartItems` (`src/lib/cartReconcile.ts`, função pura): casa por `lineId` e cai para `variantId` (preenche `lineId` nulo); linha `quantity: 0` ou ausente → item sai; quantidade diferente → vale a da Shopify; linha só no servidor → entra. Variant fantasma de frete fica fora. Linhas zeradas são removidas da Shopify (`removeLineFromShopifyCart` aceita array; erro só loga). Sem marmita depois de conciliar → `clearCart()`.
+- **Corrida:** `withMutation` (contadores de módulo `cartMutationSeq`/`cartMutationsInFlight`) envolve `addItem`/`updateQuantity`/`removeItem`. Um refresh que começou antes ou durante uma mutação de terceiros **não** reescreve `items` (grava só cost/allocations/linha de frete/`checkoutUrl`); refresh chamado de dentro da própria mutação usa `{ inMutation: true }`.
+- `handleCheckout` (e o checkout pendente pós-login) faz `await refreshCartDetails()` e aborta se voltou ajuste.
+- `computePixTotals` só usa o `cartCost.totalAmount` da Shopify se o desconto implícito for ≤ desconto PIX esperado + max(2% da base, R$ 2); senão cai no cálculo local (evita "Desconto PIX −R$ 86,29" com cart divergente).
+- Pagamento VR/Alelo envia `expectedItems`; 409 `cart_out_of_sync` → limpa cartão, refresh, fecha modal, toast (R102).
 
 ## Integrações
 | Integração | Tipo | Operações | O que faz |
@@ -236,7 +244,8 @@ Molde do VR (`vr-checkout`), sem tocar nele. Regras R86–R90 em `requirements.m
 - **21/10/2026 — checkout sem cartão e sem Pix desde 20/10 de manhã (falha do app da Getnet).** Reproduzido: sessão Pix recebe `FailedReceipt` com `GENERIC_ERROR` em 6 s, antes do QR; cartão idem (sem transação, nem negada, no portal). Credenciais do app válidas (token OK), apps ativos com `write_payment_sessions`, captura automática, Shopify operacional. Nenhum pedido pela Getnet desde 13/10 14:38Z; em 20/10 o app ainda cobrou dois cartões (R$ 470,93 e R$ 482,80) sem criar pedido. Hipótese: token do app à loja inválido (reinstalar reautorizaria; decisão do dono). E-mail com evidências enviado à Getnet em 21/10 (thread do chamado 08253467). Enquanto isso, a mitigação sugerida é uma forma de pagamento manual "Pix" na Shopify.
 
 ## Gotchas e armadilhas
-- O `lineId` do Shopify é obrigatório para update/remove — se null, operação falha silenciosamente
+- O `lineId` do Shopify é obrigatório para update/remove — se null, a mutação faz `refreshCartDetails` (a conciliação preenche pelo `variantId`) e tenta uma vez
+- **Estoque com `inventoryPolicy: DENY` zera linhas do cart em silêncio** (sem `userErrors`; a linha fica com `quantity: 0`) e a Shopify NÃO repõe a linha quando o estoque volta. Sem conciliação (R101) o local fica com mais itens que a Shopify: a tela libera frete grátis, o `ShippingMethodSelector` tira a linha de frete e a edge recusa com `shipping_line_missing` (caso Alelo de 23/11/2026).
 - O localStorage key é `shopify-cart` — mudar interface do `CartItem` pode corromper carts salvos
 - O checkout é 100% Shopify — cupom e desconto PIX do frontend NÃO são aplicados lá. Isso é uma lacuna conhecida (custom checkout com Getnet está planejado).
 - **DISPLAY vs COBRANÇA são camadas separadas (R53; revisado Sprint 5.1):** o TOTAL que o cliente vê na página `/carrinho` é somatória local: `displayTotal = (subtotal - kitDiscountTotal) + activeShippingFeeCents/100`. Reflete o desconto de KIT (que já vem agregado em `cartDiscountAllocations`), mas NÃO o desconto do cupom MANUAL (que é aplicado só no checkout Shopify) nem depende da variant fantasma estar sincronizada. JÁ a COBRANÇA real (quando o cliente vai pro checkout nativo Shopify) depende da variant fantasma estar no Shopify Cart e do desconto configurado no Shopify Admin. Não confundir as duas: se mexer no `displayTotal` achando que ele controla a cobrança, vai quebrar. O `displayTotal` é puramente visual. A cobrança é garantida pela sincronização da variant fantasma (`<ShippingMethodSelector />`) + hard-block do `canCheckout` (R52).
