@@ -1,6 +1,7 @@
 /** Testes do `cielo-checkout` — 100% em memória, deps stubados, sem rede. */
 import { assert, assertEquals } from "jsr:@std/assert";
 import { CieloApiError, type CieloSale } from "../_shared/cielo-client.ts";
+import { validateCartForVr } from "../_shared/vr-gates.ts";
 import { handleCieloCheckout, type CieloCheckoutDb, type CieloCheckoutDeps, type CieloTransactionRow } from "./handler.ts";
 
 const CART = {
@@ -429,4 +430,37 @@ Deno.test("422 pré-Cielo escreve log '[cielo-checkout] rejected invalid_cpf' (s
     console.error = orig;
   }
   assertEquals(logs, ["[cielo-checkout] rejected invalid_cpf"]);
+});
+
+Deno.test("expectedItems divergente (gate real) => 409 cart_out_of_sync, nada cobrado nem inserido", async () => {
+  const cart3 = { ...CART, lines: [{ ...CART.lines[0], quantity: 3 }] };
+  const s = build({ getCart: async () => cart3, validateCartForVr });
+  const r = await handleCieloCheckout(req({ expectedItems: 7 }), s.deps);
+  assertEquals(r.status, 409);
+  const j = await r.json();
+  assertEquals(j.code, "cart_out_of_sync");
+  assertEquals(j.message, "Seu carrinho mudou. Revise os itens antes de pagar.");
+  assertEquals(j.userMessage, "Seu carrinho mudou. Revise os itens antes de pagar.");
+  assertEquals(s.rows.length, 0);
+  assertEquals(s.calls.length, 0);
+});
+
+Deno.test("sem expectedItems (gate real, 7 no cart) => fluxo atual 200", async () => {
+  const s = build({ validateCartForVr });
+  assertEquals((await handleCieloCheckout(req(), s.deps)).status, 200);
+});
+
+Deno.test("expectedItems é repassado ao gate", async () => {
+  let seen: number | undefined;
+  const s = build({ validateCartForVr: (i) => { seen = i.expectedItems; return { ok: true, valorCents: 20000, nonShippingItems: 7 }; } });
+  await handleCieloCheckout(req({ expectedItems: 7 }), s.deps);
+  assertEquals(seen, 7);
+});
+
+Deno.test("expectedItems inválido => 400 invalid_body", async () => {
+  for (const v of [0, -1, 1.5, "7", 701, null]) {
+    const r = await handleCieloCheckout(req({ expectedItems: v }), build().deps);
+    assertEquals(r.status, 400);
+    assertEquals((await r.json()).code, "invalid_body");
+  }
 });

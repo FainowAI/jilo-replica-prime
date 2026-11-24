@@ -231,3 +231,37 @@ Deno.test("hasPixCoupon/hasOtherCoupon: ignora códigos não-applicable", () => 
   assert(!hasPixCoupon(cart));
   assert(!hasOtherCoupon(cart));
 });
+
+Deno.test("validateCartForVr: expectedItems ausente => comportamento atual", () => {
+  const result = validateCartForVr(baseInput({ expectedItems: undefined }));
+  assert(result.ok);
+});
+
+Deno.test("validateCartForVr: expectedItems igual ao cart => passa", () => {
+  const result = validateCartForVr(baseInput({ expectedItems: 3 }));
+  assert(result.ok);
+});
+
+Deno.test("validateCartForVr: expectedItems 7 com 3 no cart sem linha de frete => 409 cart_out_of_sync (não shipping_line_missing)", () => {
+  const input = baseInput({
+    expectedItems: 7,
+    cart: makeCart({ lines: [makeLine({ id: "L1", quantity: 3 })] }),
+  });
+  const result = validateCartForVr(input);
+  assert(!result.ok);
+  assertEquals(result.status, 409);
+  assertEquals(result.code, "cart_out_of_sync");
+  assertEquals(result.userMessage, "Seu carrinho mudou. Revise os itens antes de pagar.");
+});
+
+Deno.test("validateCartForVr: expectedItems divergente com >=7 no cart => 409", () => {
+  const input = baseInput({
+    expectedItems: 14,
+    deliveryMethod: "jilo_own",
+    cart: makeCart({ lines: [makeLine({ id: "L1", quantity: 7 })] }),
+  });
+  const result = validateCartForVr(input);
+  assert(!result.ok);
+  assertEquals(result.status, 409);
+  assertEquals(result.code, "cart_out_of_sync");
+});

@@ -13,6 +13,7 @@ import {
   type VrTransactionRow,
 } from "./handler.ts";
 import { VrApiError } from "../_shared/vr-client.ts";
+import { validateCartForVr } from "../_shared/vr-gates.ts";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -711,4 +712,44 @@ Deno.test("403 da VR na tokenização é falha nossa (502), não cartão recusad
   };
   const res = await handleVrCheckout(makeReq(), deps);
   assertEquals(res.status, 502);
+});
+
+Deno.test("expectedItems divergente (gate real) => 409 cart_out_of_sync, sem tokenizar nem cobrar", async () => {
+  let tokenized = false;
+  let paid = false;
+  const cart3 = { ...HAPPY_CART, lines: [{ ...HAPPY_CART.lines[0], quantity: 3 }] };
+  const base = buildDeps();
+  const deps = buildDeps({
+    getCart: async () => cart3,
+    validateCartForVr,
+    vr: {
+      ...base.vr,
+      tokenizeCard: async () => { tokenized = true; return { cartao_token_id: "t", mensagens: [] }; },
+      createPayment: async () => { paid = true; throw new Error("nao deveria cobrar"); },
+    },
+  });
+  const res = await handleVrCheckout(makeReq({ expectedItems: 7 }), deps);
+  assertEquals(res.status, 409);
+  assertEquals((await res.json()).code, "cart_out_of_sync");
+  assertEquals(tokenized, false);
+  assertEquals(paid, false);
+});
+
+Deno.test("expectedItems e repassado ao gate; ausente => undefined", async () => {
+  const seen: Array<number | undefined> = [];
+  const gate = (i: { expectedItems?: number }) => {
+    seen.push(i.expectedItems);
+    return { ok: true as const, valorCents: HAPPY_CART.totalAmountCents, nonShippingItems: 7 };
+  };
+  await handleVrCheckout(makeReq({ expectedItems: 7 }), buildDeps({ validateCartForVr: gate }));
+  await handleVrCheckout(makeReq(), buildDeps({ validateCartForVr: gate }));
+  assertEquals(seen, [7, undefined]);
+});
+
+Deno.test("400 invalid_body quando expectedItems e invalido", async () => {
+  for (const v of [0, -1, 1.5, "7", 701, null]) {
+    const res = await handleVrCheckout(makeReq({ expectedItems: v }), buildDeps());
+    assertEquals(res.status, 400);
+    assertEquals((await res.json()).code, "invalid_body");
+  }
 });

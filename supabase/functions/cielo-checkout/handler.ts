@@ -73,6 +73,7 @@ const CheckoutBodySchema = z
       .max(50)
       .regex(/^[\p{L} .'-]+$/u),
     paymentToken: z.string().regex(/^[A-Za-z0-9-]{16,64}$/),
+    expectedItems: z.number().int().min(1).max(700).optional(),
   })
   .strict();
 
@@ -278,6 +279,7 @@ export async function handleCieloCheckout(req: Request, deps: CieloCheckoutDeps)
     shippingVariantId: deps.env.SHOPIFY_SHIPPING_VARIANT_ID,
     deliveryMethod: body.deliveryMethod,
     address: { state: address.state, city: address.city },
+    expectedItems: body.expectedItems,
   });
   if (!gate.ok) {
     console.error(`[cielo-checkout] rejected ${gate.code}`);

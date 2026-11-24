@@ -20,11 +20,13 @@ export interface VrGateInput {
   shippingVariantId: string | null;
   deliveryMethod: DeliveryMethod;
   address: { state: string; city: string };
+  /** Marmitas que o cliente via na tela (sem a variant fantasma). Ausente = sem checagem (bundle antigo). */
+  expectedItems?: number;
 }
 
 export type VrGateResult =
   | { ok: true; valorCents: number; nonShippingItems: number }
-  | { ok: false; status: 422; code: string; userMessage: string };
+  | { ok: false; status: 409 | 422; code: string; userMessage: string };
 
 export function hasPixCoupon(cart: StorefrontCart): boolean {
   return cart.discountCodes.some((d) => d.applicable && isPixCoupon(d.code));
@@ -57,6 +59,13 @@ export function validateCartForVr(input: VrGateInput): VrGateResult {
   const nonShippingLines = cart.lines.filter((l) => l.merchandiseId !== shippingVariantId);
   const shippingLines = cart.lines.filter((l) => l.merchandiseId === shippingVariantId);
   const nonShippingItems = nonShippingLines.reduce((sum, l) => sum + l.quantity, 0);
+
+  // Divergência entre a tela e o cart real da Shopify (ex.: linhas zeradas por estoque):
+  // vem antes dos gates de kit/frete para não virar shipping_line_missing enganoso.
+  if (input.expectedItems !== undefined && input.expectedItems !== nonShippingItems) {
+    const msg = "Seu carrinho mudou. Revise os itens antes de pagar.";
+    return { ok: false, status: 409, code: "cart_out_of_sync", userMessage: msg };
+  }
 
   if (nonShippingItems <= 0) {
     return fail("empty_cart", "Seu carrinho está vazio.");

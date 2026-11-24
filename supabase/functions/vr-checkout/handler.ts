@@ -107,6 +107,7 @@ const CheckoutBodySchema = z
         cvv: z.string().regex(/^\d{3}$/),
       })
       .strict(),
+    expectedItems: z.number().int().min(1).max(700).optional(),
   })
   .strict();
 
@@ -403,8 +404,10 @@ export async function handleVrCheckout(req: Request, deps: VrCheckoutDeps): Prom
     shippingVariantId: deps.env.SHOPIFY_SHIPPING_VARIANT_ID,
     deliveryMethod: body.deliveryMethod,
     address: { state: address.state, city: address.city },
+    expectedItems: body.expectedItems,
   });
   if (!gate.ok) {
+    if (gate.code === "cart_out_of_sync") console.error("[vr-checkout] rejected cart_out_of_sync");
     return jsonResponse({ code: gate.code, userMessage: gate.userMessage }, gate.status, cors);
   }
   const { valorCents } = gate;
